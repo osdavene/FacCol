@@ -1,0 +1,93 @@
+{% extends 'base.html' %}
+
+{% block title %}Agregar Usuario - FacCol ERP{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto space-y-6">
+
+    <!-- Encabezado -->
+    <div class="flex items-center gap-3">
+        <a href="{% url 'usuarios:lista' %}" class="p-2.5 rounded-xl bg-[#162034] text-slate-400 hover:text-white transition">
+            <i class="fas fa-arrow-left"></i>
+        </a>
+        <div>
+            <h1 class="font-display font-extrabold text-2xl text-white">Vincular Usuario al Equipo</h1>
+            <p class="text-xs text-slate-400">Agrega un nuevo colaborador y asígnale un rol operativo en <b>{{ request.empresa_activa.razon_social }}</b>.</p>
+        </div>
+    </div>
+
+    <!-- Formulario -->
+    <form method="POST" class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
+        {% csrf_token %}
+
+        <div class="space-y-4">
+            <div>
+                <label class="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-2">
+                    Correo Electrónico (Será su Usuario de Acceso) <span class="text-red-400">*</span>
+                </label>
+                <input type="email" name="email" required placeholder="colaborador@empresa.com"
+                       class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-cyan-500 transition">
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-2">
+                        Nombres
+                    </label>
+                    <input type="text" name="first_name" placeholder="Ej: Carlos"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-cyan-500 transition">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-2">
+                        Apellidos
+                    </label>
+                    <input type="text" name="last_name" placeholder="Ej: Pérez"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-cyan-500 transition">
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-2">
+                        Teléfono / Celular
+                    </label>
+                    <input type="text" name="telefono" placeholder="+57 300 123 4567"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-cyan-500 transition">
+                </div>
+                <div>
+                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-2">
+                        Rol en la Empresa <span class="text-red-400">*</span>
+                    </label>
+                    <select name="rol" required
+                            class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-cyan-500 transition">
+                        {% for val, label in roles %}
+                        <option value="{{ val }}" {% if val == 'vendedor' %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            <div>
+                <label class="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-2">
+                    Contraseña Inicial <span class="text-red-400">*</span>
+                </label>
+                <input type="password" name="password" required minlength="6" placeholder="Mínimo 6 caracteres"
+                       class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-cyan-500 transition">
+                <p class="text-[11px] text-slate-500 mt-1">El usuario podrá cambiar su contraseña al iniciar sesión en su perfil.</p>
+            </div>
+        </div>
+
+        <div class="flex items-center justify-end gap-3 pt-4 border-t border-[#1e2d47]">
+            <a href="{% url 'usuarios:lista' %}"
+               class="px-5 py-2.5 rounded-xl bg-[#162034] hover:bg-[#1f2d47] text-slate-300 text-xs font-bold uppercase tracking-wider transition">
+                Cancelar
+            </a>
+            <button type="submit"
+                    class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-black font-extrabold text-xs uppercase tracking-wider shadow-lg shadow-cyan-500/25 transition flex items-center gap-2">
+                <i class="fas fa-check"></i> Guardar y Vincular
+            </button>
+        </div>
+    </form>
+
+</div>
+{% endblock %}

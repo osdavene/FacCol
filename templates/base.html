@@ -260,18 +260,29 @@
                     </div>
                 </div>
 
-                <!-- FacCol AI Copilot -->
+                <!-- FacCol Gemini AI -->
                 <div class="pt-2">
                     <a href="{% url 'ia:asistente' %}"
                        class="flex items-center gap-3 px-3 py-2.5 rounded-xl font-bold transition bg-gradient-to-r from-amber-500/10 via-purple-500/10 to-blue-500/10 border border-amber-500/30 text-amber-400 hover:border-amber-400">
                         <i class="fas fa-wand-magic-sparkles text-amber-400"></i>
-                        <span>FacCol AI Copilot</span>
-                        <span class="ml-auto text-[9px] bg-amber-500 text-black px-1.5 py-0.5 rounded font-black">PRO</span>
+                        <span>FacCol Gemini AI</span>
+                        <span class="ml-auto text-[9px] bg-amber-500 text-black px-1.5 py-0.5 rounded font-black">AI</span>
                     </a>
                 </div>
 
+                <!-- Equipo y Roles de Empresa -->
+                {% if request.empresa_activa and request.user.es_admin %}
+                <div class="pt-1">
+                    <a href="{% url 'usuarios:lista' %}"
+                       class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-400 hover:text-white hover:bg-[#151d2e] transition">
+                        <i class="fas fa-users-gear text-cyan-400 w-4"></i>
+                        <span class="font-bold uppercase tracking-wider text-[11px]">Equipo & Roles</span>
+                    </a>
+                </div>
+                {% endif %}
+
                 <!-- Superadmin Backoffice -->
-                {% if user.is_superadmin %}
+                {% if user.is_superadmin or user.is_superuser %}
                 <div class="pt-3 border-t border-[#1e2d47]">
                     <div class="px-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Superadministrador</div>
                     <a href="{% url 'backoffice:dashboard' %}" class="flex items-center gap-2.5 px-3 py-2 rounded-xl text-slate-300 hover:bg-[#151d2e] hover:text-amber-400 transition">

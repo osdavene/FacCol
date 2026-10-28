@@ -32,32 +32,46 @@ class User(AbstractUser):
             return Empresa.objects.filter(activa=True)
         return [eu.empresa for eu in self.empresas_asignadas.filter(activo=True, empresa__activa=True).select_related('empresa')]
 
-    def rol_en_empresa(self, empresa):
-        if self.is_superadmin:
+    def rol_en_empresa(self, empresa=None):
+        if self.is_superadmin or self.is_superuser:
             return 'superadmin'
         if not empresa:
             return None
         asignacion = self.empresas_asignadas.filter(empresa=empresa, activo=True).first()
         return asignacion.rol if asignacion else None
 
-    def es_propietario(self, empresa):
-        if self.is_superadmin:
+    def es_propietario(self, empresa=None):
+        if self.is_superadmin or self.is_superuser:
             return True
         rol = self.rol_en_empresa(empresa)
         return rol == 'propietario'
 
-    def es_admin(self, empresa):
-        if self.is_superadmin:
+    def es_admin(self, empresa=None):
+        if self.is_superadmin or self.is_superuser:
             return True
         rol = self.rol_en_empresa(empresa)
         return rol in ('propietario', 'admin')
+
+    def es_contador(self, empresa=None):
+        if self.is_superadmin or self.is_superuser:
+            return True
+        rol = self.rol_en_empresa(empresa)
+        return rol in ('propietario', 'admin', 'contador')
+
+    def puede_facturar(self, empresa=None):
+        if self.is_superadmin or self.is_superuser:
+            return True
+        rol = self.rol_en_empresa(empresa)
+        return rol in ('propietario', 'admin', 'vendedor', 'contador')
 
 
 class EmpresaUsuario(models.Model):
     ROLES_CHOICES = [
         ('propietario', 'Propietario (Acceso Total)'),
-        ('admin', 'Administrador'),
-        ('operador', 'Operador'),
+        ('admin', 'Administrador General'),
+        ('contador', 'Contador / Financiero'),
+        ('vendedor', 'Vendedor / Facturador'),
+        ('operador', 'Operador de Almacén'),
     ]
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='empresas_asignadas')

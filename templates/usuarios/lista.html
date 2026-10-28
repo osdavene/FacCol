@@ -1,0 +1,142 @@
+{% extends 'base.html' %}
+
+{% block title %}Equipo y Roles - FacCol ERP{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+    <!-- Encabezado -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+            <h1 class="font-display font-extrabold text-2xl text-white flex items-center gap-2">
+                <i class="fas fa-users-gear text-cyan-400"></i> Equipo y Roles de la Empresa
+            </h1>
+            <p class="text-xs text-slate-400">Administra los usuarios con acceso a <b>{{ request.empresa_activa.razon_social }}</b> y sus permisos operativos.</p>
+        </div>
+
+        {% if request.user.es_admin %}
+        <a href="{% url 'usuarios:crear' %}"
+           class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-400 hover:to-blue-500 text-black font-extrabold text-xs uppercase tracking-wider shadow-lg shadow-cyan-500/20 transition flex items-center gap-2">
+            <i class="fas fa-user-plus"></i> Agregar Miembro
+        </a>
+        {% endif %}
+    </div>
+
+    <!-- Guía de Roles -->
+    <div class="grid grid-cols-2 sm:grid-cols-5 gap-3 text-xs">
+        <div class="bg-[#111827] border border-amber-500/20 p-3 rounded-2xl">
+            <span class="text-amber-400 font-bold block text-[11px] mb-1">👑 Propietario</span>
+            <span class="text-[10px] text-slate-400">Control absoluto legal, tributario, DIAN y financiero.</span>
+        </div>
+        <div class="bg-[#111827] border border-blue-500/20 p-3 rounded-2xl">
+            <span class="text-blue-400 font-bold block text-[11px] mb-1">🛡️ Administrador</span>
+            <span class="text-[10px] text-slate-400">Gestión de usuarios, inventario, catálogos y ajustes.</span>
+        </div>
+        <div class="bg-[#111827] border border-emerald-500/20 p-3 rounded-2xl">
+            <span class="text-emerald-400 font-bold block text-[11px] mb-1">📊 Contador</span>
+            <span class="text-[10px] text-slate-400">Asientos contables PUC, balance, recibos y reportes.</span>
+        </div>
+        <div class="bg-[#111827] border border-purple-500/20 p-3 rounded-2xl">
+            <span class="text-purple-400 font-bold block text-[11px] mb-1">💼 Vendedor</span>
+            <span class="text-[10px] text-slate-400">Emisión de facturas, cotizaciones, remisiones y clientes.</span>
+        </div>
+        <div class="bg-[#111827] border border-slate-500/20 p-3 rounded-2xl">
+            <span class="text-slate-400 font-bold block text-[11px] mb-1">📦 Operador</span>
+            <span class="text-[10px] text-slate-400">Entradas y salidas de almacén y conteos de stock.</span>
+        </div>
+    </div>
+
+    <!-- Tabla de Usuarios Asignados -->
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl overflow-hidden shadow-2xl">
+        <div class="p-5 border-b border-[#1e2d47] flex justify-between items-center">
+            <h2 class="font-display font-bold text-sm text-white">Miembros con Acceso ({{ usuarios_asignados.count }})</h2>
+        </div>
+
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+                <thead>
+                    <tr class="bg-[#141c2e] text-slate-400 font-bold uppercase tracking-wider text-[10px] border-b border-[#1e2d47]">
+                        <th class="p-4">Usuario</th>
+                        <th class="p-4">Email / Login</th>
+                        <th class="p-4">Teléfono</th>
+                        <th class="p-4">Rol Asignado</th>
+                        <th class="p-4 text-center">Estado Acceso</th>
+                        <th class="p-4 text-right">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-[#1e2d47]/50">
+                    {% for asig in usuarios_asignados %}
+                    <tr class="hover:bg-[#162034] transition">
+                        <td class="p-4">
+                            <div class="flex items-center gap-3">
+                                <div class="w-9 h-9 rounded-full bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center text-cyan-400 font-bold text-sm flex-shrink-0">
+                                    {{ asig.user.first_name|default:asig.user.username|slice:":1"|upper }}
+                                </div>
+                                <div>
+                                    <div class="font-bold text-white text-sm">
+                                        {{ asig.user.get_full_name|default:asig.user.username }}
+                                        {% if asig.user.is_superadmin %}
+                                        <span class="ml-1 px-1.5 py-0.5 rounded text-[9px] font-black uppercase bg-amber-500 text-black">SuperAdmin</span>
+                                        {% endif %}
+                                    </div>
+                                    <div class="text-[10px] text-slate-500">Registrado el {{ asig.created_at|date:"d/m/Y" }}</div>
+                                </div>
+                            </div>
+                        </td>
+                        <td class="p-4 font-mono text-slate-300">{{ asig.user.email|default:asig.user.username }}</td>
+                        <td class="p-4 text-slate-400">{{ asig.user.telefono|default:"—" }}</td>
+                        <td class="p-4">
+                            {% if request.user.es_admin and not asig.user.is_superadmin %}
+                            <form method="POST" action="{% url 'usuarios:cambiar_rol' asig.id %}" class="inline-block">
+                                {% csrf_token %}
+                                <select name="rol" onchange="this.form.submit()"
+                                        class="bg-[#141c2e] border border-[#1e2d47] text-white text-xs rounded-lg px-2.5 py-1 font-semibold focus:border-cyan-500 outline-none">
+                                    <option value="propietario" {% if asig.rol == 'propietario' %}selected{% endif %}>👑 Propietario</option>
+                                    <option value="admin" {% if asig.rol == 'admin' %}selected{% endif %}>🛡️ Administrador</option>
+                                    <option value="contador" {% if asig.rol == 'contador' %}selected{% endif %}>📊 Contador</option>
+                                    <option value="vendedor" {% if asig.rol == 'vendedor' %}selected{% endif %}>💼 Vendedor</option>
+                                    <option value="operador" {% if asig.rol == 'operador' %}selected{% endif %}>📦 Operador</option>
+                                </select>
+                            </form>
+                            {% else %}
+                            <span class="px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wider
+                                  {% if asig.rol == 'propietario' or asig.user.is_superadmin %}bg-amber-500/10 text-amber-400 border border-amber-500/30
+                                  {% elif asig.rol == 'admin' %}bg-blue-500/10 text-blue-400 border border-blue-500/30
+                                  {% elif asig.rol == 'contador' %}bg-emerald-500/10 text-emerald-400 border border-emerald-500/30
+                                  {% elif asig.rol == 'vendedor' %}bg-purple-500/10 text-purple-400 border border-purple-500/30
+                                  {% else %}bg-slate-500/10 text-slate-400 border border-slate-500/30{% endif %}">
+                                {{ asig.get_rol_display }}
+                            </span>
+                            {% endif %}
+                        </td>
+                        <td class="p-4 text-center">
+                            <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold
+                                  {% if asig.activo %}bg-emerald-500/10 text-emerald-400 border border-emerald-500/20{% else %}bg-red-500/10 text-red-400 border border-red-500/20{% endif %}">
+                                {% if asig.activo %}Activo{% else %}Inactivo{% endif %}
+                            </span>
+                        </td>
+                        <td class="p-4 text-right">
+                            {% if request.user.es_admin and asig.user != request.user %}
+                            <form method="POST" action="{% url 'usuarios:cambiar_estado' asig.id %}" class="inline-block">
+                                {% csrf_token %}
+                                <button type="submit" 
+                                        class="p-2 rounded-xl text-xs transition {% if asig.activo %}bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white{% else %}bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500 hover:text-white{% endif %}"
+                                        title="{% if asig.activo %}Desactivar acceso a esta empresa{% else %}Reactivar acceso{% endif %}">
+                                    <i class="fas {% if asig.activo %}fa-user-slash{% else %}fa-user-check{% endif %}"></i>
+                                </button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="6" class="p-8 text-center text-slate-400">No hay usuarios vinculados a esta empresa.</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

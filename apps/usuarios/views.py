@@ -134,4 +134,42 @@ def usuario_crear(request):
         messages.success(request, f"Usuario {user.email} configurado exitosamente con rol {rol}.")
         return redirect('usuarios:lista')
 
-    return render(request, 'usuarios/crear.html')
+    roles = EmpresaUsuario.ROLES_CHOICES
+    return render(request, 'usuarios/crear.html', {'roles': roles})
+
+
+@login_required
+def usuario_cambiar_rol(request, asignacion_id):
+    empresa = request.empresa_activa
+    if not empresa or not request.user.es_admin(empresa):
+        messages.error(request, "No tiene permisos para modificar roles.")
+        return redirect('usuarios:lista')
+
+    asignacion = get_object_or_404(EmpresaUsuario, id=asignacion_id, empresa=empresa)
+    if request.method == 'POST':
+        nuevo_rol = request.POST.get('rol')
+        if nuevo_rol in dict(EmpresaUsuario.ROLES_CHOICES):
+            asignacion.rol = nuevo_rol
+            asignacion.save()
+            messages.success(request, f"Rol de {asignacion.user.get_full_name() or asignacion.user.username} actualizado a {asignacion.get_rol_display()}.")
+
+    return redirect('usuarios:lista')
+
+
+@login_required
+def usuario_cambiar_estado(request, asignacion_id):
+    empresa = request.empresa_activa
+    if not empresa or not request.user.es_admin(empresa):
+        messages.error(request, "No tiene permisos para modificar el estado de usuarios.")
+        return redirect('usuarios:lista')
+
+    asignacion = get_object_or_404(EmpresaUsuario, id=asignacion_id, empresa=empresa)
+    if asignacion.user == request.user and not request.user.is_superadmin:
+        messages.error(request, "No puede desactivar su propio acceso a la empresa.")
+        return redirect('usuarios:lista')
+
+    asignacion.activo = not asignacion.activo
+    asignacion.save()
+    estado_str = "activado" if asignacion.activo else "desactivado"
+    messages.success(request, f"Acceso de {asignacion.user.username} a la empresa ha sido {estado_str}.")
+    return redirect('usuarios:lista')
