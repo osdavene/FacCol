@@ -14,63 +14,38 @@ jobs:
       - name: 📥 Clonar repositorio
         uses: actions/checkout@v4
 
-      - name: 🔍 Validar Secretos de AWS
-        run: |
-          if [ -z "${{ secrets.AWS_HOST }}" ] || [ -z "${{ secrets.AWS_SSH_KEY }}" ]; then
-            echo "❌ ERROR: Faltan los secretos en GitHub Actions del repositorio osdavene/FacCol."
-            echo "Configúralos en: https://github.com/osdavene/FacCol/settings/secrets/actions"
-            echo "Secretos requeridos:"
-            echo "  - AWS_HOST: IP del servidor AWS (18.191.199.104)"
-            echo "  - AWS_USER: ubuntu"
-            echo "  - AWS_SSH_KEY: Contenido completo de tu clave privada PEM"
-            exit 1
-          fi
-          echo "✅ Secretos de AWS detectados correctamente."
-
       - name: 🔐 Ejecutar Despliegue en AWS vía SSH
         uses: appleboy/ssh-action@v1.0.3
         with:
           host: ${{ secrets.AWS_HOST }}
-          username: ${{ secrets.AWS_USER || 'ubuntu' }}
+          username: ${{ secrets.AWS_USER }}
           key: ${{ secrets.AWS_SSH_KEY }}
-          port: 22
+          port: ${{ secrets.AWS_PORT || 22 }}
           script_stop: true
           script: |
-            echo "🚀 Iniciando despliegue de FacCol Python en CloudPanel..."
-            sudo git config --global --add safe.directory /home/faccol/htdocs/faccol.com
-            sudo -u faccol bash << 'EOF'
-            set -e
-            cd /home/faccol/htdocs/faccol.com
+            echo "🚀 Iniciando despliegue de FacCol (Python Django) en AWS..."
+            SITE_DIR="/home/faccol/htdocs/faccol.com"
+            SITE_USER="faccol"
 
-            # 1. Descargar últimos cambios
+            sudo git config --global --add safe.directory "$SITE_DIR"
+
+            sudo -u "$SITE_USER" bash << 'EOF'
+            set -e
+            cd "/home/faccol/htdocs/faccol.com"
             git fetch origin main
             git reset --hard origin/main
 
-            # 2. Asegurar entorno virtual Python
             if [ ! -d "venv" ]; then
-                python3 -m venv venv
+              python3 -m venv venv
             fi
 
-            # 3. Instalar dependencias
-            source venv/bin/activate
-            pip install --upgrade pip
-            pip install -r requirements.txt
-
-            # 4. Migraciones de Base de Datos
-            python manage.py migrate --noinput
-
-            # 5. Cargar catálogos y módulos base
-            python manage.py seed_base
-            python manage.py seed_colombia
-
-            # 6. Recopilar archivos estáticos
-            python manage.py collectstatic --noinput
+            venv/bin/pip install --upgrade pip
+            venv/bin/pip install -r requirements.txt
+            venv/bin/python manage.py migrate --noinput
+            venv/bin/python manage.py seed_base
+            venv/bin/python manage.py seed_colombia
+            venv/bin/python manage.py collectstatic --noinput
             EOF
 
-            # 7. Reiniciar Gunicorn
-            if sudo systemctl is-active --quiet faccol; then
-                sudo systemctl restart faccol
-                echo "✅ Servicio faccol reiniciado exitosamente"
-            fi
-
-            echo "✅ ¡Despliegue de FacCol Python completado exitosamente!"
+            sudo systemctl restart faccol.service
+            echo "✅ ¡Despliegue de FacCol Python completado con éxito en AWS!"
