@@ -42,6 +42,16 @@
             color: #e2e8f0;
             font-family: 'Plus Jakarta Sans', 'DM Sans', system-ui, -apple-system, sans-serif;
         }
+        @media (min-width: 1024px) {
+            aside.sidebar-faccol {
+                width: 268px !important;
+                transform: translateX(0) !important;
+            }
+            .main-content-faccol {
+                margin-left: 268px !important;
+                width: calc(100% - 268px) !important;
+            }
+        }
     </style>
     {% block extra_head %}{% endblock %}
 </head>
@@ -57,7 +67,7 @@
              SIDEBAR NAVEGACIÓN
         ══════════════════════════════════════════ -->
         <aside :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'"
-               class="fixed top-0 left-0 h-full w-[270px] bg-[#111827] border-r border-[#1e2d47] flex flex-col z-50 transition-transform duration-300">
+               class="fixed top-0 left-0 h-full w-[268px] bg-[#111827] border-r border-[#1e2d47] flex flex-col z-50 transition-transform duration-300 sidebar-faccol">
             
             <!-- Logo & Selector de Empresa -->
             <div class="p-4 border-b border-[#1e2d47]">
@@ -296,7 +306,7 @@
         <!-- ══════════════════════════════════════════
              CONTENIDO PRINCIPAL & TOPBAR
         ══════════════════════════════════════════ -->
-        <div class="flex-1 lg:pl-[270px] flex flex-col min-w-0">
+        <div class="flex-1 flex flex-col lg:ml-[268px] min-w-0 main-content-faccol">
 
             <!-- Topbar Header -->
             <header class="sticky top-0 z-30 bg-[#111827]/90 backdrop-blur border-b border-[#1e2d47] px-4 py-3 flex items-center justify-between">
