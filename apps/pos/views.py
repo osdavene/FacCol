@@ -11,9 +11,11 @@ from apps.pos.models import Caja, CajaTurno, MovimientoCaja
 from apps.inventario.models import Producto, MovimientoInventario
 from apps.terceros.models import Tercero
 from apps.facturacion.models import Factura, FacturaItem, ReciboCaja
+from apps.usuarios.decorators import requiere_facturacion
 
 
 @login_required
+@requiere_facturacion
 def pos_terminal(request):
     empresa = request.empresa_activa
     if not empresa:
@@ -43,6 +45,7 @@ def pos_terminal(request):
 
 
 @login_required
+@requiere_facturacion
 def pos_procesar_venta(request):
     empresa = request.empresa_activa
     if request.method != 'POST':
@@ -151,6 +154,7 @@ def pos_procesar_venta(request):
 
 
 @login_required
+@requiere_facturacion
 def cajas_lista(request):
     empresa = request.empresa_activa
     if not empresa:
@@ -166,6 +170,7 @@ def cajas_lista(request):
 
 
 @login_required
+@requiere_facturacion
 def caja_abrir_turno(request):
     empresa = request.empresa_activa
     if not empresa:
@@ -204,6 +209,7 @@ def caja_abrir_turno(request):
 
 
 @login_required
+@requiere_facturacion
 def caja_cerrar_turno(request, turno_id):
     empresa = request.empresa_activa
     turno = get_object_or_404(CajaTurno, id=turno_id, empresa=empresa, estado='ABIERTA')

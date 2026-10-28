@@ -6,9 +6,11 @@ from django.contrib import messages
 from django.db import transaction
 
 from apps.nomina.models import Empleado, Nomina, NominaEmpleado
+from apps.usuarios.decorators import requiere_nomina
 
 
 @login_required
+@requiere_nomina
 def empleados_lista(request):
     empresa = request.empresa_activa
     if not empresa:
@@ -19,6 +21,7 @@ def empleados_lista(request):
 
 
 @login_required
+@requiere_nomina
 def empleado_crear(request):
     empresa = request.empresa_activa
     if not empresa:
@@ -61,6 +64,7 @@ def empleado_crear(request):
 
 
 @login_required
+@requiere_nomina
 def nominas_lista(request):
     empresa = request.empresa_activa
     if not empresa:
@@ -71,6 +75,7 @@ def nominas_lista(request):
 
 
 @login_required
+@requiere_nomina
 def nomina_liquidar(request):
     empresa = request.empresa_activa
     if not empresa:
@@ -182,6 +187,7 @@ def nomina_liquidar(request):
 
 
 @login_required
+@requiere_nomina
 def nomina_detalle(request, nomina_id):
     empresa = request.empresa_activa
     nomina = get_object_or_404(

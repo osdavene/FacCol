@@ -8,22 +8,62 @@ from django.db.models import Sum, Count, Q
 from django.http import JsonResponse
 
 from apps.empresas.models import Empresa
+from apps.usuarios.models import User, EmpresaUsuario
 from apps.facturacion.models import Factura, ReciboCaja
-from apps.inventario.models import Producto
+from apps.inventario.models import Producto, MovimientoInventario
 from apps.terceros.models import Tercero
+from apps.contabilidad.models import AsientoContable, PlanCuenta
+from apps.servicios.models import OrdenServicio
 from apps.nomina.models import Empleado
 
 
 @login_required
 def dashboard(request):
+    is_superadmin = bool(request.user.is_superadmin or request.user.is_superuser)
     empresa = request.empresa_activa
+    rol_actual = request.user.rol_actual or ('superadmin' if is_superadmin else 'usuario')
+
+    # Métricas Globales SaaS para SuperAdmin
+    context_sa = {}
+    if is_superadmin:
+        total_empresas = Empresa.objects.count()
+        empresas_activas = Empresa.objects.filter(activa=True).count()
+        total_usuarios = User.objects.count()
+        total_facturas_global = Factura.objects.count()
+        ventas_global = Factura.objects.filter(
+            tipo_documento='FACTURA'
+        ).exclude(estado='ANULADA').aggregate(total=Sum('total'))['total'] or Decimal('0.00')
+        empresas_recientes = Empresa.objects.select_related('plan').order_by('-created_at')[:8]
+
+        context_sa = {
+            'is_superadmin': True,
+            'total_empresas': total_empresas,
+            'empresas_activas': empresas_activas,
+            'total_usuarios': total_usuarios,
+            'total_facturas_global': total_facturas_global,
+            'ventas_global': ventas_global,
+            'empresas_recientes': empresas_recientes,
+        }
+
+    # Si no hay empresa activa
     if not empresa:
-        messages.info(request, "Por favor seleccione o cree una empresa para comenzar.")
-        if request.user.is_superadmin:
-            return redirect('backoffice:empresas_lista')
+        if is_superadmin:
+            # SuperAdmin sin empresa activa seleccionada: Renderiza el hub SuperAdmin unificado
+            context = {
+                **context_sa,
+                'rol_actual': 'superadmin',
+                'ventas_mes': Decimal('0.00'),
+                'cartera_pendiente': Decimal('0.00'),
+                'recaudos_mes': Decimal('0.00'),
+                'total_clientes': 0,
+                'productos_stock_bajo': [],
+                'ultimas_facturas': [],
+                'sin_empresa_activa': True,
+            }
+            return render(request, 'core/dashboard.html', context)
         return render(request, 'core/sin_empresa.html')
 
-    # Métricas principales
+    # Métricas principales de la empresa activa
     hoy = date.today()
     primer_dia_mes = hoy.replace(day=1)
 
@@ -57,28 +97,56 @@ def dashboard(request):
         stock_actual__lte=models.F('stock_minimo'),
         stock_minimo__gt=0,
         activo=True
-    )[:5]
+    )[:6]
 
-    # Últimas 5 facturas
+    # Últimas 6 facturas emitidas
     ultimas_facturas = Factura.objects.filter(
         empresa=empresa,
         tipo_documento='FACTURA'
-    ).select_related('tercero').order_by('-fecha_emision', '-consecutivo')[:5]
+    ).select_related('tercero').order_by('-fecha_emision', '-consecutivo')[:6]
+
+    # Métricas adicionales según rol
+    ultimos_asientos = []
+    total_cuentas_puc = 0
+    if is_superadmin or rol_actual in ('propietario', 'admin', 'contador'):
+        ultimos_asientos = AsientoContable.objects.filter(
+            empresa=empresa
+        ).prefetch_related('lineas__cuenta').order_by('-fecha', '-numero_comprobante')[:5]
+        total_cuentas_puc = PlanCuenta.objects.filter(empresa=empresa, activa=True).count()
+
+    total_productos = 0
+    ultimos_movimientos = []
+    ordenes_activas = 0
+    if is_superadmin or rol_actual in ('propietario', 'admin', 'operador'):
+        total_productos = Producto.objects.filter(empresa=empresa, activo=True).count()
+        ultimos_movimientos = MovimientoInventario.objects.filter(
+            empresa=empresa
+        ).select_related('producto').order_by('-created_at')[:5]
+        ordenes_activas = OrdenServicio.objects.filter(
+            empresa=empresa
+        ).exclude(estado__in=['ENTREGADO', 'CANCELADO']).count()
 
     context = {
+        **context_sa,
+        'rol_actual': rol_actual,
         'ventas_mes': ventas_mes,
         'cartera_pendiente': cartera_pendiente,
         'recaudos_mes': recaudos_mes,
         'total_clientes': total_clientes,
         'productos_stock_bajo': productos_stock_bajo,
         'ultimas_facturas': ultimas_facturas,
+        'ultimos_asientos': ultimos_asientos,
+        'total_cuentas_puc': total_cuentas_puc,
+        'total_productos': total_productos,
+        'ultimos_movimientos': ultimos_movimientos,
+        'ordenes_activas': ordenes_activas,
     }
     return render(request, 'core/dashboard.html', context)
 
 
 @login_required
 def cambiar_empresa(request, empresa_id):
-    if request.user.is_superadmin:
+    if request.user.is_superadmin or request.user.is_superuser:
         empresa = get_object_or_404(Empresa, id=empresa_id, activa=True)
     else:
         asignacion = get_object_or_404(
@@ -90,7 +158,7 @@ def cambiar_empresa(request, empresa_id):
         empresa = asignacion.empresa
 
     request.session['empresa_activa_id'] = empresa.id
-    messages.success(request, f"Contexto cambiado a: {empresa.display_name}")
+    messages.success(request, f"Contexto activo cambiado a: {empresa.display_name}")
     next_url = request.GET.get('next') or request.META.get('HTTP_REFERER') or 'core:dashboard'
     return redirect(next_url)
 

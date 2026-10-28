@@ -4,6 +4,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 
 from apps.usuarios.models import User, EmpresaUsuario
+from apps.usuarios.decorators import requiere_admin
 
 
 def login_view(request):
@@ -79,25 +80,32 @@ def perfil_view(request):
 @login_required
 def usuarios_lista(request):
     empresa = request.empresa_activa
-    if not empresa:
+    is_sa = bool(request.user.is_superadmin or request.user.is_superuser)
+
+    if not (is_sa or (empresa and request.user.es_admin(empresa))):
+        messages.warning(request, "Acceso restringido: Solo administradores o propietarios pueden gestionar el equipo.")
         return redirect('core:dashboard')
 
-    usuarios_asignados = EmpresaUsuario.objects.filter(
-        empresa=empresa
-    ).select_related('user').order_by('-rol', 'user__first_name')
+    if is_sa and not empresa:
+        usuarios_asignados = EmpresaUsuario.objects.all().select_related('user', 'empresa').order_by('empresa__razon_social', '-rol')
+    else:
+        usuarios_asignados = EmpresaUsuario.objects.filter(
+            empresa=empresa
+        ).select_related('user', 'empresa').order_by('-rol', 'user__first_name')
 
-    return render(request, 'usuarios/lista.html', {'usuarios_asignados': usuarios_asignados})
+    return render(request, 'usuarios/lista.html', {
+        'usuarios_asignados': usuarios_asignados,
+        'empresa': empresa,
+    })
 
 
 @login_required
+@requiere_admin
 def usuario_crear(request):
     empresa = request.empresa_activa
     if not empresa:
+        messages.warning(request, "Seleccione una empresa activa para asignar nuevos usuarios.")
         return redirect('core:dashboard')
-
-    if not request.user.es_admin(empresa):
-        messages.error(request, "No tiene permisos para agregar usuarios a esta empresa.")
-        return redirect('usuarios:lista')
 
     if request.method == 'POST':
         email = request.POST.get('email', '').strip().lower()
@@ -109,7 +117,7 @@ def usuario_crear(request):
 
         if not email or not password:
             messages.error(request, "El correo electrónico y la contraseña son obligatorios.")
-            return render(request, 'usuarios/crear.html')
+            return render(request, 'usuarios/crear.html', {'roles': EmpresaUsuario.ROLES_CHOICES})
 
         user, created = User.objects.get_or_create(
             username=email,
@@ -139,10 +147,10 @@ def usuario_crear(request):
 
 
 @login_required
+@requiere_admin
 def usuario_cambiar_rol(request, asignacion_id):
     empresa = request.empresa_activa
-    if not empresa or not request.user.es_admin(empresa):
-        messages.error(request, "No tiene permisos para modificar roles.")
+    if not empresa:
         return redirect('usuarios:lista')
 
     asignacion = get_object_or_404(EmpresaUsuario, id=asignacion_id, empresa=empresa)
@@ -157,14 +165,14 @@ def usuario_cambiar_rol(request, asignacion_id):
 
 
 @login_required
+@requiere_admin
 def usuario_cambiar_estado(request, asignacion_id):
     empresa = request.empresa_activa
-    if not empresa or not request.user.es_admin(empresa):
-        messages.error(request, "No tiene permisos para modificar el estado de usuarios.")
+    if not empresa:
         return redirect('usuarios:lista')
 
     asignacion = get_object_or_404(EmpresaUsuario, id=asignacion_id, empresa=empresa)
-    if asignacion.user == request.user and not request.user.is_superadmin:
+    if asignacion.user == request.user and not (request.user.is_superadmin or request.user.is_superuser):
         messages.error(request, "No puede desactivar su propio acceso a la empresa.")
         return redirect('usuarios:lista')
 

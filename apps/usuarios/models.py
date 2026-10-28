@@ -27,42 +27,93 @@ class User(AbstractUser):
         return self.tema or 'oscuro'
 
     def empresas_activas(self):
-        if self.is_superadmin:
+        if self.is_superadmin or self.is_superuser:
             from apps.empresas.models import Empresa
             return Empresa.objects.filter(activa=True)
         return [eu.empresa for eu in self.empresas_asignadas.filter(activo=True, empresa__activa=True).select_related('empresa')]
 
+    def es_superadmin_user(self):
+        return bool(self.is_superadmin or self.is_superuser)
+
     def rol_en_empresa(self, empresa=None):
-        if self.is_superadmin or self.is_superuser:
+        if self.es_superadmin_user():
             return 'superadmin'
+        empresa = empresa or getattr(self, '_empresa_activa', None)
         if not empresa:
             return None
         asignacion = self.empresas_asignadas.filter(empresa=empresa, activo=True).first()
         return asignacion.rol if asignacion else None
 
+    @property
+    def rol_actual(self):
+        return self.rol_en_empresa()
+
+    @property
+    def rol_display(self):
+        r = self.rol_actual
+        roles_dict = {
+            'superadmin': 'Superadministrador Global',
+            'propietario': 'Propietario',
+            'admin': 'Administrador General',
+            'contador': 'Contador / Financiero',
+            'vendedor': 'Vendedor / Facturador',
+            'operador': 'Operador de Almacén',
+        }
+        return roles_dict.get(r, 'Usuario')
+
     def es_propietario(self, empresa=None):
-        if self.is_superadmin or self.is_superuser:
+        if self.es_superadmin_user():
             return True
         rol = self.rol_en_empresa(empresa)
         return rol == 'propietario'
 
     def es_admin(self, empresa=None):
-        if self.is_superadmin or self.is_superuser:
+        if self.es_superadmin_user():
             return True
         rol = self.rol_en_empresa(empresa)
         return rol in ('propietario', 'admin')
 
     def es_contador(self, empresa=None):
-        if self.is_superadmin or self.is_superuser:
+        if self.es_superadmin_user():
             return True
         rol = self.rol_en_empresa(empresa)
         return rol in ('propietario', 'admin', 'contador')
 
+    def es_vendedor(self, empresa=None):
+        if self.es_superadmin_user():
+            return True
+        rol = self.rol_en_empresa(empresa)
+        return rol in ('propietario', 'admin', 'vendedor')
+
+    def es_operador(self, empresa=None):
+        if self.es_superadmin_user():
+            return True
+        rol = self.rol_en_empresa(empresa)
+        return rol in ('propietario', 'admin', 'operador')
+
     def puede_facturar(self, empresa=None):
-        if self.is_superadmin or self.is_superuser:
+        if self.es_superadmin_user():
             return True
         rol = self.rol_en_empresa(empresa)
         return rol in ('propietario', 'admin', 'vendedor', 'contador')
+
+    def puede_inventario(self, empresa=None):
+        if self.es_superadmin_user():
+            return True
+        rol = self.rol_en_empresa(empresa)
+        return rol in ('propietario', 'admin', 'operador', 'vendedor')
+
+    def puede_contabilidad(self, empresa=None):
+        if self.es_superadmin_user():
+            return True
+        rol = self.rol_en_empresa(empresa)
+        return rol in ('propietario', 'admin', 'contador')
+
+    def puede_nomina(self, empresa=None):
+        if self.es_superadmin_user():
+            return True
+        rol = self.rol_en_empresa(empresa)
+        return rol in ('propietario', 'admin', 'contador')
 
 
 class EmpresaUsuario(models.Model):

@@ -12,20 +12,11 @@ def es_superadmin(user):
 
 @user_passes_test(es_superadmin)
 def backoffice_dashboard(request):
-    total_empresas = Empresa.objects.count()
-    empresas_activas = Empresa.objects.filter(activa=True).count()
-    total_usuarios = User.objects.count()
-    total_facturas_global = Factura.objects.count()
-
-    empresas_recientes = Empresa.objects.select_related('plan').order_by('-created_at')[:10]
-
-    return render(request, 'backoffice/dashboard.html', {
-        'total_empresas': total_empresas,
-        'empresas_activas': empresas_activas,
-        'total_usuarios': total_usuarios,
-        'total_facturas_global': total_facturas_global,
-        'empresas_recientes': empresas_recientes,
-    })
+    """
+    Ruta unificada: Redirige directamente al Dashboard Principal, donde el SuperAdmin
+    cuenta con su centro de comando global integrado sin rutas dispersas.
+    """
+    return redirect('core:dashboard')
 
 
 @user_passes_test(es_superadmin)

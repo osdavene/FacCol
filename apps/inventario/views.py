@@ -5,9 +5,11 @@ from django.contrib import messages
 from django.db.models import Q
 
 from apps.inventario.models import Producto, Categoria, UnidadMedida, MovimientoInventario
+from apps.usuarios.decorators import requiere_inventario
 
 
 @login_required
+@requiere_inventario
 def productos_lista(request):
     empresa = request.empresa_activa
     if not empresa:
@@ -40,6 +42,7 @@ def productos_lista(request):
 
 
 @login_required
+@requiere_inventario
 def producto_crear(request):
     empresa = request.empresa_activa
     if not empresa:
@@ -147,6 +150,7 @@ def producto_editar(request, producto_id):
 
 
 @login_required
+@requiere_inventario
 def kardex_view(request):
     empresa = request.empresa_activa
     if not empresa:

@@ -18,7 +18,7 @@ class TenantMiddleware(MiddlewareMixin):
 
         if empresa_id:
             try:
-                if request.user.is_superadmin:
+                if request.user.is_superadmin or request.user.is_superuser:
                     request.empresa_activa = Empresa.objects.filter(id=empresa_id, activa=True).first()
                 else:
                     asignacion = request.user.empresas_asignadas.filter(
@@ -33,7 +33,7 @@ class TenantMiddleware(MiddlewareMixin):
 
         # Si no hay empresa activa en sesión, seleccionar la primera disponible para el usuario
         if not request.empresa_activa:
-            if request.user.is_superadmin:
+            if request.user.is_superadmin or request.user.is_superuser:
                 primera = Empresa.objects.filter(activa=True).first()
                 if primera:
                     request.empresa_activa = primera
@@ -46,3 +46,5 @@ class TenantMiddleware(MiddlewareMixin):
                 if primera_asig:
                     request.empresa_activa = primera_asig.empresa
                     request.session['empresa_activa_id'] = primera_asig.empresa.id
+
+        request.user._empresa_activa = request.empresa_activa

@@ -15,9 +15,11 @@ from apps.facturacion.models import Factura, FacturaItem, ReciboCaja
 from apps.facturacion.pdf_service import generar_pdf_factura
 from apps.terceros.models import Tercero
 from apps.inventario.models import Producto, MovimientoInventario
+from apps.usuarios.decorators import requiere_facturacion
 
 
 @login_required
+@requiere_facturacion
 def facturas_lista(request):
     empresa = request.empresa_activa
     if not empresa:
@@ -47,6 +49,7 @@ def facturas_lista(request):
 
 
 @login_required
+@requiere_facturacion
 def factura_crear(request):
     empresa = request.empresa_activa
     if not empresa:
@@ -241,6 +244,7 @@ def recibos_lista(request):
 
 
 @login_required
+@requiere_facturacion
 def recibo_crear(request):
     empresa = request.empresa_activa
     if not empresa:

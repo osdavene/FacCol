@@ -7,9 +7,11 @@ from django.db import transaction
 
 from apps.contabilidad.models import PlanCuenta, AsientoContable, AsientoLinea
 from apps.terceros.models import Tercero
+from apps.usuarios.decorators import requiere_contador
 
 
 @login_required
+@requiere_contador
 def asientos_lista(request):
     empresa = request.empresa_activa
     if not empresa:
@@ -20,6 +22,7 @@ def asientos_lista(request):
 
 
 @login_required
+@requiere_contador
 def asiento_crear(request):
     empresa = request.empresa_activa
     if not empresa:
@@ -81,6 +84,7 @@ def asiento_crear(request):
 
 
 @login_required
+@requiere_contador
 def plan_cuentas_lista(request):
     empresa = request.empresa_activa
     if not empresa:
