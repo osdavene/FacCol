@@ -5,9 +5,17 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Iniciar Sesión — FacCol</title>
+    
+    <!-- Fuentes Tipográficas -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;700&family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+
+    <!-- Estilos Compilados Locales FacCol -->
+    <link rel="stylesheet" href="{% static 'css/app.css' %}">
+
+    <!-- Tailwind CDN como fallback dinámico -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
@@ -18,91 +26,210 @@
                         amber: { 400: '#fbbf24', 500: '#f59e0b', 600: '#d97706' },
                     },
                     fontFamily: {
-                        sans: ['Plus Jakarta Sans', 'sans-serif'],
-                        display: ['Outfit', 'sans-serif'],
+                        sans: ['DM Sans', 'Plus Jakarta Sans', 'sans-serif'],
+                        display: ['Syne', 'sans-serif'],
                     }
                 }
             }
         }
     </script>
+
+    <!-- Estilos Críticos Resilientes (inmunes a bloqueadores de anuncios / Brave Shields) -->
+    <style>
+        body {
+            background-color: #0b0f1a;
+            color: #e2e8f0;
+            font-family: 'DM Sans', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+            margin: 0;
+            padding: 0;
+            min-height: 100vh;
+        }
+        .font-display { font-family: 'Syne', system-ui, sans-serif; }
+    </style>
 </head>
-<body class="bg-[#090d16] text-slate-200 min-h-screen flex items-center justify-center p-4 relative overflow-hidden">
+<body class="bg-[#0b0f1a] text-slate-200 font-sans min-h-screen flex">
 
-    <!-- Fondo de gradientes dinámicos -->
-    <div class="absolute -top-40 -left-40 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl pointer-events-none"></div>
-    <div class="absolute -bottom-40 -right-40 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none"></div>
-
-    <div class="w-full max-w-md bg-[#111827] border border-[#1e2d47] rounded-3xl p-8 shadow-2xl relative z-10">
+    <!-- ══════════════════════════════════════════
+         PANEL IZQUIERDO DECORATIVO (DESKTOP)
+         ══════════════════════════════════════════ -->
+    <div class="hidden lg:flex lg:w-1/2 bg-[#111827] border-r border-[#1e2d47] flex-col justify-between p-12 relative overflow-hidden">
         
-        <!-- Brand / Header -->
-        <div class="text-center mb-8">
-            <div class="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-amber-500 to-amber-400 text-black font-black text-2xl shadow-xl shadow-amber-500/20 mb-4">
-                FC
+        <!-- Gradientes de Fondo -->
+        <div class="absolute inset-0 overflow-hidden pointer-events-none">
+            <div class="absolute -top-32 -left-32 w-96 h-96 bg-amber-500/10 rounded-full blur-3xl"></div>
+            <div class="absolute -bottom-32 -right-32 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl"></div>
+            <div class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-64 bg-amber-500/5 rounded-full blur-2xl"></div>
+        </div>
+
+        <!-- Logo & Titular -->
+        <div class="relative z-10">
+            <div class="flex items-center gap-3 mb-16">
+                <div class="w-12 h-12 bg-amber-500 rounded-2xl flex items-center justify-center font-display font-black text-black text-xl shadow-lg shadow-amber-500/20">
+                    FC
+                </div>
+                <div>
+                    <div class="font-display font-black text-2xl text-white tracking-tight">
+                        Fac<span class="text-amber-500">Col</span>
+                    </div>
+                    <div class="text-xs text-slate-400">Facturación Electrónica & ERP Colombia 🇨🇴</div>
+                </div>
             </div>
-            <h1 class="font-display font-extrabold text-2xl text-white tracking-tight">
-                Fac<span class="text-amber-500">Col</span>
-            </h1>
-            <p class="text-xs text-slate-400 mt-1">
-                Facturación Electrónica & ERP Multi-Empresa Colombia 🇨🇴
+
+            <h2 class="font-display font-bold text-4xl text-white leading-tight mb-4">
+                Gestiona tu<br>
+                <span class="text-amber-500">negocio</span> con<br>
+                confianza
+            </h2>
+            <p class="text-slate-400 text-base leading-relaxed">
+                Facturación electrónica DIAN, nómina, inventario, contabilidad PUC, punto de venta y más — todo en un solo sistema web moderno en Python.
             </p>
         </div>
 
-        <!-- Mensajes de Error / Info -->
-        {% if messages %}
-        <div class="mb-6 space-y-2">
-            {% for message in messages %}
-            <div class="p-3 rounded-xl border text-xs font-medium {% if message.tags == 'error' %}bg-red-500/10 border-red-500/30 text-red-300{% else %}bg-emerald-500/10 border-emerald-500/30 text-emerald-300{% endif %}">
-                {{ message }}
-            </div>
-            {% endfor %}
-        </div>
-        {% endif %}
-
-        <!-- Formulario -->
-        <form method="POST" action="{% url 'usuarios:login' %}" class="space-y-4">
-            {% csrf_token %}
-
-            <div>
-                <label class="block text-xs font-semibold text-slate-300 mb-1.5">Correo Electrónico o Usuario</label>
-                <div class="relative">
-                    <input type="text" name="login" required autofocus
-                           value="admin@faccol.com"
-                           placeholder="ejemplo@empresa.com"
-                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 transition">
-                    <i class="fas fa-envelope absolute left-3.5 top-3.5 text-slate-500 text-xs"></i>
+        <!-- Lista de Características Principales -->
+        <div class="relative z-10 space-y-4">
+            <div class="flex items-center gap-4">
+                <div class="w-10 h-10 bg-amber-500/10 border border-amber-500/20 rounded-xl flex items-center justify-center text-amber-500 flex-shrink-0">
+                    <i class="fas fa-file-invoice text-sm"></i>
+                </div>
+                <div>
+                    <div class="text-sm font-semibold text-white">Facturación Electrónica DIAN</div>
+                    <div class="text-xs text-slate-400">Código QR, CUFE y generación instantánea de PDF</div>
                 </div>
             </div>
 
-            <div>
-                <label class="block text-xs font-semibold text-slate-300 mb-1.5">Contraseña</label>
-                <div class="relative">
-                    <input type="password" name="password" required
-                           value="admin123"
-                           placeholder="••••••••"
-                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 transition">
-                    <i class="fas fa-lock absolute left-3.5 top-3.5 text-slate-500 text-xs"></i>
+            <div class="flex items-center gap-4">
+                <div class="w-10 h-10 bg-blue-500/10 border border-blue-500/20 rounded-xl flex items-center justify-center text-blue-500 flex-shrink-0">
+                    <i class="fas fa-boxes-stacked text-sm"></i>
+                </div>
+                <div>
+                    <div class="text-sm font-semibold text-white">Control de Inventario y Kardex</div>
+                    <div class="text-xs text-slate-400">Stock en tiempo real y valoración de existencias</div>
                 </div>
             </div>
 
-            <div class="flex items-center justify-between text-xs pt-1">
-                <label class="flex items-center gap-2 cursor-pointer text-slate-400">
-                    <input type="checkbox" name="remember" checked class="rounded border-[#1e2d47] text-amber-500 focus:ring-0">
-                    <span>Recordar sesión</span>
-                </label>
-                <span class="text-amber-500 hover:text-amber-400 text-[11px] cursor-pointer">¿Olvidó contraseña?</span>
+            <div class="flex items-center gap-4">
+                <div class="w-10 h-10 bg-emerald-500/10 border border-emerald-500/20 rounded-xl flex items-center justify-center text-emerald-500 flex-shrink-0">
+                    <i class="fas fa-cash-register text-sm"></i>
+                </div>
+                <div>
+                    <div class="text-sm font-semibold text-white">Punto de Venta POS & Cajas</div>
+                    <div class="text-xs text-slate-400">Turnos de caja, recibos rápidos y tickets térmicos</div>
+                </div>
             </div>
 
-            <button type="submit"
-                    class="w-full py-3 px-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-extrabold text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-amber-500/20 transition duration-150 transform active:scale-[0.98]">
-                Iniciar Sesión
-            </button>
-        </form>
-
-        <!-- Tarjeta de Acceso Rápido / Demo -->
-        <div class="mt-8 p-3 rounded-2xl bg-[#162034]/60 border border-[#1e2d47] text-[11px] text-slate-400 text-center">
-            <span class="text-amber-400 font-bold">Credenciales Demo:</span> <code>admin@faccol.com</code> / <code>admin123</code>
+            <div class="flex items-center gap-4">
+                <div class="w-10 h-10 bg-purple-500/10 border border-purple-500/20 rounded-xl flex items-center justify-center text-purple-500 flex-shrink-0">
+                    <i class="fas fa-users-cog text-sm"></i>
+                </div>
+                <div>
+                    <div class="text-sm font-semibold text-white">Nómina & Servicios Técnicos</div>
+                    <div class="text-xs text-slate-400">Liquidación laboral colombiana y tablero Kanban</div>
+                </div>
+            </div>
         </div>
 
+        <!-- Footer Izquierdo -->
+        <div class="relative z-10 text-xs text-slate-500">
+            FacCol Python Edition © {% now "Y" %} · Hecho en Colombia 🇨🇴
+        </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════
+         PANEL DERECHO — FORMULARIO DE ACCESO
+         ══════════════════════════════════════════ -->
+    <div class="w-full lg:w-1/2 flex items-center justify-center p-6 lg:p-12">
+        <div class="w-full max-w-md">
+
+            <!-- Logo Móvil -->
+            <div class="flex items-center gap-3 mb-8 lg:hidden">
+                <div class="w-10 h-10 bg-amber-500 rounded-xl flex items-center justify-center font-display font-black text-black text-lg shadow-md shadow-amber-500/20">
+                    FC
+                </div>
+                <div>
+                    <div class="font-display font-black text-xl text-white tracking-tight">
+                        Fac<span class="text-amber-500">Col</span>
+                    </div>
+                    <div class="text-[11px] text-slate-400">ERP Empresarial Colombia</div>
+                </div>
+            </div>
+
+            <h1 class="font-display font-bold text-3xl text-white mb-2">Iniciar Sesión</h1>
+            <p class="text-slate-400 text-sm mb-6">Ingresa tus credenciales para acceder a la plataforma</p>
+
+            <!-- Mensajes de Error / Feedback -->
+            {% if messages %}
+            <div class="mb-6 space-y-2">
+                {% for message in messages %}
+                <div class="p-3.5 rounded-xl border text-xs font-semibold flex items-center gap-2.5 {% if message.tags == 'error' %}bg-rose-500/10 border-rose-500/30 text-rose-300{% else %}bg-emerald-500/10 border-emerald-500/30 text-emerald-300{% endif %}">
+                    <i class="fas {% if message.tags == 'error' %}fa-circle-exclamation text-rose-400{% else %}fa-circle-check text-emerald-400{% endif %}"></i>
+                    <span>{{ message }}</span>
+                </div>
+                {% endfor %}
+            </div>
+            {% endif %}
+
+            <!-- Formulario de Login -->
+            <form method="POST" action="{% url 'usuarios:login' %}" class="space-y-4">
+                {% csrf_token %}
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1.5 uppercase tracking-wider">
+                        Correo Electrónico o Usuario
+                    </label>
+                    <div class="relative">
+                        <i class="fas fa-envelope absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 text-xs"></i>
+                        <input type="text" name="login" required autofocus
+                               value="admin@faccol.com"
+                               placeholder="admin@faccol.com"
+                               class="w-full bg-[#111827] border border-[#1e2d47] rounded-xl pl-11 pr-4 py-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/30 transition">
+                    </div>
+                </div>
+
+                <div>
+                    <div class="flex items-center justify-between mb-1.5">
+                        <label class="text-xs font-semibold text-slate-300 uppercase tracking-wider">
+                            Contraseña
+                        </label>
+                        <span class="text-amber-500 hover:text-amber-400 text-xs cursor-pointer transition">
+                            ¿Olvidó contraseña?
+                        </span>
+                    </div>
+                    <div class="relative">
+                        <i class="fas fa-lock absolute left-4 top-1/2 -translate-y-1/2 text-slate-500 text-xs"></i>
+                        <input type="password" name="password" required
+                               value="admin123"
+                               placeholder="••••••••"
+                               class="w-full bg-[#111827] border border-[#1e2d47] rounded-xl pl-11 pr-4 py-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500/30 transition">
+                    </div>
+                </div>
+
+                <div class="flex items-center justify-between text-xs pt-1">
+                    <label class="flex items-center gap-2 cursor-pointer text-slate-400 hover:text-slate-300">
+                        <input type="checkbox" name="remember" checked class="rounded border-[#1e2d47] text-amber-500 bg-[#111827] focus:ring-0">
+                        <span>Recordar sesión en este dispositivo</span>
+                    </label>
+                </div>
+
+                <button type="submit"
+                        class="w-full py-3.5 px-4 bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-extrabold text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-amber-500/25 transition duration-150 transform active:scale-[0.98] flex items-center justify-center gap-2">
+                    <i class="fas fa-right-to-bracket text-xs"></i>
+                    <span>Iniciar Sesión</span>
+                </button>
+            </form>
+
+            <!-- Tarjeta de Acceso Rápido / Demo -->
+            <div class="mt-8 p-4 rounded-2xl bg-[#111827] border border-[#1e2d47] text-xs text-slate-400">
+                <div class="flex items-center gap-2 mb-2 font-bold text-amber-400">
+                    <i class="fas fa-key"></i>
+                    <span>Credenciales de Acceso Demo:</span>
+                </div>
+                <div class="flex items-center justify-between text-[11px] bg-[#0b0f1a] p-2.5 rounded-xl border border-[#1e2d47]/70">
+                    <span class="text-slate-300"><span class="text-slate-500">Usuario:</span> <code>admin@faccol.com</code></span>
+                    <span class="text-slate-300"><span class="text-slate-500">Clave:</span> <code>admin123</code></span>
+                </div>
+            </div>
+
+        </div>
     </div>
 
 </body>
