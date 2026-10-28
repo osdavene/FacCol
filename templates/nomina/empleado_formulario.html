@@ -1,0 +1,92 @@
+{% extends 'base.html' %}
+
+{% block title %}Registrar Empleado{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto space-y-6">
+    <div class="flex items-center gap-3">
+        <a href="{% url 'nomina:empleados_lista' %}" class="p-2.5 rounded-xl bg-[#162034] text-slate-400 hover:text-white transition">
+            <i class="fas fa-arrow-left"></i>
+        </a>
+        <div>
+            <h1 class="font-display font-extrabold text-2xl text-white">Registrar Empleado</h1>
+            <p class="text-xs text-slate-400">Ficha técnica para liquidación de nómina y seguridad social</p>
+        </div>
+    </div>
+
+    <form method="POST" class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 sm:p-8 space-y-5 shadow-xl text-xs">
+        {% csrf_token %}
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+                <label class="block font-semibold text-slate-300 mb-1">No. Documento *</label>
+                <input type="text" name="numero_documento" required placeholder="Ej: 1020304050"
+                       class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-500 font-mono">
+            </div>
+            <div>
+                <label class="block font-semibold text-slate-300 mb-1">Nombres *</label>
+                <input type="text" name="nombres" required placeholder="Juan Carlos"
+                       class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-500">
+            </div>
+            <div>
+                <label class="block font-semibold text-slate-300 mb-1">Apellidos *</label>
+                <input type="text" name="apellidos" required placeholder="Gómez Restrepo"
+                       class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-500">
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+                <label class="block font-semibold text-slate-300 mb-1">Cargo *</label>
+                <input type="text" name="cargo" required placeholder="Ej: Analista Comercial"
+                       class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-500">
+            </div>
+            <div>
+                <label class="block font-semibold text-slate-300 mb-1">Salario Base Mensual ($ COP) *</label>
+                <input type="number" step="0.01" name="salario_base" value="1423500" required
+                       class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-500 font-bold">
+            </div>
+            <div>
+                <label class="block font-semibold text-slate-300 mb-1">Tipo de Contrato</label>
+                <select name="tipo_contrato" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-500">
+                    <option value="TERMINO_INDEFINIDO">Término Indefinido</option>
+                    <option value="TERMINO_FIJO">Término Fijo</option>
+                    <option value="OBRA_LABOR">Por Obra o Labor</option>
+                </select>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+                <label class="block font-semibold text-slate-300 mb-1">Entidad EPS (Salud)</label>
+                <input type="text" name="eps" placeholder="Ej: EPS Sura"
+                       class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-500">
+            </div>
+            <div>
+                <label class="block font-semibold text-slate-300 mb-1">Fondo de Pensión</label>
+                <input type="text" name="fondo_pension" placeholder="Ej: Porvenir / Colfondos"
+                       class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-500">
+            </div>
+            <div>
+                <label class="block font-semibold text-slate-300 mb-1">Caja de Compensación</label>
+                <input type="text" name="caja_compensacion" placeholder="Ej: Compensar / Colsubsidio"
+                       class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-500">
+            </div>
+        </div>
+
+        <div class="p-3 rounded-2xl bg-[#162034] border border-[#1e2d47]">
+            <label class="flex items-center gap-2 cursor-pointer font-bold text-amber-400">
+                <input type="checkbox" name="tiene_auxilio_transporte" checked class="rounded text-amber-500 focus:ring-0">
+                <span>¿Aplica Auxilio de Transporte de Ley? (Si el salario es menor o igual a 2 SMMLV)</span>
+            </label>
+        </div>
+
+        <div class="flex items-center justify-end gap-3 pt-4 border-t border-[#1e2d47]">
+            <a href="{% url 'nomina:empleados_lista' %}" class="px-4 py-2 rounded-xl bg-[#162034] text-slate-300 hover:text-white font-bold transition">Cancelar</a>
+            <button type="submit" class="px-5 py-2 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white font-black uppercase tracking-wider transition">
+                Guardar Empleado
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}

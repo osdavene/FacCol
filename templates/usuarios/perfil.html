@@ -1,0 +1,62 @@
+{% extends 'base.html' %}
+
+{% block title %}Mi Perfil de Usuario{% endblock %}
+
+{% block content %}
+<div class="max-w-xl mx-auto space-y-6">
+    <div class="flex items-center gap-3">
+        <a href="{% url 'core:dashboard' %}" class="p-2.5 rounded-xl bg-[#162034] text-slate-400 hover:text-white transition">
+            <i class="fas fa-arrow-left"></i>
+        </a>
+        <div>
+            <h1 class="font-display font-extrabold text-2xl text-white">Mi Perfil</h1>
+            <p class="text-xs text-slate-400">Datos personales, preferencias de tema visual y seguridad</p>
+        </div>
+    </div>
+
+    <form method="POST" enctype="multipart/form-data" class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 sm:p-8 space-y-4 shadow-xl text-xs">
+        {% csrf_token %}
+
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <label class="block font-semibold text-slate-300 mb-1">Nombres</label>
+                <input type="text" name="first_name" value="{{ user.first_name }}" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+            </div>
+            <div>
+                <label class="block font-semibold text-slate-300 mb-1">Apellidos</label>
+                <input type="text" name="last_name" value="{{ user.last_name }}" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+            </div>
+        </div>
+
+        <div>
+            <label class="block font-semibold text-slate-300 mb-1">Correo Electrónico (Solo Lectura)</label>
+            <input type="email" value="{{ user.email }}" disabled class="w-full bg-[#141c2e] border border-[#1e2d47] rounded-xl px-3 py-2 text-slate-400 cursor-not-allowed">
+        </div>
+
+        <div>
+            <label class="block font-semibold text-slate-300 mb-1">Teléfono / WhatsApp</label>
+            <input type="text" name="telefono" value="{{ user.telefono }}" placeholder="300 123 4567" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+        </div>
+
+        <div>
+            <label class="block font-semibold text-slate-300 mb-1">Tema Visual Preferido</label>
+            <select name="tema" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                <option value="oscuro" {% if user.tema == 'oscuro' %}selected{% endif %}>Oscuro (Por Defecto)</option>
+                <option value="claro" {% if user.tema == 'claro' %}selected{% endif %}>Claro</option>
+                <option value="dashtrap" {% if user.tema == 'dashtrap' %}selected{% endif %}>Dashtrap (Alto Contraste)</option>
+            </select>
+        </div>
+
+        <div class="pt-4 border-t border-[#1e2d47]">
+            <label class="block font-semibold text-slate-300 mb-1">Cambiar Contraseña (Dejar vacío para conservar actual)</label>
+            <input type="password" name="nuevo_password" placeholder="Nueva contraseña segura..." class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+        </div>
+
+        <div class="flex items-center justify-end gap-3 pt-4 border-t border-[#1e2d47]">
+            <button type="submit" class="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black uppercase tracking-wider transition">
+                Guardar Cambios
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}

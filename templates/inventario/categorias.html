@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+
+{% block title %}Categorías de Inventario{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto space-y-6">
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="font-display font-extrabold text-2xl text-white">Categorías de Inventario</h1>
+            <p class="text-xs text-slate-400">Organización y segmentación de catálogo comercial</p>
+        </div>
+        <a href="{% url 'inventario:productos_lista' %}" class="px-4 py-2 rounded-xl bg-[#162034] text-slate-300 hover:text-white text-xs font-bold transition">
+            Volver a Productos
+        </a>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <!-- Formulario Crear Categoría -->
+        <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 shadow-xl">
+            <h2 class="font-display font-bold text-sm text-white mb-3">Nueva Categoría</h2>
+            <form method="POST" class="space-y-3 text-xs">
+                {% csrf_token %}
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Nombre *</label>
+                    <input type="text" name="nombre" required placeholder="Ej: Electrónica"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-500">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Descripción</label>
+                    <textarea name="descripcion" rows="2" placeholder="Detalles de la categoría..."
+                              class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl p-2.5 text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"></textarea>
+                </div>
+                <button type="submit" class="w-full py-2 px-3 bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs uppercase tracking-wider rounded-xl transition">
+                    Crear Categoría
+                </button>
+            </form>
+        </div>
+
+        <!-- Lista de Categorías -->
+        <div class="md:col-span-2 bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 shadow-xl space-y-3">
+            <h2 class="font-display font-bold text-sm text-white mb-3">Categorías Registradas</h2>
+            <div class="divide-y divide-[#1e2d47]/50 text-xs">
+                {% for c in categorias %}
+                <div class="py-3 flex items-center justify-between">
+                    <div>
+                        <div class="font-bold text-white text-sm">{{ c.nombre }}</div>
+                        <div class="text-[10px] text-slate-400">{{ c.descripcion|default:"Sin descripción" }}</div>
+                    </div>
+                    <span class="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold">Activa</span>
+                </div>
+                {% empty %}
+                <div class="p-6 text-center text-slate-500">No hay categorías creadas aún.</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

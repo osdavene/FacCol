@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Detalle Nómina {{ nomina.periodo_mes }}/{{ nomina.periodo_ano }}{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <a href="{% url 'nomina:nominas_lista' %}" class="p-2.5 rounded-xl bg-[#162034] text-slate-400 hover:text-white transition">
+                <i class="fas fa-arrow-left"></i>
+            </a>
+            <div>
+                <h1 class="font-display font-extrabold text-2xl text-white">Nómina {{ nomina.periodo_mes }}/{{ nomina.periodo_ano }}</h1>
+                <p class="text-xs text-slate-400">Total liquidado a pagar: <b class="text-emerald-400">${{ nomina.total_neto|floatformat:0|intcomma }} COP</b></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Tabla Detalle Empleados -->
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl overflow-hidden shadow-xl">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+                <thead>
+                    <tr class="bg-[#141c2e] text-slate-400 font-bold uppercase tracking-wider text-[10px] border-b border-[#1e2d47]">
+                        <th class="p-4">Empleado</th>
+                        <th class="p-4 text-right">Básico</th>
+                        <th class="p-4 text-right">Aux. Transp</th>
+                        <th class="p-4 text-right">Total Devengado</th>
+                        <th class="p-4 text-right">Salud (4%)</th>
+                        <th class="p-4 text-right">Pensión (4%)</th>
+                        <th class="p-4 text-right">Neto a Pagar</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-[#1e2d47]/50">
+                    {% for d in nomina.detalles.all %}
+                    <tr class="hover:bg-[#162034] transition">
+                        <td class="p-4">
+                            <div class="font-bold text-white text-sm">{{ d.empleado.nombre_completo }}</div>
+                            <div class="text-[10px] text-slate-500">{{ d.empleado.cargo }} — CC {{ d.empleado.numero_documento }}</div>
+                        </td>
+                        <td class="p-4 text-right text-slate-300">${{ d.sueldo_basico_devengado|floatformat:0|intcomma }}</td>
+                        <td class="p-4 text-right text-slate-300">${{ d.auxilio_transporte|floatformat:0|intcomma }}</td>
+                        <td class="p-4 text-right font-bold text-white">${{ d.total_devengado|floatformat:0|intcomma }}</td>
+                        <td class="p-4 text-right text-red-400">-${{ d.salud_empleado_4|floatformat:0|intcomma }}</td>
+                        <td class="p-4 text-right text-red-400">-${{ d.pension_empleado_4|floatformat:0|intcomma }}</td>
+                        <td class="p-4 text-right font-black text-emerald-400 text-sm">${{ d.neto_a_pagar|floatformat:0|intcomma }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="7" class="p-8 text-center text-slate-500">No hay detalles de empleados en esta nómina.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

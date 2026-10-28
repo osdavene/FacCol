@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Remisiones de Entrega{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+            <h1 class="font-display font-extrabold text-2xl text-white">Remisiones de Entrega</h1>
+            <p class="text-xs text-slate-400">Control de despacho de mercancía y comprobantes de salida</p>
+        </div>
+        <a href="{% url 'facturacion:factura_crear' %}"
+           class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-extrabold text-xs uppercase tracking-wider shadow-lg shadow-amber-500/20 transition flex items-center gap-2">
+            <i class="fas fa-plus"></i> Nueva Remisión
+        </a>
+    </div>
+
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl overflow-hidden shadow-xl">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+                <thead>
+                    <tr class="bg-[#141c2e] text-slate-400 font-bold uppercase tracking-wider text-[10px] border-b border-[#1e2d47]">
+                        <th class="p-4">Número</th>
+                        <th class="p-4">Destinatario</th>
+                        <th class="p-4">Fecha</th>
+                        <th class="p-4 text-right">Valor Declarado</th>
+                        <th class="p-4 text-center">Estado</th>
+                        <th class="p-4 text-right">Acción</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-[#1e2d47]/50">
+                    {% for rem in remisiones %}
+                    <tr class="hover:bg-[#162034] transition">
+                        <td class="p-4 font-bold text-amber-400">{{ rem.numero_completo }}</td>
+                        <td class="p-4 font-semibold text-white">{{ rem.tercero.razon_social }}</td>
+                        <td class="p-4 text-slate-400">{{ rem.fecha_emision|date:"d/m/Y" }}</td>
+                        <td class="p-4 text-right font-black text-white">${{ rem.total|floatformat:0|intcomma }}</td>
+                        <td class="p-4 text-center">
+                            <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-blue-500/10 text-blue-400 border border-blue-500/20 uppercase">{{ rem.estado }}</span>
+                        </td>
+                        <td class="p-4 text-right">
+                            <a href="{% url 'facturacion:factura_detalle' rem.id %}" class="p-2 rounded-xl bg-[#162034] text-slate-300 hover:text-white inline-block"><i class="fas fa-eye text-xs"></i></a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="6" class="p-8 text-center text-slate-500">No hay remisiones emitidas.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+
+{% block title %}Plan de Cuentas (PUC Colombia){% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+            <h1 class="font-display font-extrabold text-2xl text-white">Plan Único de Cuentas (PUC)</h1>
+            <p class="text-xs text-slate-400">Catálogo oficial contable adaptado a Colombia</p>
+        </div>
+        <form method="GET" class="w-full sm:w-72 relative">
+            <input type="text" name="q" value="{{ busqueda }}" placeholder="Buscar por código o nombre..."
+                   class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl pl-9 pr-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500">
+            <i class="fas fa-search absolute left-3 top-2.5 text-slate-500 text-xs"></i>
+        </form>
+    </div>
+
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl overflow-hidden shadow-xl">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+                <thead>
+                    <tr class="bg-[#141c2e] text-slate-400 font-bold uppercase tracking-wider text-[10px] border-b border-[#1e2d47]">
+                        <th class="p-4">Código PUC</th>
+                        <th class="p-4">Nombre de la Cuenta</th>
+                        <th class="p-4 text-center">Naturaleza</th>
+                        <th class="p-4 text-center">Permite Movimiento</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-[#1e2d47]/50">
+                    {% for c in cuentas %}
+                    <tr class="hover:bg-[#162034] transition">
+                        <td class="p-4 font-mono font-bold text-amber-400">{{ c.codigo }}</td>
+                        <td class="p-4 font-semibold text-white">{{ c.nombre }}</td>
+                        <td class="p-4 text-center">
+                            <span class="px-2 py-0.5 rounded text-[10px] font-bold {% if c.naturaleza == 'DEBITO' %}bg-sky-500/10 text-sky-400{% else %}bg-purple-500/10 text-purple-400{% endif %}">
+                                {{ c.naturaleza }}
+                            </span>
+                        </td>
+                        <td class="p-4 text-center">
+                            {% if c.permite_movimiento %}
+                            <i class="fas fa-circle-check text-emerald-400 text-xs"></i>
+                            {% else %}
+                            <span class="text-slate-500 text-[10px]">Cuenta Mayor</span>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="4" class="p-8 text-center text-slate-500">No se encontraron cuentas contables.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

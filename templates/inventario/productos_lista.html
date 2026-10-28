@@ -1,0 +1,108 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Inventario & Productos{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+            <h1 class="font-display font-extrabold text-2xl text-white">Inventario & Catálogo</h1>
+            <p class="text-xs text-slate-400">Control de stock, precios de venta, costos y alertas mínimas</p>
+        </div>
+        <div class="flex items-center gap-2">
+            <a href="{% url 'inventario:kardex' %}" class="px-3.5 py-2 rounded-xl bg-[#162034] hover:bg-[#1e2d47] text-slate-300 text-xs font-bold transition flex items-center gap-2">
+                <i class="fas fa-list-check"></i> Kardex
+            </a>
+            <a href="{% url 'inventario:producto_crear' %}"
+               class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-sky-500 to-blue-600 hover:from-sky-400 hover:to-blue-500 text-white font-extrabold text-xs uppercase tracking-wider shadow-lg shadow-sky-500/20 transition flex items-center gap-2">
+                <i class="fas fa-plus"></i> Nuevo Producto
+            </a>
+        </div>
+    </div>
+
+    <!-- Filtros y Búsqueda -->
+    <div class="bg-[#111827] border border-[#1e2d47] p-4 rounded-2xl flex flex-col md:flex-row gap-3 items-center justify-between">
+        <div class="flex items-center gap-2 overflow-x-auto w-full md:w-auto pb-2 md:pb-0">
+            <a href="{% url 'inventario:productos_lista' %}" class="px-3 py-1.5 rounded-xl text-xs font-bold transition {% if not categoria_sel %}bg-amber-500 text-black{% else %}bg-[#162034] text-slate-300 hover:bg-[#1e2d47]{% endif %}">
+                Todas las Categorías
+            </a>
+            {% for cat in categorias %}
+            <a href="{% url 'inventario:productos_lista' %}?categoria={{ cat.id }}" class="px-3 py-1.5 rounded-xl text-xs font-bold transition {% if categoria_sel == cat.id|stringformat:'s' %}bg-sky-500 text-white{% else %}bg-[#162034] text-slate-300 hover:bg-[#1e2d47]{% endif %}">
+                {{ cat.nombre }}
+            </a>
+            {% endfor %}
+        </div>
+
+        <form method="GET" class="w-full md:w-72 relative">
+            <input type="text" name="q" value="{{ busqueda }}" placeholder="Buscar por nombre o código SKU..."
+                   class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl pl-9 pr-4 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500">
+            <i class="fas fa-search absolute left-3 top-2.5 text-slate-500 text-xs"></i>
+        </form>
+    </div>
+
+    <!-- Tabla de Productos -->
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl overflow-hidden shadow-xl">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+                <thead>
+                    <tr class="bg-[#141c2e] text-slate-400 font-bold uppercase tracking-wider text-[10px] border-b border-[#1e2d47]">
+                        <th class="p-4">Código / SKU</th>
+                        <th class="p-4">Producto</th>
+                        <th class="p-4">Categoría</th>
+                        <th class="p-4 text-right">Precio Venta</th>
+                        <th class="p-4 text-right">Costo</th>
+                        <th class="p-4 text-center">Stock Actual</th>
+                        <th class="p-4 text-right">Acción</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-[#1e2d47]/50">
+                    {% for p in productos %}
+                    <tr class="hover:bg-[#162034] transition">
+                        <td class="p-4 font-mono font-bold text-amber-400">{{ p.codigo }}</td>
+                        <td class="p-4">
+                            <div class="font-bold text-white text-sm">{{ p.nombre }}</div>
+                            <div class="text-[10px] text-slate-500 truncate max-w-xs">{{ p.descripcion|default:"Sin descripción" }}</div>
+                        </td>
+                        <td class="p-4 text-slate-300">
+                            {{ p.categoria.nombre|default:"General" }}
+                        </td>
+                        <td class="p-4 text-right font-black text-white">
+                            ${{ p.precio_venta|floatformat:0|intcomma }} COP
+                            <span class="text-[9px] text-slate-500 block">+IVA {{ p.tarifa_iva|floatformat:0 }}%</span>
+                        </td>
+                        <td class="p-4 text-right text-slate-400">
+                            ${{ p.costo_unitario|floatformat:0|intcomma }}
+                        </td>
+                        <td class="p-4 text-center">
+                            {% if p.maneja_inventario %}
+                                {% if p.stock_bajo %}
+                                    <span class="px-2.5 py-1 rounded-full text-[10px] font-black uppercase bg-red-500/10 text-red-400 border border-red-500/20">
+                                        {{ p.stock_actual }} (Bajo)
+                                    </span>
+                                {% else %}
+                                    <span class="px-2.5 py-1 rounded-full text-[10px] font-black uppercase bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                        {{ p.stock_actual }} {{ p.unidad_medida.codigo|default:"UND" }}
+                                    </span>
+                                {% endif %}
+                            {% else %}
+                                <span class="text-slate-500 text-[10px] font-semibold">Servicio</span>
+                            {% endif %}
+                        </td>
+                        <td class="p-4 text-right">
+                            <a href="{% url 'inventario:producto_editar' p.id %}" class="p-2 rounded-xl bg-[#162034] hover:bg-[#1f2c47] text-slate-300 hover:text-white inline-block">
+                                <i class="fas fa-pen-to-square text-xs"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="7" class="p-8 text-center text-slate-500">No hay productos registrados en el inventario.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

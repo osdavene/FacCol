@@ -1,0 +1,70 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Libro Diario (Asientos Contables){% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+            <h1 class="font-display font-extrabold text-2xl text-white">Contabilidad & Libro Diario</h1>
+            <p class="text-xs text-slate-400">Asientos contables automáticos y manuales con cuentas PUC</p>
+        </div>
+        <div class="flex gap-2">
+            <a href="{% url 'contabilidad:plan_cuentas_lista' %}" class="px-4 py-2 rounded-xl bg-[#162034] text-slate-300 hover:text-white text-xs font-bold transition">
+                Plan de Cuentas (PUC)
+            </a>
+            <a href="{% url 'contabilidad:asiento_crear' %}" class="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-black font-extrabold text-xs uppercase tracking-wider transition flex items-center gap-1.5">
+                <i class="fas fa-plus"></i> Nuevo Asiento
+            </a>
+        </div>
+    </div>
+
+    <div class="space-y-4">
+        {% for a in asientos %}
+        <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-5 shadow-xl space-y-3">
+            <div class="flex items-center justify-between border-b border-[#1e2d47] pb-3 text-xs">
+                <div class="flex items-center gap-3">
+                    <span class="font-bold text-amber-400 text-sm">{{ a.numero_comprobante }}</span>
+                    <span class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-bold uppercase text-[10px]">{{ a.tipo }}</span>
+                    <span class="text-slate-400">{{ a.fecha|date:"d/m/Y" }}</span>
+                </div>
+                <div class="font-semibold text-slate-200">
+                    {{ a.concepto }}
+                    {% if a.referencia_origen %}<span class="text-slate-500 font-mono text-[10px]">({{ a.referencia_origen }})</span>{% endif %}
+                </div>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs">
+                    <thead>
+                        <tr class="text-slate-500 font-bold uppercase tracking-wider text-[10px]">
+                            <th class="pb-2">Cuenta PUC</th>
+                            <th class="pb-2">Tercero</th>
+                            <th class="pb-2">Detalle</th>
+                            <th class="pb-2 text-right">Débito ($ COP)</th>
+                            <th class="pb-2 text-right">Crédito ($ COP)</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-[#1e2d47]/30">
+                        {% for l in a.lineas.all %}
+                        <tr>
+                            <td class="py-1.5 font-mono text-amber-400 font-bold">{{ l.cuenta.codigo }} - {{ l.cuenta.nombre }}</td>
+                            <td class="py-1.5 text-slate-300">{{ l.tercero.razon_social|default:"-" }}</td>
+                            <td class="py-1.5 text-slate-400">{{ l.descripcion|default:"-" }}</td>
+                            <td class="py-1.5 text-right font-bold text-white">${{ l.debito|floatformat:0|intcomma }}</td>
+                            <td class="py-1.5 text-right font-bold text-white">${{ l.credito|floatformat:0|intcomma }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% empty %}
+        <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-8 text-center text-slate-500 text-xs">
+            No hay comprobantes contables registrados en el período.
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

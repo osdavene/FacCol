@@ -1,0 +1,90 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Panel Superadmin Backoffice{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+            <h1 class="font-display font-extrabold text-2xl text-white flex items-center gap-2">
+                <i class="fas fa-shield-halved text-amber-500"></i> Backoffice Multi-Empresa
+            </h1>
+            <p class="text-xs text-slate-400">Supervisión global de empresas inquilinas, suscripciones y volumen del sistema</p>
+        </div>
+        <a href="{% url 'backoffice:empresa_crear' %}"
+           class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-extrabold text-xs uppercase tracking-wider transition flex items-center gap-2">
+            <i class="fas fa-building-circle-check"></i> Nueva Empresa Inquilina
+        </a>
+    </div>
+
+    <!-- 4 Métricas Globales -->
+    <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
+        <div class="bg-[#111827] border border-[#1e2d47] p-5 rounded-2xl">
+            <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Empresas Registradas</span>
+            <div class="font-display font-black text-2xl text-white mt-2">{{ total_empresas }}</div>
+        </div>
+        <div class="bg-[#111827] border border-[#1e2d47] p-5 rounded-2xl">
+            <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Empresas Activas</span>
+            <div class="font-display font-black text-2xl text-emerald-400 mt-2">{{ empresas_activas }}</div>
+        </div>
+        <div class="bg-[#111827] border border-[#1e2d47] p-5 rounded-2xl">
+            <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Usuarios Globales</span>
+            <div class="font-display font-black text-2xl text-purple-400 mt-2">{{ total_usuarios }}</div>
+        </div>
+        <div class="bg-[#111827] border border-[#1e2d47] p-5 rounded-2xl">
+            <span class="text-xs font-semibold text-slate-400 uppercase tracking-wider">Facturas Emitidas Total</span>
+            <div class="font-display font-black text-2xl text-amber-400 mt-2">{{ total_facturas_global }}</div>
+        </div>
+    </div>
+
+    <!-- Tabla de Empresas Recientes -->
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl overflow-hidden shadow-xl">
+        <div class="p-5 border-b border-[#1e2d47] flex justify-between items-center">
+            <h2 class="font-display font-bold text-sm text-white">Inquilinos Recientes</h2>
+            <a href="{% url 'backoffice:empresas_lista' %}" class="text-xs font-bold text-amber-500 hover:underline">Ver todas</a>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+                <thead>
+                    <tr class="bg-[#141c2e] text-slate-400 font-bold uppercase tracking-wider text-[10px] border-b border-[#1e2d47]">
+                        <th class="p-4">Empresa</th>
+                        <th class="p-4">NIT</th>
+                        <th class="p-4">Plan</th>
+                        <th class="p-4">Prefijo DIAN</th>
+                        <th class="p-4">Fecha Registro</th>
+                        <th class="p-4 text-center">Estado</th>
+                        <th class="p-4 text-right">Acción</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-[#1e2d47]/50">
+                    {% for emp in empresas_recientes %}
+                    <tr class="hover:bg-[#162034] transition">
+                        <td class="p-4">
+                            <div class="font-bold text-white text-sm">{{ emp.razon_social }}</div>
+                            <div class="text-[10px] text-slate-500">{{ emp.email }}</div>
+                        </td>
+                        <td class="p-4 font-mono font-bold text-amber-400">{{ emp.nit_completo }}</td>
+                        <td class="p-4 text-slate-300">{{ emp.plan.nombre|default:"Sin plan" }}</td>
+                        <td class="p-4 font-mono text-slate-300">{{ emp.prefijo_factura }}</td>
+                        <td class="p-4 text-slate-400">{{ emp.created_at|date:"d/m/Y" }}</td>
+                        <td class="p-4 text-center">
+                            <span class="px-2 py-0.5 rounded text-[10px] font-bold {% if emp.activa %}bg-emerald-500/10 text-emerald-400 border border-emerald-500/20{% else %}bg-red-500/10 text-red-400 border border-red-500/20{% endif %}">
+                                {% if emp.activa %}Activa{% else %}Inactiva{% endif %}
+                            </span>
+                        </td>
+                        <td class="p-4 text-right">
+                            <a href="{% url 'backoffice:empresa_editar' emp.id %}" class="p-2 rounded-xl bg-[#162034] text-slate-300 hover:text-white inline-block">
+                                <i class="fas fa-sliders text-xs"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="7" class="p-8 text-center text-slate-500">No hay empresas inquilinas registradas.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,84 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Orden OS-{{ orden.consecutivo }}{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto space-y-6">
+    <div class="flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <a href="{% url 'servicios:ordenes_lista' %}" class="p-2.5 rounded-xl bg-[#162034] text-slate-400 hover:text-white transition">
+                <i class="fas fa-arrow-left"></i>
+            </a>
+            <div>
+                <h1 class="font-display font-extrabold text-2xl text-white">Orden OS-{{ orden.consecutivo }}</h1>
+                <p class="text-xs text-slate-400">Equipo: <b class="text-white">{{ orden.equipo.marca }} {{ orden.equipo.modelo }}</b> (S/N: {{ orden.equipo.serial }})</p>
+            </div>
+        </div>
+        <span class="px-3 py-1 rounded-full text-xs font-black uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20">
+            {{ orden.get_estado_display }}
+        </span>
+    </div>
+
+    <form method="POST" enctype="multipart/form-data" class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 sm:p-8 space-y-5 shadow-xl text-xs">
+        {% csrf_token %}
+
+        <div class="p-4 rounded-2xl bg-[#162034] border border-[#1e2d47] space-y-2">
+            <div class="font-bold text-slate-400 uppercase text-[10px]">Cliente Adquiriente</div>
+            <div class="text-white font-bold text-sm">{{ orden.cliente.razon_social }}</div>
+            <div class="text-slate-400 text-xs">{{ orden.cliente.telefono }} — {{ orden.cliente.email }}</div>
+            <div class="pt-2 text-slate-300"><b>Falla Inicial Reportada:</b> {{ orden.falla_reportada }}</div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+                <label class="block font-semibold text-slate-300 mb-1">Estado de la Orden</label>
+                <select name="estado" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-500">
+                    {% for cod, lbl in orden.ESTADO_CHOICES %}
+                    <option value="{{ cod }}" {% if orden.estado == cod %}selected{% endif %}>{{ lbl }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Costo Repuestos ($)</label>
+                    <input type="number" step="0.01" name="costo_repuestos" value="{{ orden.costo_repuestos }}"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Mano de Obra ($)</label>
+                    <input type="number" step="0.01" name="costo_mano_obra" value="{{ orden.costo_mano_obra }}"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                </div>
+            </div>
+        </div>
+
+        <div>
+            <label class="block font-semibold text-slate-300 mb-1">Diagnóstico Técnico</label>
+            <textarea name="diagnostico_tecnico" rows="2" placeholder="Pruebas realizadas, componentes defectuosos..."
+                      class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl p-3 text-white placeholder-slate-500 focus:outline-none focus:border-amber-500">{{ orden.diagnostico_tecnico }}</textarea>
+        </div>
+
+        <div>
+            <label class="block font-semibold text-slate-300 mb-1">Trabajo / Solución Aplicada</label>
+            <textarea name="solucion_aplicada" rows="2" placeholder="Procedimiento realizado para resolver la falla..."
+                      class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl p-3 text-white placeholder-slate-500 focus:outline-none focus:border-amber-500">{{ orden.solucion_aplicada }}</textarea>
+        </div>
+
+        <div>
+            <label class="block font-semibold text-slate-300 mb-1">Subir Foto / Evidencia del Servicio</label>
+            <input type="file" name="archivo_evidencia" class="text-xs text-slate-400">
+        </div>
+
+        <div class="flex items-center justify-between pt-4 border-t border-[#1e2d47]">
+            <div class="text-sm font-black text-amber-400">
+                Total del Servicio: ${{ orden.total|floatformat:0|intcomma }} COP
+            </div>
+            <button type="submit" class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-black uppercase tracking-wider transition">
+                Actualizar Orden de Trabajo
+            </button>
+        </div>
+    </form>
+</div>
+{% endblock %}

@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+
+{% block title %}Unidades de Medida{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto space-y-6">
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="font-display font-extrabold text-2xl text-white">Unidades de Medida</h1>
+            <p class="text-xs text-slate-400">Códigos y estándares para facturación electrónica DIAN</p>
+        </div>
+        <a href="{% url 'inventario:productos_lista' %}" class="px-4 py-2 rounded-xl bg-[#162034] text-slate-300 hover:text-white text-xs font-bold transition">
+            Volver a Productos
+        </a>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <!-- Formulario Crear Unidad -->
+        <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 shadow-xl">
+            <h2 class="font-display font-bold text-sm text-white mb-3">Nueva Unidad</h2>
+            <form method="POST" class="space-y-3 text-xs">
+                {% csrf_token %}
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Código DIAN (e.g. UND, KG, MTR) *</label>
+                    <input type="text" name="codigo" required placeholder="UND"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-500 uppercase font-mono">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Nombre Completo *</label>
+                    <input type="text" name="nombre" required placeholder="Unidad"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-500">
+                </div>
+                <button type="submit" class="w-full py-2 px-3 bg-sky-500 hover:bg-sky-400 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition">
+                    Guardar Unidad
+                </button>
+            </form>
+        </div>
+
+        <!-- Lista de Unidades -->
+        <div class="md:col-span-2 bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 shadow-xl space-y-3">
+            <h2 class="font-display font-bold text-sm text-white mb-3">Unidades de Medida Activas</h2>
+            <div class="divide-y divide-[#1e2d47]/50 text-xs">
+                {% for u in unidades %}
+                <div class="py-3 flex items-center justify-between">
+                    <div>
+                        <div class="font-bold text-white text-sm">{{ u.nombre }}</div>
+                        <div class="text-[11px] font-mono text-amber-400">Código: {{ u.codigo }}</div>
+                    </div>
+                    <span class="text-[10px] px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold">Activa</span>
+                </div>
+                {% empty %}
+                <div class="p-6 text-center text-slate-500">No hay unidades de medida registradas.</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

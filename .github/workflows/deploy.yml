@@ -1,0 +1,64 @@
+name: 🚀 Despliegue Automático a AWS (FacCol Python)
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    name: Desplegar FacCol Python en Servidor AWS
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Clonar repositorio
+        uses: actions/checkout@v4
+
+      - name: 🔐 Ejecutar Despliegue en AWS vía SSH
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.AWS_HOST }}
+          username: ${{ secrets.AWS_USER }}
+          key: ${{ secrets.AWS_SSH_KEY }}
+          port: 22
+          script_stop: true
+          script: |
+            echo "🚀 Iniciando despliegue de FacCol Python en CloudPanel..."
+            sudo git config --global --add safe.directory /home/faccol/htdocs/faccol.com
+            sudo -u faccol bash << 'EOF'
+            set -e
+            cd /home/faccol/htdocs/faccol.com
+
+            # 1. Descargar ultimos cambios
+            git fetch origin main
+            git reset --hard origin/main
+
+            # 2. Asegurar entorno virtual Python
+            if [ ! -d "venv" ]; then
+                python3 -m venv venv
+            fi
+
+            # 3. Instalar dependencias
+            source venv/bin/activate
+            pip install --upgrade pip
+            pip install -r requirements.txt
+
+            # 4. Migraciones de PostgreSQL
+            python manage.py migrate --noinput
+
+            # 5. Cargar catalogos y modulos base
+            python manage.py seed_base
+            python manage.py seed_colombia
+
+            # 6. Recopilar archivos estaticos
+            python manage.py collectstatic --noinput
+
+            # 7. Reiniciar Gunicorn
+            if sudo systemctl is-active --quiet faccol; then
+                sudo systemctl restart faccol
+            else
+                pkill -HUP gunicorn || true
+            fi
+
+            echo "✅ ¡Despliegue de FacCol Python completado exitosamente con 0 downtime!"
+            EOF

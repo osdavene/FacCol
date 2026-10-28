@@ -1,0 +1,55 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Directorio de Empleados{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+            <h1 class="font-display font-extrabold text-2xl text-white">Directorio de Empleados</h1>
+            <p class="text-xs text-slate-400">Contratos, salarios base y entidades de seguridad social</p>
+        </div>
+        <a href="{% url 'nomina:empleado_crear' %}"
+           class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white font-extrabold text-xs uppercase tracking-wider shadow-lg shadow-violet-600/20 transition flex items-center gap-2">
+            <i class="fas fa-user-plus"></i> Registrar Empleado
+        </a>
+    </div>
+
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl overflow-hidden shadow-xl">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+                <thead>
+                    <tr class="bg-[#141c2e] text-slate-400 font-bold uppercase tracking-wider text-[10px] border-b border-[#1e2d47]">
+                        <th class="p-4">Documento</th>
+                        <th class="p-4">Nombres & Apellidos</th>
+                        <th class="p-4">Cargo</th>
+                        <th class="p-4 text-right">Salario Base</th>
+                        <th class="p-4">Seguridad Social (EPS / Fondo)</th>
+                        <th class="p-4 text-center">Estado</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-[#1e2d47]/50">
+                    {% for emp in empleados %}
+                    <tr class="hover:bg-[#162034] transition">
+                        <td class="p-4 font-mono font-bold text-amber-400">{{ emp.tipo_documento }} {{ emp.numero_documento }}</td>
+                        <td class="p-4 font-bold text-white text-sm">{{ emp.nombre_completo }}</td>
+                        <td class="p-4 text-slate-300">{{ emp.cargo }}</td>
+                        <td class="p-4 text-right font-black text-white">${{ emp.salario_base|floatformat:0|intcomma }} COP</td>
+                        <td class="p-4 text-slate-400">
+                            <div>EPS: {{ emp.eps|default:"Sura" }}</div>
+                            <div class="text-[10px] text-slate-500">Pensión: {{ emp.fondo_pension|default:"Porvenir" }}</div>
+                        </td>
+                        <td class="p-4 text-center">
+                            <span class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 text-[10px] font-bold">Activo</span>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="6" class="p-8 text-center text-slate-500">No hay empleados registrados en la nómina.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

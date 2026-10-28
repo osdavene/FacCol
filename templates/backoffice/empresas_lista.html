@@ -1,0 +1,68 @@
+{% extends 'base.html' %}
+
+{% block title %}Empresas Inquilinas — Backoffice{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+            <h1 class="font-display font-extrabold text-2xl text-white">Empresas Inquilinas</h1>
+            <p class="text-xs text-slate-400">Listado y configuración de tenants en la plataforma FacCol</p>
+        </div>
+        <a href="{% url 'backoffice:empresa_crear' %}"
+           class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-extrabold text-xs uppercase tracking-wider transition flex items-center gap-2">
+            <i class="fas fa-plus"></i> Nueva Empresa
+        </a>
+    </div>
+
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl overflow-hidden shadow-xl">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+                <thead>
+                    <tr class="bg-[#141c2e] text-slate-400 font-bold uppercase tracking-wider text-[10px] border-b border-[#1e2d47]">
+                        <th class="p-4">Razón Social</th>
+                        <th class="p-4">NIT</th>
+                        <th class="p-4">Plan Activo</th>
+                        <th class="p-4">Contacto</th>
+                        <th class="p-4 text-center">Estado</th>
+                        <th class="p-4 text-right">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-[#1e2d47]/50">
+                    {% for emp in empresas %}
+                    <tr class="hover:bg-[#162034] transition">
+                        <td class="p-4">
+                            <div class="font-bold text-white text-sm">{{ emp.razon_social }}</div>
+                            <div class="text-[10px] text-slate-500">{{ emp.nombre_comercial|default:"" }}</div>
+                        </td>
+                        <td class="p-4 font-mono font-bold text-amber-400">{{ emp.nit_completo }}</td>
+                        <td class="p-4 text-slate-300">{{ emp.plan.nombre|default:"Sin plan" }}</td>
+                        <td class="p-4 text-slate-400">
+                            <div>{{ emp.email }}</div>
+                            <div class="text-[10px] text-slate-500">{{ emp.telefono }}</div>
+                        </td>
+                        <td class="p-4 text-center">
+                            <span class="px-2 py-0.5 rounded text-[10px] font-bold {% if emp.activa %}bg-emerald-500/10 text-emerald-400 border border-emerald-500/20{% else %}bg-red-500/10 text-red-400 border border-red-500/20{% endif %}">
+                                {% if emp.activa %}Activa{% else %}Inactiva{% endif %}
+                            </span>
+                        </td>
+                        <td class="p-4 text-right space-x-1">
+                            <a href="{% url 'core:cambiar_empresa' emp.id %}" title="Entrar a esta empresa"
+                               class="p-2 rounded-xl bg-[#162034] hover:bg-amber-500 hover:text-black text-amber-400 inline-block transition">
+                                <i class="fas fa-right-to-bracket text-xs"></i>
+                            </a>
+                            <a href="{% url 'backoffice:empresa_editar' emp.id %}" title="Configurar parámetros"
+                               class="p-2 rounded-xl bg-[#162034] hover:bg-[#1f2c47] text-slate-300 hover:text-white inline-block transition">
+                                <i class="fas fa-sliders text-xs"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="6" class="p-8 text-center text-slate-500">No hay empresas encontradas.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

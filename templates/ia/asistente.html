@@ -1,0 +1,178 @@
+{% extends 'base.html' %}
+
+{% block title %}FacCol AI Copilot{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto h-[calc(100vh-140px)] flex flex-col bg-[#111827] border border-[#1e2d47] rounded-3xl shadow-2xl overflow-hidden" x-data="copilotChat()">
+
+    <!-- Header del Asistente -->
+    <div class="px-6 py-4 bg-gradient-to-r from-[#141c2e] via-[#162034] to-[#121927] border-b border-[#1e2d47] flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <div class="w-10 h-10 rounded-2xl bg-gradient-to-tr from-purple-600 to-amber-500 flex items-center justify-center text-white text-base shadow-lg shadow-purple-500/20">
+                <i class="fas fa-wand-magic-sparkles"></i>
+            </div>
+            <div>
+                <h1 class="font-display font-extrabold text-base text-white flex items-center gap-2">
+                    FacCol AI Copilot
+                    <span class="px-2 py-0.5 rounded-full bg-amber-500 text-black text-[9px] font-black uppercase">Gemini & ERP</span>
+                </h1>
+                <p class="text-[11px] text-slate-400">Asistente financiero, tributario y comercial en tiempo real</p>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-2 text-xs">
+            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
+            <span class="text-slate-400 font-medium">En línea</span>
+        </div>
+    </div>
+
+    <!-- Sugerencias de Preguntas Rápidas (Chips) -->
+    <div class="px-6 py-2.5 bg-[#141c2e]/60 border-b border-[#1e2d47] flex items-center gap-2 overflow-x-auto text-[11px] text-slate-300">
+        <span class="text-slate-500 font-bold flex-shrink-0"><i class="fas fa-bolt text-amber-500"></i> Sugerencias:</span>
+        <button type="button" @click="enviarMensaje('¿Cuánto hemos vendido este mes?')"
+                class="px-3 py-1 rounded-full bg-[#162034] hover:bg-[#1f2c47] border border-[#1e2d47] whitespace-nowrap transition">
+            📈 ¿Cuánto vendimos este mes?
+        </button>
+        <button type="button" @click="enviarMensaje('¿Cuáles productos tienen stock bajo o crítico?')"
+                class="px-3 py-1 rounded-full bg-[#162034] hover:bg-[#1f2c47] border border-[#1e2d47] whitespace-nowrap transition">
+            ⚠️ ¿Productos con stock bajo?
+        </button>
+        <button type="button" @click="enviarMensaje('¿Cuáles clientes tienen saldos pendientes por cobrar?')"
+                class="px-3 py-1 rounded-full bg-[#162034] hover:bg-[#1f2c47] border border-[#1e2d47] whitespace-nowrap transition">
+            💼 ¿Clientes con saldo pendiente?
+        </button>
+        <button type="button" @click="enviarMensaje('Explícame las tarifas de retención en la fuente vigentes en Colombia')"
+                class="px-3 py-1 rounded-full bg-[#162034] hover:bg-[#1f2c47] border border-[#1e2d47] whitespace-nowrap transition">
+            🏛️ Tarifas ReteFuente DIAN
+        </button>
+    </div>
+
+    <!-- Contenedor del Chat (Mensajes) -->
+    <div class="flex-1 overflow-y-auto p-6 space-y-4" id="chat-messages">
+        {% for m in mensajes %}
+        <div class="flex gap-3 {% if m.rol == 'user' %}justify-end{% endif %}">
+            {% if m.rol == 'model' %}
+            <div class="w-8 h-8 rounded-xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-400 text-xs flex-shrink-0 mt-1">
+                <i class="fas fa-wand-magic-sparkles"></i>
+            </div>
+            {% endif %}
+
+            <div class="max-w-[80%] rounded-2xl p-4 text-xs leading-relaxed {% if m.rol == 'user' %}bg-amber-500 text-black font-semibold rounded-tr-none shadow-lg shadow-amber-500/10{% else %}bg-[#162034] text-slate-200 border border-[#1e2d47] rounded-tl-none shadow-md space-y-2{% endif %}">
+                <div class="whitespace-pre-line">{{ m.contenido }}</div>
+                <div class="text-[9px] {% if m.rol == 'user' %}text-black/60{% else %}text-slate-500{% endif %} mt-1 text-right">
+                    {{ m.created_at|date:"H:i" }}
+                </div>
+            </div>
+
+            {% if m.rol == 'user' %}
+            <div class="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 font-bold text-xs flex-shrink-0 mt-1">
+                {{ user.first_name|default:user.username|slice:":1"|upper }}
+            </div>
+            {% endif %}
+        </div>
+        {% endfor %}
+
+        <template x-for="(msg, index) in mensajesNuevos" :key="index">
+            <div class="flex gap-3" :class="msg.rol === 'user' ? 'justify-end' : ''">
+                <template x-if="msg.rol === 'model'">
+                    <div class="w-8 h-8 rounded-xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-400 text-xs flex-shrink-0 mt-1">
+                        <i class="fas fa-wand-magic-sparkles"></i>
+                    </div>
+                </template>
+
+                <div class="max-w-[80%] rounded-2xl p-4 text-xs leading-relaxed"
+                     :class="msg.rol === 'user' ? 'bg-amber-500 text-black font-semibold rounded-tr-none shadow-lg shadow-amber-500/10' : 'bg-[#162034] text-slate-200 border border-[#1e2d47] rounded-tl-none shadow-md space-y-2'">
+                    <div class="whitespace-pre-line" x-text="msg.contenido"></div>
+                </div>
+
+                <template x-if="msg.rol === 'user'">
+                    <div class="w-8 h-8 rounded-xl bg-amber-500/20 border border-amber-500/30 flex items-center justify-center text-amber-400 font-bold text-xs flex-shrink-0 mt-1">
+                        {{ user.first_name|default:user.username|slice:":1"|upper }}
+                    </div>
+                </template>
+            </div>
+        </template>
+
+        <div x-show="pensando" class="flex gap-3 items-center">
+            <div class="w-8 h-8 rounded-xl bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-400 text-xs">
+                <i class="fas fa-spinner fa-spin"></i>
+            </div>
+            <div class="bg-[#162034] border border-[#1e2d47] rounded-2xl rounded-tl-none p-3 text-xs text-slate-400 italic">
+                FacCol AI está analizando tus datos...
+            </div>
+        </div>
+    </div>
+
+    <!-- Barra de Input del Usuario -->
+    <div class="p-4 bg-[#141c2e] border-t border-[#1e2d47]">
+        <form @submit.prevent="enviarFormulario()" class="flex items-center gap-2">
+            <input type="text" x-model="inputTexto" placeholder="Escribe tu consulta sobre facturas, compras, inventario o impuestos..."
+                   :disabled="pensando"
+                   class="flex-1 bg-[#162034] border border-[#1e2d47] rounded-2xl px-4 py-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500 transition">
+            
+            <button type="submit" :disabled="!inputTexto.trim() || pensando"
+                    class="px-5 py-3 bg-gradient-to-r from-purple-600 to-amber-500 hover:from-purple-500 hover:to-amber-400 disabled:opacity-50 disabled:cursor-not-allowed text-white font-black text-xs uppercase tracking-wider rounded-2xl shadow-lg shadow-purple-600/20 transition flex items-center gap-2">
+                <span>Enviar</span>
+                <i class="fas fa-paper-plane text-xs"></i>
+            </button>
+        </form>
+    </div>
+
+</div>
+
+<script>
+function copilotChat() {
+    return {
+        inputTexto: '',
+        pensando: false,
+        mensajesNuevos: [],
+        conversacionId: '{{ conversacion.id }}',
+
+        enviarFormulario() {
+            if (!this.inputTexto.trim() || this.pensando) return;
+            const txt = this.inputTexto.trim();
+            this.inputTexto = '';
+            this.enviarMensaje(txt);
+        },
+
+        async enviarMensaje(texto) {
+            this.mensajesNuevos.push({ rol: 'user', contenido: texto });
+            this.scrollBottom();
+            this.pensando = true;
+
+            try {
+                const res = await fetch("{% url 'ia:chat_api' %}", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': '{{ csrf_token }}'
+                    },
+                    body: JSON.stringify({
+                        mensaje: texto,
+                        conversacion_id: this.conversacionId
+                    })
+                });
+                const d = await res.json();
+                if (d.success) {
+                    this.mensajesNuevos.push({ rol: 'model', contenido: d.respuesta });
+                } else {
+                    this.mensajesNuevos.push({ rol: 'model', contenido: 'Error al procesar la respuesta: ' + (d.error || 'Intente de nuevo.') });
+                }
+            } catch (err) {
+                this.mensajesNuevos.push({ rol: 'model', contenido: 'Error de conexión con el servicio de IA.' });
+            } finally {
+                this.pensando = false;
+                this.scrollBottom();
+            }
+        },
+
+        scrollBottom() {
+            setTimeout(() => {
+                const el = document.getElementById('chat-messages');
+                if (el) el.scrollTop = el.scrollHeight;
+            }, 100);
+        }
+    }
+}
+</script>
+{% endblock %}

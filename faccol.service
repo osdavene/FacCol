@@ -1,0 +1,19 @@
+[Unit]
+Description=FacCol Python Web Application Server (Gunicorn)
+After=network.target postgresql.service
+
+[Service]
+User=faccol
+Group=faccol
+WorkingDirectory=/home/faccol/htdocs/faccol.com
+Environment="PATH=/home/faccol/htdocs/faccol.com/venv/bin:/usr/local/bin:/usr/bin:/bin"
+ExecStart=/home/faccol/htdocs/faccol.com/venv/bin/gunicorn --config /home/faccol/htdocs/faccol.com/gunicorn.conf.py faccol_core.wsgi:application
+ExecReload=/bin/kill -s HUP $MAINPID
+Restart=always
+RestartSec=3
+KillMode=mixed
+TimeoutStopSec=5
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

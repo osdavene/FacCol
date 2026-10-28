@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+
+{% block title %}Liquidar Nómina Mensual{% endblock %}
+
+{% block content %}
+<div class="max-w-md mx-auto space-y-6">
+    <div class="text-center">
+        <div class="w-12 h-12 rounded-2xl bg-violet-500/10 border border-violet-500/20 text-violet-400 flex items-center justify-center text-xl mx-auto mb-2">
+            <i class="fas fa-calculator"></i>
+        </div>
+        <h1 class="font-display font-extrabold text-2xl text-white">Liquidar Nómina</h1>
+        <p class="text-xs text-slate-400">Cálculo automático de devengados, aportes a seguridad social y parafiscales</p>
+    </div>
+
+    <form method="POST" class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 sm:p-8 space-y-4 shadow-xl">
+        {% csrf_token %}
+
+        <div class="grid grid-cols-2 gap-4 text-xs">
+            <div>
+                <label class="block font-semibold text-slate-300 mb-1">Mes a Liquidar *</label>
+                <select name="periodo_mes" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-500 font-bold">
+                    <option value="1">Enero</option>
+                    <option value="2">Febrero</option>
+                    <option value="3">Marzo</option>
+                    <option value="4">Abril</option>
+                    <option value="5">Mayo</option>
+                    <option value="6">Junio</option>
+                    <option value="7">Julio</option>
+                    <option value="8">Agosto</option>
+                    <option value="9">Septiembre</option>
+                    <option value="10" selected>Octubre</option>
+                    <option value="11">Noviembre</option>
+                    <option value="12">Diciembre</option>
+                </select>
+            </div>
+
+            <div>
+                <label class="block font-semibold text-slate-300 mb-1">Año *</label>
+                <input type="number" name="periodo_ano" value="2026" required
+                       class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-500 font-bold">
+            </div>
+        </div>
+
+        <div class="p-3.5 rounded-2xl bg-[#162034] border border-[#1e2d47] text-[11px] text-slate-400 space-y-1">
+            <div class="font-bold text-white mb-1">Parámetros Legales Vigentes (Colombia):</div>
+            <div>• SMMLV: <b>$1.423.500 COP</b></div>
+            <div>• Auxilio Transporte: <b>$202.050 COP</b></div>
+            <div>• Deducción Salud y Pensión: <b>4% cada una</b></div>
+        </div>
+
+        <button type="submit"
+                class="w-full py-3 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-500 hover:to-purple-500 text-white font-black text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-violet-600/20 transition">
+            Ejecutar Liquidación Automática
+        </button>
+    </form>
+</div>
+{% endblock %}

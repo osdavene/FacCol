@@ -1,0 +1,224 @@
+{% extends 'base.html' %}
+
+{% block title %}Nueva Factura de Venta{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto space-y-6" x-data="facturadorApp()">
+
+    <!-- Encabezado -->
+    <div class="flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <a href="{% url 'facturacion:facturas_lista' %}" class="p-2.5 rounded-xl bg-[#162034] text-slate-400 hover:text-white transition">
+                <i class="fas fa-arrow-left"></i>
+            </a>
+            <div>
+                <h1 class="font-display font-extrabold text-2xl text-white">Nueva Factura Electrónica</h1>
+                <p class="text-xs text-slate-400">Consecutivo a emitir: <b class="text-amber-400">{{ proximo_consecutivo }}</b></p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Formulario Principal -->
+    <form method="POST" action="{% url 'facturacion:factura_crear' %}" @submit="prepararEnvio($event)" class="space-y-6">
+        {% csrf_token %}
+        <input type="hidden" name="items_json" :value="JSON.stringify(items)">
+
+        <!-- Bloque 1: Cliente & Condiciones -->
+        <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 space-y-4 shadow-xl">
+            <h2 class="font-display font-bold text-sm text-white uppercase tracking-wider text-amber-500">
+                1. Datos del Cliente & Condiciones de Venta
+            </h2>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Cliente / Adquiriente *</label>
+                    <select name="tercero" required class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-500">
+                        <option value="">-- Seleccione un cliente --</option>
+                        {% for c in terceros %}
+                        <option value="{{ c.id }}">{{ c.razon_social }} ({{ c.documento_completo }})</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Forma de Pago</label>
+                    <select name="metodo_pago" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-500">
+                        <option value="CONTADO">Contado</option>
+                        <option value="CREDITO">Crédito</option>
+                    </select>
+                </div>
+
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Plazo de Vencimiento (Días)</label>
+                    <input type="number" name="dias_vencimiento" value="30" min="0"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-500">
+                </div>
+            </div>
+        </div>
+
+        <!-- Bloque 2: Ítems y Productos -->
+        <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 space-y-4 shadow-xl">
+            <div class="flex items-center justify-between">
+                <h2 class="font-display font-bold text-sm text-white uppercase tracking-wider text-amber-500">
+                    2. Ítems del Documento
+                </h2>
+                <button type="button" @click="agregarItem()"
+                        class="px-3 py-1.5 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/30 text-xs font-bold transition flex items-center gap-1.5">
+                    <i class="fas fa-plus"></i> Agregar Línea
+                </button>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="w-full text-left text-xs">
+                    <thead>
+                        <tr class="border-b border-[#1e2d47] text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                            <th class="pb-3 w-5/12">Producto o Servicio</th>
+                            <th class="pb-3 text-right w-2/12">Cantidad</th>
+                            <th class="pb-3 text-right w-2/12">Precio Unitario ($)</th>
+                            <th class="pb-3 text-right w-1/12">Desc %</th>
+                            <th class="pb-3 text-right w-2/12">Total ($ COP)</th>
+                            <th class="pb-3 text-center w-12"></th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-[#1e2d47]/50">
+                        <template x-for="(item, index) in items" :key="index">
+                            <tr>
+                                <td class="py-2.5 pr-2">
+                                    <select x-model="item.producto_id" @change="onProductoChange(index)"
+                                            class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500">
+                                        <option value="">-- Seleccionar --</option>
+                                        {% for p in productos %}
+                                        <option value="{{ p.id }}" data-precio="{{ p.precio_venta }}" data-nombre="{{ p.nombre }}">
+                                            [{{ p.codigo }}] {{ p.nombre }}
+                                        </option>
+                                        {% endfor %}
+                                    </select>
+                                </td>
+                                <td class="py-2.5 px-2">
+                                    <input type="number" step="0.01" min="0.01" x-model.number="item.cantidad"
+                                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-2 py-1.5 text-xs text-right text-white focus:outline-none focus:border-amber-500">
+                                </td>
+                                <td class="py-2.5 px-2">
+                                    <input type="number" step="0.01" min="0" x-model.number="item.precio_unitario"
+                                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-2 py-1.5 text-xs text-right text-white focus:outline-none focus:border-amber-500">
+                                </td>
+                                <td class="py-2.5 px-2">
+                                    <input type="number" step="0.5" min="0" max="100" x-model.number="item.descuento"
+                                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-2 py-1.5 text-xs text-right text-white focus:outline-none focus:border-amber-500">
+                                </td>
+                                <td class="py-2.5 pl-2 text-right font-black text-white">
+                                    $<span x-text="formatNumber(calcularItemTotal(item))"></span>
+                                </td>
+                                <td class="py-2.5 text-center">
+                                    <button type="button" @click="eliminarItem(index)" class="text-slate-500 hover:text-red-400 p-1">
+                                        <i class="fas fa-trash-can"></i>
+                                    </button>
+                                </td>
+                            </tr>
+                        </template>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Resumen de Totales y Liquidación -->
+            <div class="flex flex-col md:flex-row justify-between gap-6 pt-4 border-t border-[#1e2d47]">
+                <div class="max-w-md">
+                    <label class="block text-xs font-semibold text-slate-300 mb-1">Observaciones / Notas de la Factura</label>
+                    <textarea name="observaciones" rows="3" placeholder="Términos de entrega, cuentas bancarias para transferencia, etc."
+                              class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl p-3 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"></textarea>
+                </div>
+
+                <div class="w-full md:w-80 bg-[#162034] p-5 rounded-2xl border border-[#1e2d47] space-y-2 text-xs">
+                    <div class="flex justify-between text-slate-300">
+                        <span>Subtotal:</span>
+                        <span>$<span x-text="formatNumber(subtotal)"></span> COP</span>
+                    </div>
+                    <div class="flex justify-between text-slate-300">
+                        <span>Descuentos:</span>
+                        <span class="text-red-400">-$<span x-text="formatNumber(totalDescuento)"></span> COP</span>
+                    </div>
+                    <div class="flex justify-between text-slate-300">
+                        <span>IVA (19%):</span>
+                        <span>+$<span x-text="formatNumber(totalIva)"></span> COP</span>
+                    </div>
+                    <div class="flex justify-between text-lg font-black text-amber-400 pt-2 border-t border-[#1e2d47]">
+                        <span>TOTAL A PAGAR:</span>
+                        <span>$<span x-text="formatNumber(totalFinal)"></span> COP</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Botones de Acción -->
+        <div class="flex items-center justify-end gap-3 pt-2">
+            <a href="{% url 'facturacion:facturas_lista' %}" class="px-5 py-2.5 rounded-xl bg-[#1e293b] text-slate-300 hover:text-white text-xs font-bold transition">
+                Cancelar
+            </a>
+            <button type="submit"
+                    class="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-black text-xs uppercase tracking-wider shadow-lg shadow-amber-500/20 transition">
+                Emitir Factura Electrónica
+            </button>
+        </div>
+
+    </form>
+
+</div>
+
+<script>
+function facturadorApp() {
+    return {
+        items: [
+            { producto_id: '', descripcion: '', cantidad: 1, precio_unitario: 0, descuento: 0 }
+        ],
+        agregarItem() {
+            this.items.push({ producto_id: '', descripcion: '', cantidad: 1, precio_unitario: 0, descuento: 0 });
+        },
+        eliminarItem(index) {
+            if (this.items.length > 1) {
+                this.items.splice(index, 1);
+            }
+        },
+        onProductoChange(index) {
+            const selectEl = document.querySelectorAll('select[x-model="item.producto_id"]')[index];
+            if (selectEl && selectEl.selectedOptions[0]) {
+                const opt = selectEl.selectedOptions[0];
+                const precio = parseFloat(opt.dataset.precio || 0);
+                const nombre = opt.dataset.nombre || '';
+                this.items[index].precio_unitario = precio;
+                this.items[index].descripcion = nombre;
+            }
+        },
+        calcularItemTotal(item) {
+            const sub = (item.cantidad || 0) * (item.precio_unitario || 0);
+            const desc = sub * ((item.descuento || 0) / 100);
+            const iva = (sub - desc) * 0.19;
+            return (sub - desc) + iva;
+        },
+        get subtotal() {
+            return this.items.reduce((acc, it) => acc + ((it.cantidad || 0) * (it.precio_unitario || 0)), 0);
+        },
+        get totalDescuento() {
+            return this.items.reduce((acc, it) => {
+                const s = (it.cantidad || 0) * (it.precio_unitario || 0);
+                return acc + (s * ((it.descuento || 0) / 100));
+            }, 0);
+        },
+        get totalIva() {
+            return (this.subtotal - this.totalDescuento) * 0.19;
+        },
+        get totalFinal() {
+            return (this.subtotal - this.totalDescuento) + this.totalIva;
+        },
+        formatNumber(val) {
+            return Math.round(val || 0).toLocaleString('es-CO');
+        },
+        prepararEnvio(e) {
+            if (this.items.length === 0 || !this.items[0].producto_id) {
+                alert('Debe agregar al menos un producto a la factura.');
+                e.preventDefault();
+            }
+        }
+    }
+}
+</script>
+{% endblock %}

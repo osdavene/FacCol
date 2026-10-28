@@ -1,0 +1,48 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Notas de Crédito{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+            <h1 class="font-display font-extrabold text-2xl text-white">Notas de Crédito</h1>
+            <p class="text-xs text-slate-400">Reversiones, devoluciones y correcciones tributarias DIAN</p>
+        </div>
+    </div>
+
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl overflow-hidden shadow-xl">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+                <thead>
+                    <tr class="bg-[#141c2e] text-slate-400 font-bold uppercase tracking-wider text-[10px] border-b border-[#1e2d47]">
+                        <th class="p-4">Número NC</th>
+                        <th class="p-4">Cliente</th>
+                        <th class="p-4">Factura Modificada</th>
+                        <th class="p-4">Fecha</th>
+                        <th class="p-4 text-right">Valor Acreditado</th>
+                        <th class="p-4 text-right">Acción</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-[#1e2d47]/50">
+                    {% for nc in notas %}
+                    <tr class="hover:bg-[#162034] transition">
+                        <td class="p-4 font-bold text-amber-400">{{ nc.numero_completo }}</td>
+                        <td class="p-4 font-semibold text-white">{{ nc.tercero.razon_social }}</td>
+                        <td class="p-4 font-bold text-blue-400">{{ nc.factura_referencia.numero_completo|default:"N/A" }}</td>
+                        <td class="p-4 text-slate-400">{{ nc.fecha_emision|date:"d/m/Y" }}</td>
+                        <td class="p-4 text-right font-black text-white">${{ nc.total|floatformat:0|intcomma }}</td>
+                        <td class="p-4 text-right">
+                            <a href="{% url 'facturacion:factura_detalle' nc.id %}" class="p-2 rounded-xl bg-[#162034] text-slate-300 hover:text-white inline-block"><i class="fas fa-eye text-xs"></i></a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="6" class="p-8 text-center text-slate-500">No hay notas de crédito registradas.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

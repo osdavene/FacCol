@@ -1,0 +1,60 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Kardex de Inventario{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+            <h1 class="font-display font-extrabold text-2xl text-white">Kardex de Inventario</h1>
+            <p class="text-xs text-slate-400">Trazabilidad de entradas, salidas y saldos de mercancía</p>
+        </div>
+        <a href="{% url 'inventario:productos_lista' %}" class="px-4 py-2 rounded-xl bg-[#162034] text-slate-300 hover:text-white text-xs font-bold transition">
+            Volver a Productos
+        </a>
+    </div>
+
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl overflow-hidden shadow-xl">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+                <thead>
+                    <tr class="bg-[#141c2e] text-slate-400 font-bold uppercase tracking-wider text-[10px] border-b border-[#1e2d47]">
+                        <th class="p-4">Fecha</th>
+                        <th class="p-4">Producto</th>
+                        <th class="p-4">Tipo</th>
+                        <th class="p-4 text-right">Cantidad</th>
+                        <th class="p-4 text-right">Saldo Anterior</th>
+                        <th class="p-4 text-right">Nuevo Saldo</th>
+                        <th class="p-4">Motivo / Documento</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-[#1e2d47]/50">
+                    {% for m in movimientos %}
+                    <tr class="hover:bg-[#162034] transition">
+                        <td class="p-4 text-slate-400">{{ m.created_at|date:"d/m/Y H:i" }}</td>
+                        <td class="p-4 font-bold text-white">{{ m.producto.nombre }}</td>
+                        <td class="p-4">
+                            <span class="px-2 py-0.5 rounded-full text-[10px] font-black uppercase
+                                {% if m.tipo == 'ENTRADA' %}bg-emerald-500/10 text-emerald-400
+                                {% elif m.tipo == 'SALIDA' %}bg-red-500/10 text-red-400
+                                {% else %}bg-amber-500/10 text-amber-400{% endif %}">
+                                {{ m.tipo }}
+                            </span>
+                        </td>
+                        <td class="p-4 text-right font-black {% if m.tipo == 'ENTRADA' %}text-emerald-400{% else %}text-red-400{% endif %}">
+                            {% if m.tipo == 'ENTRADA' %}+{% else %}-{% endif %}{{ m.cantidad }}
+                        </td>
+                        <td class="p-4 text-right text-slate-500">{{ m.saldo_anterior }}</td>
+                        <td class="p-4 text-right font-bold text-white">{{ m.saldo_nuevo }}</td>
+                        <td class="p-4 text-slate-400">{{ m.motivo }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="7" class="p-8 text-center text-slate-500">No hay movimientos registrados en el kardex.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,116 @@
+{% extends 'base.html' %}
+
+{% block title %}Tablero Kanban de Servicios{% endblock %}
+
+{% block content %}
+<div class="space-y-6" x-data="kanbanApp()">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+            <h1 class="font-display font-extrabold text-2xl text-white">Tablero Kanban de Taller</h1>
+            <p class="text-xs text-slate-400">Flujo visual de órdenes de trabajo técnico y reparación de dispositivos</p>
+        </div>
+        <div class="flex gap-2">
+            <a href="{% url 'servicios:panel' %}" class="px-4 py-2 rounded-xl bg-[#162034] text-slate-300 hover:text-white text-xs font-bold transition">
+                Panel Métricas
+            </a>
+            <a href="{% url 'servicios:orden_crear' %}" class="px-4 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-extrabold text-xs uppercase tracking-wider transition flex items-center gap-1.5">
+                <i class="fas fa-plus"></i> Nueva Orden
+            </a>
+        </div>
+    </div>
+
+    <!-- Columnas del Tablero Kanban -->
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4 overflow-x-auto pb-4">
+        {% for estado, label, border_color, lista_ordenes in columnas %}
+        <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-3.5 flex flex-col min-w-[240px] max-h-[calc(100vh-220px)] shadow-lg">
+            
+            <!-- Cabecera de Columna -->
+            <div class="flex items-center justify-between pb-3 mb-3 border-b border-[#1e2d47]">
+                <span class="font-bold text-xs text-white uppercase tracking-wider flex items-center gap-1.5">
+                    <span class="w-2 h-2 rounded-full bg-amber-500"></span> {{ label }}
+                </span>
+                <span class="px-2 py-0.5 rounded-full bg-[#162034] text-slate-400 font-bold text-[10px]">
+                    {{ lista_ordenes|length }}
+                </span>
+            </div>
+
+            <!-- Contenedor de Tarjetas -->
+            <div class="flex-1 overflow-y-auto space-y-2.5 pr-1">
+                {% for ord in lista_ordenes %}
+                <div class="p-3 rounded-2xl bg-[#162034] hover:bg-[#1c2842] border border-[#1e2d47] hover:border-amber-500/40 transition shadow cursor-pointer space-y-2">
+                    <div class="flex items-center justify-between">
+                        <a href="{% url 'servicios:orden_detalle' ord.id %}" class="font-bold text-amber-400 text-xs hover:underline">
+                            OS-{{ ord.consecutivo }}
+                        </a>
+                        <span class="text-[9px] font-bold px-1.5 py-0.5 rounded {% if ord.prioridad == 'ALTA' %}bg-red-500/10 text-red-400{% else %}bg-slate-500/10 text-slate-400{% endif %}">
+                            {{ ord.prioridad }}
+                        </span>
+                    </div>
+
+                    <div class="text-xs font-bold text-white leading-tight">
+                        {{ ord.equipo.marca }} {{ ord.equipo.modelo }}
+                    </div>
+
+                    <div class="text-[11px] text-slate-400 truncate">
+                        {{ ord.cliente.razon_social }}
+                    </div>
+
+                    <div class="text-[10px] text-slate-500 line-clamp-2">
+                        {{ ord.falla_reportada }}
+                    </div>
+
+                    <!-- Botón para mover de estado rápido -->
+                    <div class="pt-2 border-t border-[#1e2d47]/50 flex items-center justify-between text-[10px]">
+                        <span class="text-slate-500">{{ ord.fecha_ingreso|date:"d/m" }}</span>
+                        <select @change="moverOrden({{ ord.id }}, $event.target.value)"
+                                class="bg-[#111827] border border-[#1e2d47] rounded-lg px-1.5 py-0.5 text-[10px] text-slate-300">
+                            <option value="">Mover...</option>
+                            <option value="RECIBIDO">Recibido</option>
+                            <option value="EN_DIAGNOSTICO">Diagnóstico</option>
+                            <option value="PRESUPUESTADO">Presupuestado</option>
+                            <option value="EN_REPARACION">Reparación</option>
+                            <option value="LISTO">Listo</option>
+                            <option value="ENTREGADO">Entregado</option>
+                        </select>
+                    </div>
+                </div>
+                {% empty %}
+                <div class="p-4 text-center text-slate-600 text-xs">
+                    Sin órdenes aquí
+                </div>
+                {% endfor %}
+            </div>
+
+        </div>
+        {% endfor %}
+    </div>
+</div>
+
+<script>
+function kanbanApp() {
+    return {
+        async moverOrden(ordenId, nuevoEstado) {
+            if (!nuevoEstado) return;
+            try {
+                const res = await fetch("{% url 'servicios:kanban_cambiar_estado' %}", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'X-CSRFToken': '{{ csrf_token }}'
+                    },
+                    body: JSON.stringify({ orden_id: ordenId, nuevo_estado: nuevoEstado })
+                });
+                const d = await res.json();
+                if (d.success) {
+                    location.reload();
+                } else {
+                    alert('Error al mover la orden.');
+                }
+            } catch (e) {
+                alert('Error de conexión.');
+            }
+        }
+    }
+}
+</script>
+{% endblock %}

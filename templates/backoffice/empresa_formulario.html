@@ -1,0 +1,145 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ accion }} Empresa{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto space-y-6">
+    <div class="flex items-center gap-3">
+        <a href="{% url 'backoffice:empresas_lista' %}" class="p-2.5 rounded-xl bg-[#162034] text-slate-400 hover:text-white transition">
+            <i class="fas fa-arrow-left"></i>
+        </a>
+        <div>
+            <h1 class="font-display font-extrabold text-2xl text-white">{{ accion }} Empresa Inquilina</h1>
+            <p class="text-xs text-slate-400">Configuración DIAN, credenciales SMTP y módulos contratados</p>
+        </div>
+    </div>
+
+    <form method="POST" class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 sm:p-8 space-y-6 shadow-xl text-xs">
+        {% csrf_token %}
+
+        <!-- Bloque Fiscal -->
+        <div class="space-y-4">
+            <div class="font-bold text-amber-500 uppercase tracking-wider text-xs">1. Identificación Fiscal & Datos Generales</div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div class="sm:col-span-2">
+                    <label class="block font-semibold text-slate-300 mb-1">Razón Social *</label>
+                    <input type="text" name="razon_social" value="{{ empresa.razon_social|default:'' }}" required placeholder="Ej: Comercializadora Andina S.A.S."
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-bold">
+                </div>
+                <div class="grid grid-cols-3 gap-2">
+                    <div class="col-span-2">
+                        <label class="block font-semibold text-slate-300 mb-1">NIT *</label>
+                        <input type="text" name="nit" value="{{ empresa.nit|default:'' }}" required placeholder="901234567"
+                               class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-300 mb-1">DV</label>
+                        <input type="text" name="dv" maxlength="1" value="{{ empresa.dv|default:'' }}" placeholder="1"
+                               class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-2 py-2 text-center text-white">
+                    </div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Correo Notificaciones</label>
+                    <input type="email" name="email" value="{{ empresa.email|default:'' }}" placeholder="facturacion@empresa.com"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Teléfono</label>
+                    <input type="text" name="telefono" value="{{ empresa.telefono|default:'' }}" placeholder="601 234 5678"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Plan Comercial</label>
+                    <select name="plan" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                        <option value="">-- Sin plan --</option>
+                        {% for p in planes %}
+                        <option value="{{ p.id }}" {% if empresa and empresa.plan_id == p.id %}selected{% endif %}>{{ p.nombre }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Bloque Facturación DIAN -->
+        <div class="space-y-4 pt-4 border-t border-[#1e2d47]">
+            <div class="font-bold text-amber-500 uppercase tracking-wider text-xs">2. Resolución de Facturación Electrónica DIAN</div>
+            <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Prefijo Factura</label>
+                    <input type="text" name="prefijo_factura" value="{{ empresa.prefijo_factura|default:'FE' }}" placeholder="FE"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono uppercase">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">No. Resolución DIAN</label>
+                    <input type="text" name="resolucion_dian" value="{{ empresa.resolucion_dian|default:'' }}" placeholder="1876400000..."
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Rango Desde</label>
+                    <input type="number" name="rango_desde" value="{{ empresa.rango_desde|default:'1' }}"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Rango Hasta</label>
+                    <input type="number" name="rango_hasta" value="{{ empresa.rango_hasta|default:'5000' }}"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                </div>
+            </div>
+        </div>
+
+        <!-- Bloque SMTP -->
+        <div class="space-y-4 pt-4 border-t border-[#1e2d47]">
+            <div class="font-bold text-amber-500 uppercase tracking-wider text-xs">3. Servidor de Correo SMTP Saliente</div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Host SMTP</label>
+                    <input type="text" name="smtp_host" value="{{ empresa.smtp_host|default:'' }}" placeholder="smtp.gmail.com"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Usuario SMTP</label>
+                    <input type="text" name="smtp_user" value="{{ empresa.smtp_user|default:'' }}" placeholder="facturacion@midominio.com"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Contraseña SMTP</label>
+                    <input type="password" name="smtp_password" value="{{ empresa.smtp_password|default:'' }}" placeholder="••••••••"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                </div>
+            </div>
+        </div>
+
+        {% if accion == 'Editar' and modulos %}
+        <!-- Módulos Habilitados -->
+        <div class="space-y-4 pt-4 border-t border-[#1e2d47]">
+            <div class="font-bold text-amber-500 uppercase tracking-wider text-xs">4. Módulos Habilitados para la Empresa</div>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                {% for m in modulos %}
+                <label class="flex items-center gap-2 p-3 rounded-xl bg-[#162034] border border-[#1e2d47] cursor-pointer hover:border-amber-500/40 transition">
+                    <input type="checkbox" name="modulos[]" value="{{ m.id }}" {% if m.id in modulos_activos_ids %}checked{% endif %} class="rounded text-amber-500 focus:ring-0">
+                    <span class="font-semibold text-white">{{ m.nombre }}</span>
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
+
+        <div class="flex items-center justify-between pt-4 border-t border-[#1e2d47]">
+            <label class="flex items-center gap-2 cursor-pointer font-bold text-slate-300">
+                <input type="checkbox" name="activa" {% if not empresa or empresa.activa %}checked{% endif %} class="rounded text-emerald-500 focus:ring-0">
+                <span>Empresa Activa y Habilitada</span>
+            </label>
+
+            <div class="flex gap-3">
+                <a href="{% url 'backoffice:empresas_lista' %}" class="px-4 py-2 rounded-xl bg-[#162034] text-slate-300 hover:text-white font-bold transition">Cancelar</a>
+                <button type="submit" class="px-5 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black uppercase tracking-wider transition">
+                    Guardar Configuración
+                </button>
+            </div>
+        </div>
+    </form>
+</div>
+{% endblock %}

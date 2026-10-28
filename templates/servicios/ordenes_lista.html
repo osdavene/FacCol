@@ -1,0 +1,62 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Órdenes de Servicio{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="font-display font-extrabold text-2xl text-white">Órdenes de Servicio Técnico</h1>
+            <p class="text-xs text-slate-400">Listado histórico de reparaciones y diagnósticos</p>
+        </div>
+        <a href="{% url 'servicios:orden_crear' %}" class="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs uppercase tracking-wider transition">
+            <i class="fas fa-plus"></i> Nueva Orden
+        </a>
+    </div>
+
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl overflow-hidden shadow-xl">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+                <thead>
+                    <tr class="bg-[#141c2e] text-slate-400 font-bold uppercase tracking-wider text-[10px] border-b border-[#1e2d47]">
+                        <th class="p-4">Orden</th>
+                        <th class="p-4">Cliente</th>
+                        <th class="p-4">Equipo / Serial</th>
+                        <th class="p-4">Fecha</th>
+                        <th class="p-4 text-center">Estado</th>
+                        <th class="p-4 text-right">Total ($ COP)</th>
+                        <th class="p-4 text-right">Acción</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-[#1e2d47]/50">
+                    {% for o in ordenes %}
+                    <tr class="hover:bg-[#162034] transition">
+                        <td class="p-4 font-bold text-amber-400">OS-{{ o.consecutivo }}</td>
+                        <td class="p-4 font-semibold text-white">{{ o.cliente.razon_social }}</td>
+                        <td class="p-4 text-slate-300">
+                            <div>{{ o.equipo.marca }} {{ o.equipo.modelo }}</div>
+                            <div class="text-[10px] text-slate-500">S/N: {{ o.equipo.serial }}</div>
+                        </td>
+                        <td class="p-4 text-slate-400">{{ o.fecha_ingreso|date:"d/m/Y" }}</td>
+                        <td class="p-4 text-center">
+                            <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20 uppercase">
+                                {{ o.get_estado_display }}
+                            </span>
+                        </td>
+                        <td class="p-4 text-right font-black text-white">${{ o.total|floatformat:0|intcomma }}</td>
+                        <td class="p-4 text-right">
+                            <a href="{% url 'servicios:orden_detalle' o.id %}" class="p-2 rounded-xl bg-[#162034] text-slate-300 hover:text-white inline-block">
+                                <i class="fas fa-eye text-xs"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="7" class="p-8 text-center text-slate-500">No hay órdenes de servicio registradas.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

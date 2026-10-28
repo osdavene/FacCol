@@ -1,0 +1,186 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Factura {{ factura.numero_completo }}{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto space-y-6">
+
+    <!-- Barra de Acciones Superiores -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+            <a href="{% url 'facturacion:facturas_lista' %}" class="p-2.5 rounded-xl bg-[#162034] text-slate-400 hover:text-white transition">
+                <i class="fas fa-arrow-left"></i>
+            </a>
+            <div>
+                <h1 class="font-display font-black text-2xl text-white">Factura {{ factura.numero_completo }}</h1>
+                <p class="text-xs text-slate-400">CUFE: <code class="text-amber-400 font-mono">{{ factura.cufe|slice:":32" }}...</code></p>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-3">
+            <a href="{% url 'facturacion:factura_pdf' factura.id %}" target="_blank"
+               class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-extrabold text-xs uppercase tracking-wider shadow-lg shadow-amber-500/20 transition flex items-center gap-2">
+                <i class="fas fa-file-pdf"></i> Descargar PDF Oficial
+            </a>
+            {% if factura.saldo_pendiente > 0 %}
+            <a href="{% url 'facturacion:recibo_crear' %}?factura={{ factura.id }}"
+               class="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs uppercase tracking-wider transition flex items-center gap-2">
+                <i class="fas fa-hand-holding-dollar"></i> Registrar Pago
+            </a>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Hoja Principal de la Factura (Diseño elegante simulando documento fiscal) -->
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 sm:p-8 shadow-2xl space-y-8">
+        
+        <!-- Encabezado Emisor / Receptor -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-8 pb-6 border-b border-[#1e2d47]">
+            
+            <!-- Emisor -->
+            <div>
+                <div class="text-[10px] font-bold uppercase tracking-wider text-amber-500 mb-2">Emisor del Documento</div>
+                <h2 class="font-display font-extrabold text-xl text-white">{{ factura.empresa.razon_social }}</h2>
+                <div class="text-xs text-slate-300 mt-2 space-y-1">
+                    <div><b>NIT:</b> {{ factura.empresa.nit_completo }}</div>
+                    <div><b>Régimen:</b> {{ factura.empresa.get_regimen_tributario_display }}</div>
+                    <div><b>Dirección:</b> {{ factura.empresa.direccion }}</div>
+                    <div><b>Ciudad:</b> {{ factura.empresa.municipio.nombre|default:"Bogotá D.C." }}</div>
+                    <div><b>Email:</b> {{ factura.empresa.email }} - <b>Tel:</b> {{ factura.empresa.telefono }}</div>
+                </div>
+            </div>
+
+            <!-- Receptor -->
+            <div class="bg-[#141c2e] p-5 rounded-2xl border border-[#1e2d47]">
+                <div class="text-[10px] font-bold uppercase tracking-wider text-slate-400 mb-2">Datos del Cliente / Adquiriente</div>
+                <h3 class="font-display font-bold text-lg text-white">{{ factura.tercero.razon_social }}</h3>
+                <div class="text-xs text-slate-300 mt-2 space-y-1">
+                    <div><b>{{ factura.tercero.tipo_documento }}:</b> {{ factura.tercero.documento_completo }}</div>
+                    <div><b>Dirección:</b> {{ factura.tercero.direccion|default:"No registrada" }}</div>
+                    <div><b>Teléfono:</b> {{ factura.tercero.telefono|default:"No registrado" }}</div>
+                    <div><b>Email:</b> {{ factura.tercero.email|default:"No registrado" }}</div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Metadatos de la Factura -->
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4 bg-[#162034] p-4 rounded-2xl border border-[#1e2d47] text-xs">
+            <div>
+                <span class="text-slate-400 block text-[10px] uppercase font-bold">Fecha de Emisión</span>
+                <span class="font-bold text-white text-sm">{{ factura.fecha_emision|date:"d/m/Y" }}</span>
+            </div>
+            <div>
+                <span class="text-slate-400 block text-[10px] uppercase font-bold">Fecha de Vencimiento</span>
+                <span class="font-bold text-white text-sm">{{ factura.fecha_vencimiento|date:"d/m/Y" }}</span>
+            </div>
+            <div>
+                <span class="text-slate-400 block text-[10px] uppercase font-bold">Forma de Pago</span>
+                <span class="font-bold text-white text-sm">{{ factura.get_metodo_pago_display }}</span>
+            </div>
+            <div>
+                <span class="text-slate-400 block text-[10px] uppercase font-bold">Estado Actual</span>
+                <span class="px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase
+                    {% if factura.estado == 'PAGADA' %}bg-emerald-500/10 text-emerald-400
+                    {% elif factura.estado == 'EMITIDA' %}bg-blue-500/10 text-blue-400
+                    {% else %}bg-slate-500/10 text-slate-400{% endif %}">
+                    {{ factura.estado }}
+                </span>
+            </div>
+        </div>
+
+        <!-- Tabla de Ítems / Productos -->
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+                <thead>
+                    <tr class="border-b border-[#1e2d47] text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                        <th class="pb-3">#</th>
+                        <th class="pb-3">Descripción</th>
+                        <th class="pb-3 text-right">Cantidad</th>
+                        <th class="pb-3 text-right">Precio Unitario</th>
+                        <th class="pb-3 text-right">Desc.</th>
+                        <th class="pb-3 text-right">IVA</th>
+                        <th class="pb-3 text-right">Total</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-[#1e2d47]/50">
+                    {% for it in factura.items.all %}
+                    <tr>
+                        <td class="py-3 text-slate-500">{{ forloop.counter }}</td>
+                        <td class="py-3 font-semibold text-white">{{ it.descripcion }}</td>
+                        <td class="py-3 text-right">{{ it.cantidad }}</td>
+                        <td class="py-3 text-right">${{ it.precio_unitario|floatformat:0|intcomma }}</td>
+                        <td class="py-3 text-right text-slate-400">${{ it.descuento|floatformat:0|intcomma }}</td>
+                        <td class="py-3 text-right text-slate-400">{{ it.porcentaje_iva|floatformat:0 }}%</td>
+                        <td class="py-3 text-right font-black text-white">${{ it.total|floatformat:0|intcomma }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <!-- Totales y Resumen Financiero -->
+        <div class="flex flex-col md:flex-row justify-between gap-6 pt-4 border-t border-[#1e2d47]">
+            <div class="max-w-md text-xs text-slate-400 space-y-2">
+                <div class="font-bold text-white">Observaciones / Condiciones:</div>
+                <p>{{ factura.observaciones|default:"Sin observaciones adicionales." }}</p>
+                <div class="pt-2 text-[10px] text-slate-500">
+                    Resolución DIAN No. {{ factura.empresa.resolucion_dian|default:"18764000001234" }} de habilitación técnica.
+                </div>
+            </div>
+
+            <div class="w-full md:w-80 bg-[#162034] p-5 rounded-2xl border border-[#1e2d47] space-y-2.5 text-xs">
+                <div class="flex justify-between text-slate-300">
+                    <span>Subtotal:</span>
+                    <span>${{ factura.subtotal|floatformat:0|intcomma }} COP</span>
+                </div>
+                <div class="flex justify-between text-slate-300">
+                    <span>Descuentos:</span>
+                    <span class="text-red-400">-${{ factura.descuento|floatformat:0|intcomma }} COP</span>
+                </div>
+                <div class="flex justify-between text-slate-300">
+                    <span>IVA (19%):</span>
+                    <span>+${{ factura.iva|floatformat:0|intcomma }} COP</span>
+                </div>
+                <div class="flex justify-between text-base font-black text-white pt-2 border-t border-[#1e2d47]">
+                    <span>TOTAL:</span>
+                    <span class="text-amber-400">${{ factura.total|floatformat:0|intcomma }} COP</span>
+                </div>
+                <div class="flex justify-between font-bold text-xs pt-1 border-t border-[#1e2d47]">
+                    <span>Saldo Pendiente:</span>
+                    <span class="{% if factura.saldo_pendiente > 0 %}text-amber-400{% else %}text-emerald-400{% endif %}">
+                        ${{ factura.saldo_pendiente|floatformat:0|intcomma }} COP
+                    </span>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Pagos y Recibos Registrados -->
+    {% if factura.recibos.all %}
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 shadow-xl space-y-4">
+        <h3 class="font-display font-bold text-base text-white flex items-center gap-2">
+            <i class="fas fa-receipt text-emerald-400"></i> Pagos y Recibos de Caja Aplicados
+        </h3>
+        <div class="divide-y divide-[#1e2d47]/50 text-xs">
+            {% for r in factura.recibos.all %}
+            <div class="py-3 flex items-center justify-between">
+                <div>
+                    <span class="font-bold text-amber-400">RC-{{ r.consecutivo }}</span>
+                    <span class="text-slate-400 ml-2">{{ r.fecha|date:"d/m/Y" }}</span>
+                    <span class="text-slate-400 ml-2">({{ r.get_metodo_pago_display }})</span>
+                    {% if r.referencia_pago %}<span class="text-slate-500 text-[10px] block">Ref: {{ r.referencia_pago }}</span>{% endif %}
+                </div>
+                <div class="font-black text-emerald-400 text-sm">
+                    ${{ r.valor|floatformat:0|intcomma }} COP
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+</div>
+{% endblock %}
