@@ -21,9 +21,19 @@ if DEBUG and 'testserver' not in ALLOWED_HOSTS:
 CSRF_TRUSTED_ORIGINS = [
     'https://faccol.com',
     'https://www.faccol.com',
+    'https://faccol.duckdns.org',
+    'https://faccol.servigest.online',
+    'https://servigest.online',
     'http://127.0.0.1:8000',
+    'http://127.0.0.1:8002',
     'http://localhost:8000',
 ]
+
+for host in ALLOWED_HOSTS:
+    if host not in ('127.0.0.1', 'localhost', 'testserver') and not host.startswith('.'):
+        origin = f'https://{host}'
+        if origin not in CSRF_TRUSTED_ORIGINS:
+            CSRF_TRUSTED_ORIGINS.append(origin)
 
 # Application definition
 INSTALLED_APPS = [
