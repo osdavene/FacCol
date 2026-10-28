@@ -1,9 +1,9 @@
 {% extends 'base.html' %}
 
-{% block title %}FacCol AI Copilot{% endblock %}
+{% block title %}FacCol Gemini AI{% endblock %}
 
 {% block content %}
-<div class="max-w-4xl mx-auto h-[calc(100vh-140px)] flex flex-col bg-[#111827] border border-[#1e2d47] rounded-3xl shadow-2xl overflow-hidden" x-data="copilotChat()">
+<div class="max-w-4xl mx-auto h-[calc(100vh-140px)] flex flex-col bg-[#111827] border border-[#1e2d47] rounded-3xl shadow-2xl overflow-hidden" x-data="geminiChat()">
 
     <!-- Header del Asistente -->
     <div class="px-6 py-4 bg-gradient-to-r from-[#141c2e] via-[#162034] to-[#121927] border-b border-[#1e2d47] flex items-center justify-between">
@@ -13,8 +13,8 @@
             </div>
             <div>
                 <h1 class="font-display font-extrabold text-base text-white flex items-center gap-2">
-                    FacCol AI Copilot
-                    <span class="px-2 py-0.5 rounded-full bg-amber-500 text-black text-[9px] font-black uppercase">Gemini & ERP</span>
+                    FacCol Gemini AI
+                    <span class="px-2 py-0.5 rounded-full bg-amber-500 text-black text-[9px] font-black uppercase">Google Gemini & ERP</span>
                 </h1>
                 <p class="text-[11px] text-slate-400">Asistente financiero, tributario y comercial en tiempo real</p>
             </div>
@@ -121,7 +121,7 @@
 </div>
 
 <script>
-function copilotChat() {
+function geminiChat() {
     return {
         inputTexto: '',
         pensando: false,
