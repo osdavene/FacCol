@@ -15,18 +15,20 @@ def global_context(request):
             getattr(request.user, 'is_superuser', False)
         )
 
-        # En Aislamiento Estricto SaaS:
-        # El usuario únicamente ve en su selector las empresas donde tiene membresía activa
-        todas_empresas = [
-            eu.empresa for eu in request.user.empresas_asignadas.filter(
-                activo=True, empresa__activa=True
-            ).select_related('empresa')
-        ]
-
-        if empresa:
-            user_rol = request.user.rol_en_empresa(empresa)
-        elif is_superadmin_user:
+        if is_superadmin_user:
             user_rol = 'superadmin'
+            todas_empresas = []
+            empresa = None
+        else:
+            # En Aislamiento Estricto SaaS:
+            # El usuario únicamente ve en su selector las empresas donde tiene membresía activa
+            todas_empresas = [
+                eu.empresa for eu in request.user.empresas_asignadas.filter(
+                    activo=True, empresa__activa=True
+                ).select_related('empresa')
+            ]
+            if empresa:
+                user_rol = request.user.rol_en_empresa(empresa)
 
     return {
         'empresa_activa': empresa,

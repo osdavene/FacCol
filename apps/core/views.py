@@ -23,8 +23,7 @@ def dashboard(request):
     empresa = request.empresa_activa
     rol_actual = request.user.rol_actual or ('superadmin' if is_superadmin else 'usuario')
 
-    # Métricas Globales SaaS para SuperAdmin
-    context_sa = {}
+    # Modo Plataforma SaaS SuperAdmin: Centro de Control Global Exclusivo
     if is_superadmin:
         total_empresas = Empresa.objects.count()
         empresas_activas = Empresa.objects.filter(activa=True).count()
@@ -38,8 +37,9 @@ def dashboard(request):
             'usuarios_asignados__user'
         ).order_by('-created_at')[:10]
 
-        context_sa = {
+        context = {
             'is_superadmin': True,
+            'rol_actual': 'superadmin',
             'total_empresas': total_empresas,
             'empresas_activas': empresas_activas,
             'empresas_inactivas': empresas_inactivas,
@@ -47,25 +47,13 @@ def dashboard(request):
             'total_facturas_global': total_facturas_global,
             'ventas_global': ventas_global,
             'empresas_recientes': empresas_recientes,
+            'sin_empresa_activa': True,
+            'modo_plataforma': True,
         }
+        return render(request, 'core/dashboard.html', context)
 
-    # Si no hay empresa activa
+    # Si no hay empresa activa para un usuario estándar
     if not empresa:
-        if is_superadmin:
-            # SuperAdmin sin empresa activa seleccionada: Renderiza el hub SuperAdmin unificado
-            context = {
-                **context_sa,
-                'rol_actual': 'superadmin',
-                'ventas_mes': Decimal('0.00'),
-                'cartera_pendiente': Decimal('0.00'),
-                'recaudos_mes': Decimal('0.00'),
-                'total_clientes': 0,
-                'productos_stock_bajo': [],
-                'ultimas_facturas': [],
-                'sin_empresa_activa': True,
-                'modo_plataforma': True,
-            }
-            return render(request, 'core/dashboard.html', context)
         return render(request, 'core/sin_empresa.html')
 
     # Métricas principales de la empresa activa
@@ -132,7 +120,6 @@ def dashboard(request):
         ).exclude(estado__in=['ENTREGADO', 'CANCELADO']).count()
 
     context = {
-        **context_sa,
         'rol_actual': rol_actual,
         'ventas_mes': ventas_mes,
         'cartera_pendiente': cartera_pendiente,
@@ -152,10 +139,9 @@ def dashboard(request):
 @login_required
 def cambiar_empresa(request, empresa_id):
     # Aislamiento Estricto SaaS:
-    # Si empresa_id == 0, el SuperAdmin regresa al Modo Plataforma SaaS Global
-    if empresa_id == 0 and (request.user.is_superadmin or request.user.is_superuser):
-        request.session['empresa_activa_id'] = None
-        messages.info(request, "Modo Plataforma SuperAdmin activado.")
+    # El SuperAdmin gestiona la infraestructura de la plataforma global y no opera inquilinos.
+    if request.user.es_superadmin_user():
+        messages.info(request, "Como SuperAdmin operas en Modo Plataforma SaaS Global.")
         return redirect('core:dashboard')
 
     # Solo se permite cambiar a empresas donde el usuario tenga membresía activa

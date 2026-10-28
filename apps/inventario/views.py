@@ -113,8 +113,11 @@ def producto_crear(request):
 
 
 @login_required
+@requiere_inventario
 def producto_editar(request, producto_id):
     empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
     prod = get_object_or_404(Producto, id=producto_id, empresa=empresa)
     categorias = Categoria.objects.filter(empresa=empresa, activa=True)
     unidades = UnidadMedida.objects.filter(empresa=empresa, activa=True)
@@ -172,6 +175,7 @@ def kardex_view(request):
 
 
 @login_required
+@requiere_inventario
 def categorias_lista(request):
     empresa = request.empresa_activa
     if not empresa:
@@ -193,6 +197,7 @@ def categorias_lista(request):
 
 
 @login_required
+@requiere_inventario
 def unidades_lista(request):
     empresa = request.empresa_activa
     if not empresa:

@@ -152,8 +152,11 @@ def factura_crear(request):
 
 
 @login_required
+@requiere_facturacion
 def factura_detalle(request, factura_id):
     empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
     factura = get_object_or_404(
         Factura.objects.select_related('tercero', 'empresa').prefetch_related('items', 'recibos'),
         id=factura_id,
@@ -163,8 +166,11 @@ def factura_detalle(request, factura_id):
 
 
 @login_required
+@requiere_facturacion
 def factura_pdf(request, factura_id):
     empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
     factura = get_object_or_404(Factura, id=factura_id, empresa=empresa)
     pdf_bytes = generar_pdf_factura(factura)
 
@@ -175,8 +181,11 @@ def factura_pdf(request, factura_id):
 
 
 @login_required
+@requiere_facturacion
 def factura_enviar_email(request, factura_id):
     empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
     factura = get_object_or_404(
         Factura.objects.select_related('tercero', 'empresa'),
         id=factura_id,
@@ -234,6 +243,7 @@ def factura_enviar_email(request, factura_id):
 
 
 @login_required
+@requiere_facturacion
 def recibos_lista(request):
     empresa = request.empresa_activa
     if not empresa:
@@ -302,8 +312,11 @@ def recibo_crear(request):
 
 
 @login_required
+@requiere_facturacion
 def cotizaciones_lista(request):
     empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
     cotizaciones = Factura.objects.filter(
         empresa=empresa, tipo_documento='COTIZACION'
     ).select_related('tercero').order_by('-consecutivo')
@@ -311,8 +324,11 @@ def cotizaciones_lista(request):
 
 
 @login_required
+@requiere_facturacion
 def remisiones_lista(request):
     empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
     remisiones = Factura.objects.filter(
         empresa=empresa, tipo_documento='REMISION'
     ).select_related('tercero').order_by('-consecutivo')
@@ -320,8 +336,11 @@ def remisiones_lista(request):
 
 
 @login_required
+@requiere_facturacion
 def notas_credito_lista(request):
     empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
     notas = Factura.objects.filter(
         empresa=empresa, tipo_documento='NOTA_CREDITO'
     ).select_related('tercero', 'factura_referencia').order_by('-consecutivo')

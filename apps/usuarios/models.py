@@ -36,18 +36,19 @@ class User(AbstractUser):
         return bool(self.is_superadmin or self.is_superuser)
 
     def rol_en_empresa(self, empresa=None):
+        if self.es_superadmin_user():
+            return 'superadmin'
         empresa = empresa or getattr(self, '_empresa_activa', None)
         if not empresa:
-            return 'superadmin' if self.es_superadmin_user() else None
+            return None
         asignacion = self.empresas_asignadas.filter(empresa=empresa, activo=True).first()
         if asignacion:
             return asignacion.rol
-        # Si es superadmin pero no está asignado a esta empresa, no tiene rol operativo en ella
-        return 'superadmin' if self.es_superadmin_user() else None
+        return None
 
     @property
     def rol_actual(self):
-        if not getattr(self, '_empresa_activa', None) and self.es_superadmin_user():
+        if self.es_superadmin_user():
             return 'superadmin'
         return self.rol_en_empresa()
 
@@ -55,7 +56,7 @@ class User(AbstractUser):
     def rol_display(self):
         r = self.rol_actual
         roles_dict = {
-            'superadmin': 'Superadministrador Global',
+            'superadmin': 'Superadministrador Global SaaS',
             'propietario': 'Propietario',
             'admin': 'Administrador General',
             'contador': 'Contador / Financiero',
@@ -65,65 +66,92 @@ class User(AbstractUser):
         return roles_dict.get(r, 'Usuario')
 
     def es_propietario(self, empresa=None):
+        if self.es_superadmin_user():
+            return False
         empresa = empresa or getattr(self, '_empresa_activa', None)
         if not empresa:
-            return False
+            asignacion = self.empresas_asignadas.filter(activo=True).first()
+            return bool(asignacion and asignacion.rol == 'propietario')
         asignacion = self.empresas_asignadas.filter(empresa=empresa, activo=True).first()
         return bool(asignacion and asignacion.rol == 'propietario')
 
     def es_admin(self, empresa=None):
+        if self.es_superadmin_user():
+            return False
         empresa = empresa or getattr(self, '_empresa_activa', None)
         if not empresa:
-            return False
+            asignacion = self.empresas_asignadas.filter(activo=True).first()
+            return bool(asignacion and asignacion.rol in ('propietario', 'admin'))
         asignacion = self.empresas_asignadas.filter(empresa=empresa, activo=True).first()
         return bool(asignacion and asignacion.rol in ('propietario', 'admin'))
 
     def es_contador(self, empresa=None):
+        if self.es_superadmin_user():
+            return False
         empresa = empresa or getattr(self, '_empresa_activa', None)
         if not empresa:
-            return False
+            asignacion = self.empresas_asignadas.filter(activo=True).first()
+            return bool(asignacion and asignacion.rol in ('propietario', 'admin', 'contador'))
         asignacion = self.empresas_asignadas.filter(empresa=empresa, activo=True).first()
         return bool(asignacion and asignacion.rol in ('propietario', 'admin', 'contador'))
 
     def es_vendedor(self, empresa=None):
+        if self.es_superadmin_user():
+            return False
         empresa = empresa or getattr(self, '_empresa_activa', None)
         if not empresa:
-            return False
+            asignacion = self.empresas_asignadas.filter(activo=True).first()
+            return bool(asignacion and asignacion.rol in ('propietario', 'admin', 'vendedor'))
         asignacion = self.empresas_asignadas.filter(empresa=empresa, activo=True).first()
         return bool(asignacion and asignacion.rol in ('propietario', 'admin', 'vendedor'))
 
     def es_operador(self, empresa=None):
+        if self.es_superadmin_user():
+            return False
         empresa = empresa or getattr(self, '_empresa_activa', None)
         if not empresa:
-            return False
+            asignacion = self.empresas_asignadas.filter(activo=True).first()
+            return bool(asignacion and asignacion.rol in ('propietario', 'admin', 'operador'))
         asignacion = self.empresas_asignadas.filter(empresa=empresa, activo=True).first()
         return bool(asignacion and asignacion.rol in ('propietario', 'admin', 'operador'))
 
     def puede_facturar(self, empresa=None):
+        if self.es_superadmin_user():
+            return False
         empresa = empresa or getattr(self, '_empresa_activa', None)
         if not empresa:
-            return False
+            asignacion = self.empresas_asignadas.filter(activo=True).first()
+            return bool(asignacion and asignacion.rol in ('propietario', 'admin', 'vendedor', 'contador'))
         asignacion = self.empresas_asignadas.filter(empresa=empresa, activo=True).first()
         return bool(asignacion and asignacion.rol in ('propietario', 'admin', 'vendedor', 'contador'))
 
     def puede_inventario(self, empresa=None):
+        if self.es_superadmin_user():
+            return False
         empresa = empresa or getattr(self, '_empresa_activa', None)
         if not empresa:
-            return False
+            asignacion = self.empresas_asignadas.filter(activo=True).first()
+            return bool(asignacion and asignacion.rol in ('propietario', 'admin', 'operador', 'vendedor'))
         asignacion = self.empresas_asignadas.filter(empresa=empresa, activo=True).first()
         return bool(asignacion and asignacion.rol in ('propietario', 'admin', 'operador', 'vendedor'))
 
     def puede_contabilidad(self, empresa=None):
+        if self.es_superadmin_user():
+            return False
         empresa = empresa or getattr(self, '_empresa_activa', None)
         if not empresa:
-            return False
+            asignacion = self.empresas_asignadas.filter(activo=True).first()
+            return bool(asignacion and asignacion.rol in ('propietario', 'admin', 'contador'))
         asignacion = self.empresas_asignadas.filter(empresa=empresa, activo=True).first()
         return bool(asignacion and asignacion.rol in ('propietario', 'admin', 'contador'))
 
     def puede_nomina(self, empresa=None):
+        if self.es_superadmin_user():
+            return False
         empresa = empresa or getattr(self, '_empresa_activa', None)
         if not empresa:
-            return False
+            asignacion = self.empresas_asignadas.filter(activo=True).first()
+            return bool(asignacion and asignacion.rol in ('propietario', 'admin', 'contador'))
         asignacion = self.empresas_asignadas.filter(empresa=empresa, activo=True).first()
         return bool(asignacion and asignacion.rol in ('propietario', 'admin', 'contador'))
 

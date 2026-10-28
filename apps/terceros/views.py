@@ -9,6 +9,9 @@ from apps.empresas.models import Departamento, Municipio
 
 @login_required
 def terceros_lista(request):
+    if request.user.es_superadmin_user():
+        messages.warning(request, "Acceso restringido: El SuperAdmin administra la plataforma SaaS y no gestiona contactos comerciales de inquilinos.")
+        return redirect('core:dashboard')
     empresa = request.empresa_activa
     if not empresa:
         return redirect('core:dashboard')
@@ -40,6 +43,9 @@ def terceros_lista(request):
 
 @login_required
 def tercero_crear(request):
+    if request.user.es_superadmin_user():
+        messages.warning(request, "Acceso restringido: El SuperAdmin administra la plataforma SaaS y no crea clientes de inquilinos.")
+        return redirect('core:dashboard')
     empresa = request.empresa_activa
     if not empresa:
         return redirect('core:dashboard')
@@ -91,7 +97,11 @@ def tercero_crear(request):
 
 @login_required
 def tercero_editar(request, tercero_id):
+    if request.user.es_superadmin_user():
+        return redirect('core:dashboard')
     empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
     tercero = get_object_or_404(Tercero, id=tercero_id, empresa=empresa)
     departamentos = Departamento.objects.all()
     municipios = Municipio.objects.filter(departamento=tercero.departamento) if tercero.departamento else []
@@ -132,7 +142,11 @@ def tercero_editar(request, tercero_id):
 
 @login_required
 def tercero_detalle(request, tercero_id):
+    if request.user.es_superadmin_user():
+        return redirect('core:dashboard')
     empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
     tercero = get_object_or_404(Tercero, id=tercero_id, empresa=empresa)
     facturas = tercero.facturas.filter(empresa=empresa).order_by('-fecha_emision')[:10]
 
@@ -144,7 +158,11 @@ def tercero_detalle(request, tercero_id):
 
 @login_required
 def tercero_eliminar(request, tercero_id):
+    if request.user.es_superadmin_user():
+        return redirect('core:dashboard')
     empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
     tercero = get_object_or_404(Tercero, id=tercero_id, empresa=empresa)
     tercero.activo = False
     tercero.save(update_fields=['activo'])

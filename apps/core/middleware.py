@@ -14,6 +14,15 @@ class TenantMiddleware(MiddlewareMixin):
         if not request.user.is_authenticated:
             return
 
+        # Aislamiento Estricto SaaS:
+        # El SuperAdmin gestiona la infraestructura global y no tiene empresa activa asignada.
+        if request.user.es_superadmin_user():
+            request.empresa_activa = None
+            request.user._empresa_activa = None
+            if 'empresa_activa_id' in request.session:
+                del request.session['empresa_activa_id']
+            return
+
         # Si el usuario seleccionó una empresa en la sesión
         empresa_id = request.session.get('empresa_activa_id')
 

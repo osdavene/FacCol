@@ -74,12 +74,10 @@
                    class="px-3.5 py-2 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-extrabold text-xs uppercase tracking-wider shadow-lg shadow-amber-500/20 transition flex items-center gap-2">
                     <i class="fas fa-plus"></i> Nueva Empresa
                 </a>
-                {% if empresa_activa %}
-                <a href="{% url 'facturacion:factura_crear' %}"
-                   class="px-3.5 py-2 rounded-xl bg-amber-500/10 hover:bg-amber-500/20 border border-amber-500/30 text-amber-400 font-bold text-xs uppercase tracking-wider transition flex items-center gap-2">
-                    <i class="fas fa-file-invoice"></i> Facturar
+                <a href="{% url 'usuarios:lista' %}"
+                   class="px-3.5 py-2 rounded-xl bg-[#1e293b] hover:bg-[#334155] border border-[#334155] text-cyan-300 hover:text-white font-bold text-xs uppercase tracking-wider transition flex items-center gap-2">
+                    <i class="fas fa-users-gear text-cyan-400"></i> Usuarios
                 </a>
-                {% endif %}
             {% elif rol_actual == 'contador' %}
                 <a href="{% url 'contabilidad:asiento_crear' %}"
                    class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-black font-extrabold text-xs uppercase tracking-wider shadow-lg shadow-emerald-500/20 transition flex items-center gap-2">
@@ -326,23 +324,30 @@
     <!-- ════════════════════════════════════════════════════════════════
          3. OPERACIONES DE LA EMPRESA ACTIVA (SECTOR ADAPTABLE POR ROL)
     ════════════════════════════════════════════════════════════════ -->
-    {% if not empresa_activa %}
-    <div class="bg-[#111827] border border-[#1e2d47] p-6 rounded-3xl shadow-xl flex flex-col sm:flex-row items-center justify-between gap-4">
+    {% if not empresa_activa and is_superadmin %}
+    <div class="bg-[#111827] border border-amber-500/20 p-6 rounded-3xl shadow-xl flex flex-col sm:flex-row items-center justify-between gap-4">
         <div class="flex items-center gap-4">
-            <div class="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 text-xl flex-shrink-0">
+            <div class="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-amber-400 text-xl flex-shrink-0">
                 <i class="fas fa-shield-halved"></i>
             </div>
             <div>
-                <h3 class="font-bold text-white text-sm">Modo Plataforma SuperAdmin Activo</h3>
-                <p class="text-xs text-slate-400">
-                    Estás administrando el SaaS global. Para emitir facturación, gestionar POS o inventario de tu propia empresa (ej: ServiGest), selecciónala en el menú superior o regístrala como empresa propia.
+                <h3 class="font-bold text-white text-sm flex items-center gap-2">
+                    <span>Modo Plataforma SaaS — SuperAdmin</span>
+                    <span class="px-2 py-0.5 rounded-full text-[10px] bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">Aislamiento Estricto</span>
+                </h3>
+                <p class="text-xs text-slate-400 mt-1">
+                    Como Superadministrador global, gestionas inquilinos, suscripciones y cuentas del sistema. La facturación comercial, POS, inventario y contabilidad están completamente segregados en las cuentas de los inquilinos.
                 </p>
             </div>
         </div>
         <a href="{% url 'backoffice:empresa_crear' %}"
-           class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-extrabold text-xs uppercase tracking-wider transition whitespace-nowrap flex items-center gap-2">
-            <i class="fas fa-plus"></i> Registrar Empresa Inquilina
+           class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-extrabold text-xs uppercase tracking-wider transition whitespace-nowrap flex items-center gap-2 shadow-lg shadow-amber-500/20">
+            <i class="fas fa-plus"></i> Registrar Inquilino
         </a>
+    </div>
+    {% elif not empresa_activa %}
+    <div class="bg-[#111827] border border-[#1e2d47] p-6 rounded-3xl shadow-xl text-center">
+        <p class="text-xs text-slate-400">No tiene una empresa activa asignada a su cuenta. Contacte al administrador.</p>
     </div>
 
     {% elif empresa_activa %}

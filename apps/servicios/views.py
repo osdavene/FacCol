@@ -11,6 +11,9 @@ from apps.terceros.models import Tercero
 
 @login_required
 def servicios_panel(request):
+    if request.user.es_superadmin_user():
+        messages.warning(request, "Acceso restringido: El SuperAdmin administra la plataforma SaaS y no gestiona el taller de inquilinos.")
+        return redirect('core:dashboard')
     empresa = request.empresa_activa
     if not empresa:
         return redirect('core:dashboard')
@@ -30,6 +33,8 @@ def servicios_panel(request):
 
 @login_required
 def kanban_view(request):
+    if request.user.es_superadmin_user():
+        return redirect('core:dashboard')
     empresa = request.empresa_activa
     if not empresa:
         return redirect('core:dashboard')
@@ -50,6 +55,8 @@ def kanban_view(request):
 
 @login_required
 def kanban_cambiar_estado(request):
+    if request.user.es_superadmin_user():
+        return JsonResponse({'error': 'No autorizado'}, status=403)
     empresa = request.empresa_activa
     if request.method != 'POST':
         return JsonResponse({'error': 'POST requerido'}, status=405)
@@ -69,13 +76,19 @@ def kanban_cambiar_estado(request):
 
 @login_required
 def ordenes_lista(request):
+    if request.user.es_superadmin_user():
+        return redirect('core:dashboard')
     empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
     ordenes = OrdenServicio.objects.filter(empresa=empresa).select_related('cliente', 'equipo').order_by('-consecutivo')
     return render(request, 'servicios/ordenes_lista.html', {'ordenes': ordenes})
 
 
 @login_required
 def orden_crear(request):
+    if request.user.es_superadmin_user():
+        return redirect('core:dashboard')
     empresa = request.empresa_activa
     if not empresa:
         return redirect('core:dashboard')
