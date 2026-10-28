@@ -92,12 +92,24 @@
                     <div x-show="openEmp" x-cloak @click.away="openEmp = false"
                          class="absolute left-0 right-0 top-full mt-2 bg-[#141c2e] border border-[#1e2d47] rounded-xl shadow-2xl p-1 z-50">
                         <div class="px-3 py-1.5 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-[#1e2d47] flex items-center justify-between">
-                            <span>Cambiar Empresa</span>
+                            <span>Contexto Operativo</span>
                             {% if is_superadmin_user %}
                             <span class="text-[9px] text-amber-500 font-bold">SUPERADMIN</span>
                             {% endif %}
                         </div>
                         <div class="max-h-60 overflow-y-auto space-y-0.5">
+                            {% if is_superadmin_user %}
+                            <a href="{% url 'core:cambiar_empresa' 0 %}"
+                               class="flex items-center justify-between p-2 rounded-lg text-xs hover:bg-[#1f2c47] transition {% if not empresa_activa %}bg-amber-500/10 text-amber-400 font-bold{% else %}text-amber-400/90{% endif %}">
+                                <span class="flex items-center gap-2 truncate">
+                                    <i class="fas fa-shield-halved text-xs text-amber-500"></i>
+                                    <span>Modo Plataforma SaaS</span>
+                                </span>
+                                {% if not empresa_activa %}
+                                    <i class="fas fa-check text-amber-500 text-[10px]"></i>
+                                {% endif %}
+                            </a>
+                            {% endif %}
                             {% for emp in todas_empresas %}
                             <a href="{% url 'core:cambiar_empresa' emp.id %}"
                                class="flex items-center justify-between p-2 rounded-lg text-xs hover:bg-[#1f2c47] transition {% if emp.id == empresa_activa.id %}bg-amber-500/10 text-amber-400 font-bold{% else %}text-slate-300{% endif %}">
@@ -416,9 +428,9 @@
                     <div class="relative" x-data="{ openTopEmp: false }">
                         <button type="button" @click="openTopEmp = !openTopEmp"
                                 class="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-[#162034] hover:bg-[#1a2337] border border-[#1e2d47] text-xs transition">
-                            <span class="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
-                            <span class="text-slate-200 font-semibold max-w-[130px] sm:max-w-[180px] truncate">
-                                {{ empresa_activa.display_name|default:"Seleccionar Empresa" }}
+                            <span class="w-2 h-2 rounded-full {% if empresa_activa %}bg-emerald-500 animate-pulse{% else %}bg-amber-500{% endif %}"></span>
+                            <span class="text-slate-200 font-semibold max-w-[130px] sm:max-w-[200px] truncate">
+                                {{ empresa_activa.display_name|default:"Plataforma SuperAdmin" }}
                             </span>
                             <i class="fas fa-chevron-down text-slate-500 text-[9px]"></i>
                         </button>
@@ -426,12 +438,24 @@
                         <div x-show="openTopEmp" x-cloak @click.away="openTopEmp = false"
                              class="absolute right-0 top-full mt-2 w-64 bg-[#141c2e] border border-[#1e2d47] rounded-2xl shadow-2xl p-1.5 z-50">
                             <div class="px-2 py-1 text-[10px] font-bold text-slate-400 uppercase tracking-wider border-b border-[#1e2d47] flex items-center justify-between">
-                                <span>Inquilinos Disponibles</span>
+                                <span>Contexto Activo</span>
                                 {% if is_superadmin_user %}
-                                <span class="text-[9px] text-amber-400 font-black">TODOS</span>
+                                <span class="text-[9px] text-amber-400 font-black">SUPERADMIN</span>
                                 {% endif %}
                             </div>
                             <div class="max-h-56 overflow-y-auto space-y-0.5 mt-1">
+                                {% if is_superadmin_user %}
+                                <a href="{% url 'core:cambiar_empresa' 0 %}"
+                                   class="flex items-center justify-between p-2 rounded-xl text-xs hover:bg-[#1f2c47] transition {% if not empresa_activa %}bg-amber-500/15 text-amber-400 font-bold{% else %}text-amber-400/90{% endif %}">
+                                    <span class="flex items-center gap-2 truncate">
+                                        <i class="fas fa-shield-halved text-xs text-amber-400"></i>
+                                        <span>Modo Plataforma SaaS</span>
+                                    </span>
+                                    {% if not empresa_activa %}
+                                        <i class="fas fa-check text-amber-500 text-[10px]"></i>
+                                    {% endif %}
+                                </a>
+                                {% endif %}
                                 {% for emp in todas_empresas %}
                                 <a href="{% url 'core:cambiar_empresa' emp.id %}"
                                    class="flex items-center justify-between p-2 rounded-xl text-xs hover:bg-[#1f2c47] transition {% if emp.id == empresa_activa.id %}bg-amber-500/15 text-amber-400 font-bold{% else %}text-slate-300{% endif %}">

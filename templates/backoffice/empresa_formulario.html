@@ -63,9 +63,62 @@
             </div>
         </div>
 
+        {% if accion == 'Crear' %}
+        <!-- Bloque Administrador Inicial (Aislamiento Estricto SaaS) -->
+        <div class="space-y-4 pt-4 border-t border-[#1e2d47]" x-data="{ adminTipo: 'nuevo_cliente' }">
+            <div class="flex items-center justify-between">
+                <div class="font-bold text-amber-500 uppercase tracking-wider text-xs">
+                    2. Asignación del Usuario Administrador Inicial
+                </div>
+                <span class="text-[10px] text-slate-400 bg-[#162034] px-2.5 py-0.5 rounded-full border border-[#1e2d47]">
+                    Aislamiento Estricto SaaS
+                </span>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <label class="flex items-center gap-3 p-3.5 rounded-2xl bg-[#162034] border border-[#1e2d47] cursor-pointer hover:border-amber-500/40 transition"
+                       :class="adminTipo === 'nuevo_cliente' ? 'border-amber-500/50 bg-amber-500/5' : ''">
+                    <input type="radio" name="admin_tipo" value="nuevo_cliente" x-model="adminTipo" checked class="text-amber-500 focus:ring-0">
+                    <div>
+                        <div class="font-bold text-white text-xs">Crear cuenta exclusiva para el Cliente</div>
+                        <div class="text-[10px] text-slate-400">Genera acceso independiente para el dueño o administrador de la empresa.</div>
+                    </div>
+                </label>
+
+                <label class="flex items-center gap-3 p-3.5 rounded-2xl bg-[#162034] border border-[#1e2d47] cursor-pointer hover:border-amber-500/40 transition"
+                       :class="adminTipo === 'asignar_superadmin' ? 'border-amber-500/50 bg-amber-500/5' : ''">
+                    <input type="radio" name="admin_tipo" value="asignar_superadmin" x-model="adminTipo" class="text-amber-500 focus:ring-0">
+                    <div>
+                        <div class="font-bold text-white text-xs">Empresa Propia (Asignar a mi cuenta)</div>
+                        <div class="text-[10px] text-slate-400">Para tu propia empresa (ej: ServiGest) donde vas a facturar y operar.</div>
+                    </div>
+                </label>
+            </div>
+
+            <!-- Campos del Administrador Cliente -->
+            <div x-show="adminTipo === 'nuevo_cliente'" class="grid grid-cols-1 sm:grid-cols-3 gap-4 p-4 rounded-2xl bg-[#0e1422] border border-[#1e2d47]">
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Nombre del Administrador / Contacto</label>
+                    <input type="text" name="admin_nombre" placeholder="Ej: Carlos Gómez"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Correo Electrónico (Login)</label>
+                    <input type="email" name="admin_email" placeholder="gerencia@empresa.com"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Contraseña Inicial</label>
+                    <input type="text" name="admin_password" value="Clave1234*" placeholder="••••••••"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-amber-400 font-mono">
+                </div>
+            </div>
+        </div>
+        {% endif %}
+
         <!-- Bloque Facturación DIAN -->
         <div class="space-y-4 pt-4 border-t border-[#1e2d47]">
-            <div class="font-bold text-amber-500 uppercase tracking-wider text-xs">2. Resolución de Facturación Electrónica DIAN</div>
+            <div class="font-bold text-amber-500 uppercase tracking-wider text-xs">3. Resolución de Facturación Electrónica DIAN</div>
             <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
                 <div>
                     <label class="block font-semibold text-slate-300 mb-1">Prefijo Factura</label>

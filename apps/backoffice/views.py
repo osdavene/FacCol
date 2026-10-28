@@ -22,12 +22,24 @@ def backoffice_dashboard(request):
 @user_passes_test(es_superadmin)
 def empresas_lista(request):
     busqueda = request.GET.get('q', '').strip()
-    empresas = Empresa.objects.select_related('plan').order_by('-created_at')
+    empresas = Empresa.objects.select_related('plan').prefetch_related(
+        'usuarios_asignados__user'
+    ).order_by('-created_at')
 
     if busqueda:
         empresas = empresas.filter(razon_social__icontains=busqueda) | empresas.filter(nit__icontains=busqueda)
 
     return render(request, 'backoffice/empresas_lista.html', {'empresas': empresas, 'busqueda': busqueda})
+
+
+@user_passes_test(es_superadmin)
+def empresa_toggle_activa(request, empresa_id):
+    empresa = get_object_or_404(Empresa, id=empresa_id)
+    empresa.activa = not empresa.activa
+    empresa.save(update_fields=['activa'])
+    estado_str = "activada" if empresa.activa else "suspendida"
+    messages.success(request, f"La empresa inquilina '{empresa.razon_social}' ha sido {estado_str} exitosamente.")
+    return redirect('backoffice:empresas_lista')
 
 
 @user_passes_test(es_superadmin)
@@ -65,15 +77,51 @@ def empresa_crear(request):
         for mod in Modulo.objects.filter(activo_por_defecto=True):
             empresa.modulos.add(mod)
 
-        # Asignar al creador como propietario
-        EmpresaUsuario.objects.create(
-            user=request.user,
-            empresa=empresa,
-            rol='propietario',
-            activo=True
-        )
+        # Aislamiento Estricto SaaS: Determinar el Propietario inicial
+        admin_tipo = request.POST.get('admin_tipo', 'nuevo_cliente')
 
-        messages.success(request, f"Empresa '{empresa.razon_social}' creada exitosamente.")
+        if admin_tipo == 'asignar_superadmin':
+            # Empresa propia del SuperAdmin (ej. ServiGest)
+            EmpresaUsuario.objects.create(
+                user=request.user,
+                empresa=empresa,
+                rol='propietario',
+                activo=True
+            )
+            messages.success(request, f"Empresa propia '{empresa.razon_social}' creada exitosamente y asignada a tu cuenta como Propietario.")
+        else:
+            # Empresa de un cliente: Creamos su usuario administrador inicial independiente
+            admin_email = request.POST.get('admin_email', '').strip().lower() or email
+            admin_nombre = request.POST.get('admin_nombre', '').strip() or razon_social
+            admin_password = request.POST.get('admin_password', '').strip() or 'Clave1234*'
+
+            client_user, created = User.objects.get_or_create(
+                username=admin_email,
+                defaults={
+                    'email': admin_email,
+                    'first_name': admin_nombre,
+                    'is_superadmin': False,
+                    'is_staff': False,
+                    'is_superuser': False,
+                }
+            )
+            if created or admin_password:
+                client_user.set_password(admin_password)
+                client_user.save()
+
+            EmpresaUsuario.objects.create(
+                user=client_user,
+                empresa=empresa,
+                rol='propietario',
+                activo=True
+            )
+
+            messages.success(
+                request,
+                f"Empresa inquilina '{empresa.razon_social}' creada exitosamente con Aislamiento Estricto. "
+                f"Credenciales del cliente: Usuario: {admin_email} | Clave: {admin_password}"
+            )
+
         return redirect('backoffice:empresas_lista')
 
     return render(request, 'backoffice/empresa_formulario.html', {

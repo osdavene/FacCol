@@ -218,12 +218,12 @@
 
         </div>
 
-        <!-- Tabla de Inquilinos Recientes con Switch Directo -->
+        <!-- Tabla de Inquilinos de la Plataforma SaaS -->
         <div class="bg-[#0e1422] border border-[#1e2d47] rounded-2xl overflow-hidden">
             <div class="p-3.5 border-b border-[#1e2d47] flex items-center justify-between">
                 <div class="text-xs font-bold text-white flex items-center gap-2">
-                    <i class="fas fa-clock-rotate-left text-amber-500"></i>
-                    <span>Inquilinos Recientes & Acceso Rápido</span>
+                    <i class="fas fa-building-user text-amber-500"></i>
+                    <span>Inquilinos Registrados en FacCol SaaS</span>
                 </div>
                 <a href="{% url 'backoffice:empresas_lista' %}" class="text-xs font-bold text-amber-400 hover:underline">
                     Gestionar todos los inquilinos &rarr;
@@ -237,8 +237,9 @@
                             <th class="p-3">Empresa / Razón Social</th>
                             <th class="p-3">NIT</th>
                             <th class="p-3">Plan</th>
+                            <th class="p-3">Administrador Asignado</th>
                             <th class="p-3 text-center">Estado</th>
-                            <th class="p-3 text-right">Acción de Entrada</th>
+                            <th class="p-3 text-right">Gestión SaaS</th>
                         </tr>
                     </thead>
                     <tbody class="divide-y divide-[#1e2d47]/50">
@@ -249,38 +250,66 @@
                                     <span>{{ emp.razon_social }}</span>
                                     {% if emp.id == empresa_activa.id %}
                                     <span class="px-2 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
-                                        Activa ahora
+                                        Tu Empresa Activa
                                     </span>
                                     {% endif %}
                                 </div>
-                                <div class="text-[10px] text-slate-400">{{ emp.email|default:"Sin email registrado" }}</div>
+                                <div class="text-[10px] text-slate-400">{{ emp.nombre_comercial|default:emp.email }}</div>
                             </td>
                             <td class="p-3 font-mono font-bold text-amber-400">{{ emp.nit_completo }}</td>
-                            <td class="p-3 text-slate-300">{{ emp.plan.nombre|default:"Plan Base" }}</td>
+                            <td class="p-3">
+                                <span class="px-2 py-0.5 rounded text-[11px] font-bold bg-[#162034] border border-[#1e2d47] text-slate-300">
+                                    {{ emp.plan.nombre|default:"Plan Base" }}
+                                </span>
+                            </td>
+                            <td class="p-3 text-slate-300">
+                                {% with admin_asig=emp.usuarios_asignados.first %}
+                                    {% if admin_asig %}
+                                        <div class="font-semibold text-white">{{ admin_asig.user.get_full_name|default:admin_asig.user.username }}</div>
+                                        <div class="text-[10px] text-slate-400 font-mono">{{ admin_asig.user.email }}</div>
+                                    {% else %}
+                                        <span class="text-slate-500 italic text-[11px]">Sin administrador</span>
+                                    {% endif %}
+                                {% endwith %}
+                            </td>
                             <td class="p-3 text-center">
                                 <span class="px-2 py-0.5 rounded text-[10px] font-extrabold uppercase
                                     {% if emp.activa %}bg-emerald-500/10 text-emerald-400 border border-emerald-500/20
                                     {% else %}bg-red-500/10 text-red-400 border border-red-500/20{% endif %}">
-                                    {% if emp.activa %}Activa{% else %}Inactiva{% endif %}
+                                    {% if emp.activa %}Activa{% else %}Suspendida{% endif %}
                                 </span>
                             </td>
                             <td class="p-3 text-right space-x-1.5">
-                                {% if emp.id != empresa_activa.id %}
-                                <a href="{% url 'core:cambiar_empresa' emp.id %}"
-                                   class="px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500 text-amber-400 hover:text-black font-bold text-[11px] transition inline-flex items-center gap-1.5">
-                                    <i class="fas fa-right-to-bracket text-[10px]"></i>
-                                    <span>Entrar</span>
-                                </a>
+                                {% if emp.id == empresa_activa.id %}
+                                <span class="px-2 py-1 text-[11px] font-bold text-emerald-400 bg-emerald-500/10 rounded-lg border border-emerald-500/20">
+                                    Operando
+                                </span>
+                                {% else %}
+                                    {% for asig in user.empresas_asignadas.all %}
+                                        {% if asig.empresa_id == emp.id and asig.activo %}
+                                        <a href="{% url 'core:cambiar_empresa' emp.id %}"
+                                           class="px-2.5 py-1 rounded-lg bg-amber-500/15 hover:bg-amber-500 text-amber-400 hover:text-black font-bold text-[11px] transition inline-flex items-center gap-1">
+                                            <i class="fas fa-right-to-bracket text-[10px]"></i>
+                                            <span>Mi Empresa</span>
+                                        </a>
+                                        {% endif %}
+                                    {% endfor %}
                                 {% endif %}
                                 <a href="{% url 'backoffice:empresa_editar' emp.id %}" title="Configuración de Inquilino"
                                    class="p-1.5 rounded-lg bg-[#162034] hover:bg-[#1f2c47] text-slate-300 hover:text-white transition inline-block">
                                     <i class="fas fa-sliders text-xs"></i>
                                 </a>
+                                <a href="{% url 'backoffice:empresa_toggle_activa' emp.id %}"
+                                   title="{% if emp.activa %}Suspender empresa{% else %}Activar empresa{% endif %}"
+                                   onclick="return confirm('¿Está seguro de cambiar el estado de acceso de este inquilino?')"
+                                   class="p-1.5 rounded-lg text-xs transition inline-block {% if emp.activa %}bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white{% else %}bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500 hover:text-white{% endif %}">
+                                    <i class="fas {% if emp.activa %}fa-pause{% else %}fa-play{% endif %}"></i>
+                                </a>
                             </td>
                         </tr>
                         {% empty %}
                         <tr>
-                            <td colspan="5" class="p-6 text-center text-slate-500">
+                            <td colspan="6" class="p-6 text-center text-slate-500">
                                 No hay empresas inquilinas registradas. <a href="{% url 'backoffice:empresa_crear' %}" class="text-amber-400 font-bold">Crear la primera empresa</a>.
                             </td>
                         </tr>
@@ -297,21 +326,22 @@
     <!-- ════════════════════════════════════════════════════════════════
          3. OPERACIONES DE LA EMPRESA ACTIVA (SECTOR ADAPTABLE POR ROL)
     ════════════════════════════════════════════════════════════════ -->
-    {% if sin_empresa_activa %}
-    <div class="bg-[#111827] border border-amber-500/30 p-8 rounded-3xl text-center shadow-xl">
-        <div class="w-16 h-16 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 text-2xl mx-auto mb-4">
-            <i class="fas fa-building-circle-exclamation"></i>
+    {% if not empresa_activa %}
+    <div class="bg-[#111827] border border-[#1e2d47] p-6 rounded-3xl shadow-xl flex flex-col sm:flex-row items-center justify-between gap-4">
+        <div class="flex items-center gap-4">
+            <div class="w-12 h-12 rounded-2xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400 text-xl flex-shrink-0">
+                <i class="fas fa-shield-halved"></i>
+            </div>
+            <div>
+                <h3 class="font-bold text-white text-sm">Modo Plataforma SuperAdmin Activo</h3>
+                <p class="text-xs text-slate-400">
+                    Estás administrando el SaaS global. Para emitir facturación, gestionar POS o inventario de tu propia empresa (ej: ServiGest), selecciónala en el menú superior o regístrala como empresa propia.
+                </p>
+            </div>
         </div>
-        <h3 class="font-display font-extrabold text-lg text-white mb-2">
-            No hay una empresa activa seleccionada
-        </h3>
-        <p class="text-xs text-slate-400 max-w-md mx-auto mb-6">
-            Seleccione una empresa de la tabla superior para administrar sus facturas, inventario y finanzas, o cree una nueva empresa inquilina.
-        </p>
         <a href="{% url 'backoffice:empresa_crear' %}"
-           class="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-extrabold text-xs uppercase tracking-wider transition">
-            <i class="fas fa-plus"></i>
-            <span>Crear Nueva Empresa Inquilina</span>
+           class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-extrabold text-xs uppercase tracking-wider transition whitespace-nowrap flex items-center gap-2">
+            <i class="fas fa-plus"></i> Registrar Empresa Inquilina
         </a>
     </div>
 

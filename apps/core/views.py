@@ -28,17 +28,21 @@ def dashboard(request):
     if is_superadmin:
         total_empresas = Empresa.objects.count()
         empresas_activas = Empresa.objects.filter(activa=True).count()
+        empresas_inactivas = Empresa.objects.filter(activa=False).count()
         total_usuarios = User.objects.count()
         total_facturas_global = Factura.objects.count()
         ventas_global = Factura.objects.filter(
             tipo_documento='FACTURA'
         ).exclude(estado='ANULADA').aggregate(total=Sum('total'))['total'] or Decimal('0.00')
-        empresas_recientes = Empresa.objects.select_related('plan').order_by('-created_at')[:8]
+        empresas_recientes = Empresa.objects.select_related('plan').prefetch_related(
+            'usuarios_asignados__user'
+        ).order_by('-created_at')[:10]
 
         context_sa = {
             'is_superadmin': True,
             'total_empresas': total_empresas,
             'empresas_activas': empresas_activas,
+            'empresas_inactivas': empresas_inactivas,
             'total_usuarios': total_usuarios,
             'total_facturas_global': total_facturas_global,
             'ventas_global': ventas_global,
@@ -59,6 +63,7 @@ def dashboard(request):
                 'productos_stock_bajo': [],
                 'ultimas_facturas': [],
                 'sin_empresa_activa': True,
+                'modo_plataforma': True,
             }
             return render(request, 'core/dashboard.html', context)
         return render(request, 'core/sin_empresa.html')
@@ -146,16 +151,21 @@ def dashboard(request):
 
 @login_required
 def cambiar_empresa(request, empresa_id):
-    if request.user.is_superadmin or request.user.is_superuser:
-        empresa = get_object_or_404(Empresa, id=empresa_id, activa=True)
-    else:
-        asignacion = get_object_or_404(
-            request.user.empresas_asignadas,
-            empresa_id=empresa_id,
-            activo=True,
-            empresa__activa=True
-        )
-        empresa = asignacion.empresa
+    # Aislamiento Estricto SaaS:
+    # Si empresa_id == 0, el SuperAdmin regresa al Modo Plataforma SaaS Global
+    if empresa_id == 0 and (request.user.is_superadmin or request.user.is_superuser):
+        request.session['empresa_activa_id'] = None
+        messages.info(request, "Modo Plataforma SuperAdmin activado.")
+        return redirect('core:dashboard')
+
+    # Solo se permite cambiar a empresas donde el usuario tenga membresía activa
+    asignacion = get_object_or_404(
+        request.user.empresas_asignadas,
+        empresa_id=empresa_id,
+        activo=True,
+        empresa__activa=True
+    )
+    empresa = asignacion.empresa
 
     request.session['empresa_activa_id'] = empresa.id
     messages.success(request, f"Contexto activo cambiado a: {empresa.display_name}")

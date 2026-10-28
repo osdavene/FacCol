@@ -20,12 +20,12 @@
             <table class="w-full text-left text-xs">
                 <thead>
                     <tr class="bg-[#141c2e] text-slate-400 font-bold uppercase tracking-wider text-[10px] border-b border-[#1e2d47]">
-                        <th class="p-4">Razón Social</th>
+                        <th class="p-4">Empresa / Razón Social</th>
                         <th class="p-4">NIT</th>
                         <th class="p-4">Plan Activo</th>
-                        <th class="p-4">Contacto</th>
+                        <th class="p-4">Administrador Asignado</th>
                         <th class="p-4 text-center">Estado</th>
-                        <th class="p-4 text-right">Acciones</th>
+                        <th class="p-4 text-right">Gestión SaaS</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-[#1e2d47]/50">
@@ -33,27 +33,40 @@
                     <tr class="hover:bg-[#162034] transition">
                         <td class="p-4">
                             <div class="font-bold text-white text-sm">{{ emp.razon_social }}</div>
-                            <div class="text-[10px] text-slate-500">{{ emp.nombre_comercial|default:"" }}</div>
+                            <div class="text-[10px] text-slate-500">{{ emp.nombre_comercial|default:emp.email }}</div>
                         </td>
                         <td class="p-4 font-mono font-bold text-amber-400">{{ emp.nit_completo }}</td>
-                        <td class="p-4 text-slate-300">{{ emp.plan.nombre|default:"Sin plan" }}</td>
-                        <td class="p-4 text-slate-400">
-                            <div>{{ emp.email }}</div>
-                            <div class="text-[10px] text-slate-500">{{ emp.telefono }}</div>
+                        <td class="p-4">
+                            <span class="px-2 py-0.5 rounded text-[11px] font-bold bg-[#162034] border border-[#1e2d47] text-slate-300">
+                                {{ emp.plan.nombre|default:"Sin plan" }}
+                            </span>
+                        </td>
+                        <td class="p-4 text-slate-300">
+                            {% with admin_asig=emp.usuarios_asignados.first %}
+                                {% if admin_asig %}
+                                    <div class="font-semibold text-white">{{ admin_asig.user.get_full_name|default:admin_asig.user.username }}</div>
+                                    <div class="text-[10px] text-slate-400 font-mono">{{ admin_asig.user.email }}</div>
+                                {% else %}
+                                    <span class="text-slate-500 italic text-[11px]">Sin administrador</span>
+                                {% endif %}
+                            {% endwith %}
                         </td>
                         <td class="p-4 text-center">
                             <span class="px-2 py-0.5 rounded text-[10px] font-bold {% if emp.activa %}bg-emerald-500/10 text-emerald-400 border border-emerald-500/20{% else %}bg-red-500/10 text-red-400 border border-red-500/20{% endif %}">
-                                {% if emp.activa %}Activa{% else %}Inactiva{% endif %}
+                                {% if emp.activa %}Activa{% else %}Suspendida{% endif %}
                             </span>
                         </td>
-                        <td class="p-4 text-right space-x-1">
-                            <a href="{% url 'core:cambiar_empresa' emp.id %}" title="Entrar a esta empresa"
-                               class="p-2 rounded-xl bg-[#162034] hover:bg-amber-500 hover:text-black text-amber-400 inline-block transition">
-                                <i class="fas fa-right-to-bracket text-xs"></i>
+                        <td class="p-4 text-right space-x-1.5">
+                            <a href="{% url 'backoffice:empresa_editar' emp.id %}" title="Configurar parámetros DIAN, SMTP y Plan"
+                               class="px-2.5 py-1.5 rounded-xl bg-[#162034] hover:bg-[#1f2c47] text-slate-300 hover:text-white inline-flex items-center gap-1.5 transition text-xs font-semibold">
+                                <i class="fas fa-sliders text-xs text-amber-400"></i>
+                                <span>Configurar</span>
                             </a>
-                            <a href="{% url 'backoffice:empresa_editar' emp.id %}" title="Configurar parámetros"
-                               class="p-2 rounded-xl bg-[#162034] hover:bg-[#1f2c47] text-slate-300 hover:text-white inline-block transition">
-                                <i class="fas fa-sliders text-xs"></i>
+                            <a href="{% url 'backoffice:empresa_toggle_activa' emp.id %}"
+                               title="{% if emp.activa %}Suspender empresa{% else %}Activar empresa{% endif %}"
+                               onclick="return confirm('¿Está seguro de cambiar el estado de acceso de esta empresa?')"
+                               class="p-1.5 rounded-xl text-xs transition inline-block {% if emp.activa %}bg-red-500/10 text-red-400 hover:bg-red-500 hover:text-white{% else %}bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500 hover:text-white{% endif %}">
+                                <i class="fas {% if emp.activa %}fa-pause{% else %}fa-play{% endif %}"></i>
                             </a>
                         </td>
                     </tr>
