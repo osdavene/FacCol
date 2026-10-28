@@ -4,6 +4,7 @@ from apps.nomina import views
 app_name = 'nomina'
 
 urlpatterns = [
+    path('', views.nominas_lista, name='index'),
     path('empleados/', views.empleados_lista, name='empleados_lista'),
     path('empleados/nuevo/', views.empleado_crear, name='empleado_crear'),
     path('liquidaciones/', views.nominas_lista, name='nominas_lista'),

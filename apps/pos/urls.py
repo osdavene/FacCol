@@ -4,6 +4,7 @@ from apps.pos import views
 app_name = 'pos'
 
 urlpatterns = [
+    path('', views.pos_terminal, name='index'),
     path('terminal/', views.pos_terminal, name='pos_terminal'),
     path('api/procesar-venta/', views.pos_procesar_venta, name='pos_procesar_venta'),
     path('cajas/', views.cajas_lista, name='cajas_lista'),

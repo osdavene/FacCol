@@ -4,6 +4,7 @@ from apps.ia import views
 app_name = 'ia'
 
 urlpatterns = [
+    path('', views.asistente_view, name='index'),
     path('asistente/', views.asistente_view, name='asistente'),
     path('api/chat/', views.chat_api, name='chat_api'),
 ]

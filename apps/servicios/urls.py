@@ -4,6 +4,7 @@ from apps.servicios import views
 app_name = 'servicios'
 
 urlpatterns = [
+    path('', views.kanban_view, name='index'),
     path('panel/', views.servicios_panel, name='panel'),
     path('kanban/', views.kanban_view, name='kanban'),
     path('api/kanban/cambiar-estado/', views.kanban_cambiar_estado, name='kanban_cambiar_estado'),
