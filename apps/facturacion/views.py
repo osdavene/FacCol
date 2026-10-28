@@ -6,6 +6,10 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import HttpResponse, JsonResponse
 from django.db import transaction
+from django.core.mail import EmailMultiAlternatives
+from django.template.loader import render_to_string
+from django.utils.html import strip_tags
+from django.conf import settings
 
 from apps.facturacion.models import Factura, FacturaItem, ReciboCaja
 from apps.facturacion.pdf_service import generar_pdf_factura
@@ -165,6 +169,65 @@ def factura_pdf(request, factura_id):
     filename = f"{factura.numero_completo}_{factura.tercero.numero_documento}.pdf"
     response['Content-Disposition'] = f'inline; filename="{filename}"'
     return response
+
+
+@login_required
+def factura_enviar_email(request, factura_id):
+    empresa = request.empresa_activa
+    factura = get_object_or_404(
+        Factura.objects.select_related('tercero', 'empresa'),
+        id=factura_id,
+        empresa=empresa
+    )
+
+    if request.method == 'POST':
+        destinatario = request.POST.get('email', '').strip()
+        mensaje_personalizado = request.POST.get('mensaje', '').strip()
+
+        if not destinatario and factura.tercero:
+            destinatario = factura.tercero.email or ''
+
+        if not destinatario:
+            messages.error(request, "Debe especificar una dirección de correo electrónico válida.")
+            return redirect('facturacion:factura_detalle', factura_id=factura.id)
+
+        try:
+            # 1. Generar el PDF dinámico oficial
+            pdf_bytes = generar_pdf_factura(factura)
+            filename = f"Factura_{factura.numero_completo}.pdf"
+
+            # 2. Asunto y cuerpo del correo
+            asunto = f"Factura Electrónica No. {factura.numero_completo} — {empresa.razon_social}"
+            contexto = {
+                'factura': factura,
+                'empresa': empresa,
+                'mensaje_personalizado': mensaje_personalizado,
+            }
+            html_content = render_to_string('facturacion/emails/factura_email.html', contexto)
+            text_content = strip_tags(html_content)
+
+            # 3. Construir el mensaje multipart
+            from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'notificaciones@servigest.online')
+            reply_to = [empresa.email] if (empresa and empresa.email) else [from_email]
+
+            email = EmailMultiAlternatives(
+                subject=asunto,
+                body=text_content,
+                from_email=from_email,
+                to=[destinatario],
+                reply_to=reply_to,
+            )
+            email.attach_alternative(html_content, "text/html")
+            email.attach(filename, pdf_bytes, 'application/pdf')
+
+            # 4. Enviar mediante Amazon SES
+            email.send(fail_silently=False)
+
+            messages.success(request, f"¡Factura {factura.numero_completo} enviada exitosamente a {destinatario}!")
+        except Exception as e:
+            messages.error(request, f"No se pudo enviar el correo: {str(e)}")
+
+    return redirect('facturacion:factura_detalle', factura_id=factura.id)
 
 
 @login_required

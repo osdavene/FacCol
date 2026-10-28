@@ -4,7 +4,7 @@
 {% block title %}Factura {{ factura.numero_completo }}{% endblock %}
 
 {% block content %}
-<div class="max-w-5xl mx-auto space-y-6">
+<div class="max-w-5xl mx-auto space-y-6" x-data="{ modalEmail: false }">
 
     <!-- Barra de Acciones Superiores -->
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -18,7 +18,11 @@
             </div>
         </div>
 
-        <div class="flex items-center gap-3">
+        <div class="flex items-center gap-3 flex-wrap">
+            <button type="button" @click="modalEmail = true"
+               class="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-extrabold text-xs uppercase tracking-wider shadow-lg shadow-blue-600/20 transition flex items-center gap-2">
+                <i class="fas fa-paper-plane"></i> Enviar por Email
+            </button>
             <a href="{% url 'facturacion:factura_pdf' factura.id %}" target="_blank"
                class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-extrabold text-xs uppercase tracking-wider shadow-lg shadow-amber-500/20 transition flex items-center gap-2">
                 <i class="fas fa-file-pdf"></i> Descargar PDF Oficial
@@ -181,6 +185,83 @@
         </div>
     </div>
     {% endif %}
+
+    <!-- Modal Enviar Factura por Email -->
+    <div x-show="modalEmail" 
+         x-cloak
+         class="fixed inset-0 z-50 overflow-y-auto flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm"
+         x-transition:enter="transition ease-out duration-200"
+         x-transition:enter-start="opacity-0"
+         x-transition:enter-end="opacity-100"
+         x-transition:leave="transition ease-in duration-150"
+         x-transition:leave-start="opacity-100"
+         x-transition:leave-end="opacity-0">
+        
+        <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 sm:p-8 max-w-lg w-full shadow-2xl relative"
+             @click.away="modalEmail = false">
+            
+            <div class="flex items-center justify-between pb-4 border-b border-[#1e2d47] mb-6">
+                <div class="flex items-center gap-3">
+                    <div class="w-10 h-10 rounded-xl bg-blue-500/20 text-blue-400 flex items-center justify-center text-lg">
+                        <i class="fas fa-envelope"></i>
+                    </div>
+                    <div>
+                        <h3 class="font-display font-extrabold text-lg text-white">Enviar Factura por Email</h3>
+                        <p class="text-xs text-slate-400">Factura No. {{ factura.numero_completo }}</p>
+                    </div>
+                </div>
+                <button type="button" @click="modalEmail = false" class="text-slate-400 hover:text-white transition">
+                    <i class="fas fa-times text-lg"></i>
+                </button>
+            </div>
+
+            <form method="POST" action="{% url 'facturacion:factura_enviar_email' factura.id %}" class="space-y-4">
+                {% csrf_token %}
+
+                <div>
+                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-2">
+                        Correo del Destinatario <span class="text-red-400">*</span>
+                    </label>
+                    <input type="email" name="email" required
+                           value="{{ factura.tercero.email|default:'' }}"
+                           placeholder="cliente@ejemplo.com"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-blue-500 transition">
+                    <p class="text-[11px] text-slate-400 mt-1">
+                        Se enviará con el remitente corporativo: <code class="text-amber-400">notificaciones@servigest.online</code>
+                    </p>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-bold uppercase tracking-wider text-slate-300 mb-2">
+                        Mensaje Personalizado (Opcional)
+                    </label>
+                    <textarea name="mensaje" rows="3"
+                              placeholder="Estimado cliente, adjuntamos su factura electrónica por los servicios prestados..."
+                              class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-4 py-3 text-white text-sm outline-none focus:border-blue-500 transition resize-none"></textarea>
+                </div>
+
+                <div class="bg-[#141c2e] p-4 rounded-xl border border-[#1e2d47] text-xs text-slate-300 flex items-start gap-3">
+                    <i class="fas fa-paperclip text-amber-400 text-base mt-0.5"></i>
+                    <div>
+                        <b class="text-white">Archivos adjuntos automáticos:</b>
+                        <p class="text-slate-400 mt-0.5">Se adjuntará automáticamente el <b>PDF oficial con código QR y CUFE</b> generado con ReportLab.</p>
+                    </div>
+                </div>
+
+                <div class="flex items-center justify-end gap-3 pt-4 border-t border-[#1e2d47]">
+                    <button type="button" @click="modalEmail = false"
+                            class="px-5 py-2.5 rounded-xl bg-[#162034] hover:bg-[#1f2d47] text-slate-300 text-xs font-bold uppercase tracking-wider transition">
+                        Cancelar
+                    </button>
+                    <button type="submit"
+                            class="px-5 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-extrabold text-xs uppercase tracking-wider shadow-lg shadow-blue-500/25 transition flex items-center gap-2">
+                        <i class="fas fa-paper-plane"></i> Enviar Factura Ahora
+                    </button>
+                </div>
+            </form>
+
+        </div>
+    </div>
 
 </div>
 {% endblock %}
