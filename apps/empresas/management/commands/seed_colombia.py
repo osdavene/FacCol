@@ -2,6 +2,7 @@ import json
 import os
 from django.core.management.base import BaseCommand
 from django.db import transaction
+from django.conf import settings
 from apps.empresas.models import Departamento, Municipio
 
 
@@ -9,7 +10,7 @@ class Command(BaseCommand):
     help = "Carga los departamentos y municipios de Colombia (DANE DIVIPOLA)"
 
     def handle(self, *args, **options):
-        json_file = "colombia_divipola.json"
+        json_file = os.path.join(settings.BASE_DIR, "colombia_divipola.json")
         if not os.path.exists(json_file):
             self.stdout.write(self.style.ERROR(f"Archivo {json_file} no encontrado."))
             return
@@ -36,5 +37,5 @@ class Command(BaseCommand):
                     )
 
         self.stdout.write(self.style.SUCCESS(
-            f"Exitoso: {Departamento.objects.count()} departamentos y {Municipio.objects.count()} municipios cargados en PostgreSQL."
+            f"Exitoso: {Departamento.objects.count()} departamentos y {Municipio.objects.count()} municipios cargados en la base de datos."
         ))
