@@ -1,6 +1,6 @@
 [Unit]
 Description=FacCol Python Web Application Server (Gunicorn)
-After=network.target postgresql.service
+After=network.target mariadb.service mysql.service
 
 [Service]
 User=faccol

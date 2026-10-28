@@ -3,8 +3,8 @@ Configuración de Gunicorn para producción en AWS / CloudPanel (faccol.com)
 """
 import multiprocessing
 
-# Dirección de escucha (puerto 8000 o socket unix según reverse proxy Nginx)
-bind = "127.0.0.1:8000"
+# Dirección de escucha (puerto 8002 para FacCol)
+bind = "127.0.0.1:8002"
 
 # Trabajadores basados en núcleos de CPU
 workers = multiprocessing.cpu_count() * 2 + 1
@@ -14,8 +14,8 @@ timeout = 120
 keepalive = 5
 
 # Logs
-accesslog = "/home/faccol/htdocs/faccol.com/logs/gunicorn_access.log"
-errorlog = "/home/faccol/htdocs/faccol.com/logs/gunicorn_error.log"
+accesslog = "/home/faccol/logs/gunicorn_access.log"
+errorlog = "/home/faccol/logs/gunicorn_error.log"
 loglevel = "info"
 
 # Proceso
