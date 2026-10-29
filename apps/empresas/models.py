@@ -28,24 +28,6 @@ class Municipio(models.Model):
         return f"{self.nombre} ({self.departamento.nombre})"
 
 
-class Plan(models.Model):
-    nombre = models.CharField(max_length=100)
-    descripcion = models.TextField(blank=True)
-    precio_mensual = models.DecimalField(max_digits=12, decimal_places=2, default=0)
-    limite_facturas_mes = models.IntegerField(default=500)
-    limite_usuarios = models.IntegerField(default=5)
-    duracion_meses = models.IntegerField(default=1)
-    activo = models.BooleanField(default=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-
-    class Meta:
-        verbose_name = "Plan"
-        verbose_name_plural = "Planes"
-
-    def __str__(self):
-        return self.nombre
-
-
 class Modulo(models.Model):
     codigo = models.CharField(max_length=50, unique=True)
     nombre = models.CharField(max_length=100)
@@ -62,6 +44,60 @@ class Modulo(models.Model):
 
     def __str__(self):
         return self.nombre
+
+
+class Plan(models.Model):
+    COLOR_CHOICES = [
+        ('amber', 'Ámbar / Dorado'),
+        ('blue', 'Azul Profesional'),
+        ('purple', 'Púrpura / Índigo'),
+        ('emerald', 'Esmeralda / Verde'),
+        ('cyan', 'Cian / Celeste'),
+    ]
+
+    nombre = models.CharField(max_length=100)
+    descripcion = models.TextField(blank=True)
+    precio_mensual = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    limite_facturas_mes = models.IntegerField(default=500, help_text="0 para ilimitadas")
+    limite_usuarios = models.IntegerField(default=5, help_text="0 para ilimitados")
+    duracion_meses = models.IntegerField(default=1)
+    destacado = models.BooleanField(default=False, verbose_name="Plan Destacado / Más Popular")
+    color_tema = models.CharField(max_length=30, default='amber', choices=COLOR_CHOICES)
+    caracteristicas = models.TextField(
+        blank=True,
+        verbose_name="Características / Beneficios (1 por línea)",
+        help_text="Lista de ventajas visibles para el cliente, una por línea"
+    )
+    modulos = models.ManyToManyField(Modulo, blank=True, related_name='planes')
+    activo = models.BooleanField(default=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Plan"
+        verbose_name_plural = "Planes"
+        ordering = ['precio_mensual']
+
+    def __str__(self):
+        return self.nombre
+
+    @property
+    def lista_caracteristicas(self):
+        if not self.caracteristicas:
+            return []
+        return [c.strip() for c in self.caracteristicas.split('\n') if c.strip()]
+
+    @property
+    def total_empresas(self):
+        return self.empresas.count()
+
+    @property
+    def empresas_activas(self):
+        return self.empresas.filter(activa=True).count()
+
+    @property
+    def mrr_generado(self):
+        return self.precio_mensual * self.empresas_activas
 
 
 class Empresa(models.Model):

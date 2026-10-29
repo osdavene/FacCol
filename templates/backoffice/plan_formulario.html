@@ -1,0 +1,194 @@
+{% extends 'base.html' %}
+
+{% block title %}{{ accion }} Plan Comercial — Backoffice{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto space-y-6">
+
+    <!-- Encabezado -->
+    <div class="flex items-center justify-between">
+        <div>
+            <a href="{% url 'backoffice:planes_lista' %}" class="text-xs text-amber-400 hover:underline flex items-center gap-1.5 mb-1">
+                <i class="fas fa-arrow-left"></i> Volver al Catálogo de Planes
+            </a>
+            <h1 class="font-display font-extrabold text-2xl text-white">
+                {{ accion }} Plan Comercial
+            </h1>
+            <p class="text-xs text-slate-400 mt-0.5">
+                Configura los módulos, límites de folios y precio mensual para tus inquilinos SaaS.
+            </p>
+        </div>
+    </div>
+
+    <!-- Formulario Principal -->
+    <form method="POST" class="space-y-6" x-data="{
+        selectAll() {
+            document.querySelectorAll('.modulo-checkbox').forEach(cb => cb.checked = true);
+        },
+        deselectAll() {
+            document.querySelectorAll('.modulo-checkbox').forEach(cb => cb.checked = false);
+        }
+    }">
+        {% csrf_token %}
+
+        <!-- 1. Información General del Plan -->
+        <div class="bg-[#111827] border border-[#1e2d47] p-6 rounded-3xl space-y-4 shadow-xl">
+            <h2 class="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2 border-b border-[#1e2d47] pb-3">
+                <i class="fas fa-layer-group text-amber-500"></i>
+                <span>Información General del Plan</span>
+            </h2>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div class="md:col-span-2">
+                    <label class="block text-xs font-semibold text-slate-300 mb-1">Nombre del Plan *</label>
+                    <input type="text" name="nombre" required
+                           value="{{ plan.nombre|default:'' }}"
+                           placeholder="ej: Plan Emprendedor, Plan Negocio Pro, Plan Enterprise"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-amber-500">
+                </div>
+
+                <div class="md:col-span-2">
+                    <label class="block text-xs font-semibold text-slate-300 mb-1">Descripción Comercial</label>
+                    <textarea name="descripcion" rows="2"
+                              placeholder="Breve explicación para qué tipo de empresa o negocio está pensado este plan..."
+                              class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3.5 py-2 text-xs text-white focus:outline-none focus:border-amber-500">{{ plan.descripcion|default:'' }}</textarea>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1">Color / Tema Distintivo</label>
+                    <select name="color_tema" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-amber-500">
+                        {% for val, label in colores %}
+                        <option value="{{ val }}" {% if plan.color_tema == val %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="flex items-center gap-6 pt-5">
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" name="destacado" {% if plan.destacado %}checked{% endif %}
+                               class="w-4 h-4 rounded text-amber-500 bg-[#162034] border-[#1e2d47] focus:ring-amber-500 focus:ring-offset-0">
+                        <span class="text-xs font-bold text-amber-400">Marcar como "Más Popular"</span>
+                    </label>
+
+                    <label class="flex items-center gap-2 cursor-pointer">
+                        <input type="checkbox" name="activo" {% if plan.activo or not plan %}checked{% endif %}
+                               class="w-4 h-4 rounded text-emerald-500 bg-[#162034] border-[#1e2d47] focus:ring-emerald-500 focus:ring-offset-0">
+                        <span class="text-xs font-bold text-slate-300">Plan Activo</span>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- 2. Precios y Límites de Consumo -->
+        <div class="bg-[#111827] border border-[#1e2d47] p-6 rounded-3xl space-y-4 shadow-xl">
+            <h2 class="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2 border-b border-[#1e2d47] pb-3">
+                <i class="fas fa-hand-holding-dollar text-emerald-400"></i>
+                <span>Tarifas y Límites de Infraestructura</span>
+            </h2>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1">Precio Mensual ($ COP) *</label>
+                    <div class="relative">
+                        <span class="absolute left-3.5 top-2.5 text-slate-400 text-xs">$</span>
+                        <input type="number" name="precio_mensual" step="1000" min="0" required
+                               value="{{ plan.precio_mensual|default:'49000'|floatformat:0 }}"
+                               class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl pl-8 pr-3.5 py-2.5 text-xs text-white font-mono font-bold focus:outline-none focus:border-emerald-500">
+                    </div>
+                    <span class="text-[10px] text-slate-500 mt-1 block">Tarifa recurrente cobrada cada mes al inquilino.</span>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1">Duración en Meses</label>
+                    <input type="number" name="duracion_meses" min="1" max="36"
+                           value="{{ plan.duracion_meses|default:'1' }}"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-amber-500">
+                    <span class="text-[10px] text-slate-500 mt-1 block">1 para facturación mensual, 12 para anual.</span>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1">Límite de Facturas / Folios DIAN al Mes *</label>
+                    <input type="number" name="limite_facturas_mes" min="0" required
+                           value="{{ plan.limite_facturas_mes|default:'500' }}"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3.5 py-2.5 text-xs text-white font-mono focus:outline-none focus:border-amber-500">
+                    <span class="text-[10px] text-slate-500 mt-1 block">Ingrese 0 o mayor a 99999 para folios ilimitados.</span>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-300 mb-1">Límite de Usuarios Permitidos *</label>
+                    <input type="number" name="limite_usuarios" min="1" required
+                           value="{{ plan.limite_usuarios|default:'5' }}"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3.5 py-2.5 text-xs text-white font-mono focus:outline-none focus:border-amber-500">
+                    <span class="text-[10px] text-slate-500 mt-1 block">Número máximo de cuentas que el inquilino puede crear.</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. Módulos Habilitados en este Plan -->
+        <div class="bg-[#111827] border border-[#1e2d47] p-6 rounded-3xl space-y-4 shadow-xl">
+            <div class="flex items-center justify-between border-b border-[#1e2d47] pb-3">
+                <h2 class="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                    <i class="fas fa-cubes text-sky-400"></i>
+                    <span>Módulos y Capacidades Incluidas en el Plan</span>
+                </h2>
+                <div class="flex items-center gap-2 text-xs">
+                    <button type="button" @click="selectAll()" class="text-amber-400 hover:underline font-semibold">Seleccionar Todos</button>
+                    <span class="text-slate-600">|</span>
+                    <button type="button" @click="deselectAll()" class="text-slate-400 hover:underline">Limpiar</button>
+                </div>
+            </div>
+
+            <p class="text-xs text-slate-400">
+                Los inquilinos suscritos a este plan tendrán acceso únicamente a los módulos marcados a continuación:
+            </p>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 pt-2">
+                {% for mod in modulos %}
+                <label class="flex items-start gap-3 p-3.5 rounded-2xl bg-[#141c2e] hover:bg-[#162034] border border-[#1e2d47] cursor-pointer transition select-none group">
+                    <input type="checkbox" name="modulos[]" value="{{ mod.id }}" class="modulo-checkbox mt-0.5 rounded text-amber-500 bg-[#111827] border-[#1e2d47] focus:ring-amber-500 focus:ring-offset-0"
+                           {% if mod.id in modulos_activos_ids or not plan and mod.activo_por_defecto %}checked{% endif %}>
+                    <div class="min-w-0">
+                        <div class="font-bold text-white text-xs flex items-center gap-1.5 group-hover:text-amber-400 transition">
+                            <i class="fas {{ mod.icono }} text-amber-500 text-xs"></i>
+                            <span class="truncate">{{ mod.nombre }}</span>
+                        </div>
+                        <div class="text-[10px] text-slate-400 line-clamp-2 mt-0.5 leading-relaxed">{{ mod.descripcion }}</div>
+                    </div>
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+
+        <!-- 4. Características Comerciales (Bullets de Ventas) -->
+        <div class="bg-[#111827] border border-[#1e2d47] p-6 rounded-3xl space-y-4 shadow-xl">
+            <h2 class="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2 border-b border-[#1e2d47] pb-3">
+                <i class="fas fa-list-check text-purple-400"></i>
+                <span>Ventajas y Beneficios Visibles (1 por línea)</span>
+            </h2>
+
+            <div>
+                <textarea name="caracteristicas" rows="5"
+                          placeholder="Facturación electrónica con QR y CUFE&#10;Punto de Venta POS con arqueo de cajas&#10;Control de existencias y kardex&#10;Asistente FacCol Gemini AI&#10;Soporte prioritario por WhatsApp"
+                          class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3.5 py-2.5 text-xs text-white font-mono leading-relaxed focus:outline-none focus:border-amber-500">{{ plan.caracteristicas|default:'' }}</textarea>
+                <span class="text-[10px] text-slate-500 mt-1 block">
+                    Escribe cada beneficio en una línea separada. Se mostrarán con viñeta verde en las tarjetas comerciales.
+                </span>
+            </div>
+        </div>
+
+        <!-- Botones de Acción -->
+        <div class="flex items-center justify-end gap-3 pt-2">
+            <a href="{% url 'backoffice:planes_lista' %}"
+               class="px-5 py-2.5 rounded-xl bg-[#1e293b] hover:bg-[#334155] border border-[#334155] text-slate-300 hover:text-white font-bold text-xs uppercase tracking-wider transition">
+                Cancelar
+            </a>
+            <button type="submit"
+                    class="px-6 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-extrabold text-xs uppercase tracking-wider shadow-lg shadow-amber-500/20 transition flex items-center gap-2">
+                <i class="fas fa-floppy-disk"></i> Guardar Plan
+            </button>
+        </div>
+
+    </form>
+
+</div>
+{% endblock %}
