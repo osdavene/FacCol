@@ -50,7 +50,7 @@
             </h1>
             <p class="text-xs text-slate-400 mt-1">
                 {% if is_superadmin %}
-                    Control integral de inquilinos SaaS, métricas globales de facturación y gestión operativa de empresas.
+                    Control integral de inquilinos SaaS, suscripciones activas y plataforma multi-tenant.
                 {% elif rol_actual == 'contador' %}
                     Panel de control financiero, causaciones contables PUC, cuentas por cobrar y facturación electrónica.
                 {% elif rol_actual == 'vendedor' %}
@@ -133,7 +133,7 @@
                     Centro de Comando Global SuperAdmin
                 </h2>
                 <p class="text-xs text-slate-300">
-                    Visión consolidada de todos los inquilinos, planes, usuarios y volumen global del SaaS.
+                    Visión consolidada de inquilinos, suscripciones mensuales (MRR), usuarios y consumo de infraestructura.
                 </p>
             </div>
             
@@ -184,33 +184,33 @@
                 </div>
             </div>
 
-            <!-- Facturas Globales Emitidas -->
-            <div class="bg-[#0e1422] border border-[#1e2d47] p-4 rounded-2xl relative overflow-hidden group hover:border-blue-500/40 transition">
+            <!-- Folios DIAN Procesados (Carga de infraestructura) -->
+            <div class="bg-[#0e1422] border border-[#1e2d47] p-4 rounded-2xl relative overflow-hidden group hover:border-sky-500/40 transition">
                 <div class="flex items-center justify-between">
-                    <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Facturas Globales</span>
-                    <div class="w-8 h-8 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
-                        <i class="fas fa-file-invoice-dollar text-xs"></i>
+                    <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Folios DIAN Emitidos</span>
+                    <div class="w-8 h-8 rounded-xl bg-sky-500/10 border border-sky-500/20 flex items-center justify-center text-sky-400">
+                        <i class="fas fa-bolt text-xs"></i>
                     </div>
                 </div>
                 <div class="mt-3">
-                    <div class="font-display font-black text-2xl text-blue-300">{{ total_facturas_global }}</div>
-                    <div class="text-[10px] text-slate-400 mt-0.5">Documentos DIAN emitidos</div>
+                    <div class="font-display font-black text-2xl text-sky-300">{{ folios_dian_procesados }}</div>
+                    <div class="text-[10px] text-slate-400 mt-0.5">Documentos generados por inquilinos</div>
                 </div>
             </div>
 
-            <!-- Facturación Global ($ COP) -->
+            <!-- Ingresos Recurrentes por Suscripción SaaS (MRR) -->
             <div class="bg-[#0e1422] border border-[#1e2d47] p-4 rounded-2xl relative overflow-hidden group hover:border-emerald-500/40 transition">
                 <div class="flex items-center justify-between">
-                    <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Facturado en el SaaS</span>
+                    <span class="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Ingresos por Suscripción (MRR)</span>
                     <div class="w-8 h-8 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
-                        <i class="fas fa-chart-pie text-xs"></i>
+                        <i class="fas fa-chart-line text-xs"></i>
                     </div>
                 </div>
                 <div class="mt-3">
                     <div class="font-display font-black text-2xl text-emerald-400">
-                        ${{ ventas_global|floatformat:0|intcomma }}
+                        ${{ mrr_suscripciones|floatformat:0|intcomma }}
                     </div>
-                    <div class="text-[10px] text-slate-400 mt-0.5">Volumen transaccional total</div>
+                    <div class="text-[10px] text-slate-400 mt-0.5">Suscripciones recurrentes mensuales</div>
                 </div>
             </div>
 

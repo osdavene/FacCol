@@ -29,10 +29,11 @@ def dashboard(request):
         empresas_activas = Empresa.objects.filter(activa=True).count()
         empresas_inactivas = Empresa.objects.filter(activa=False).count()
         total_usuarios = User.objects.count()
-        total_facturas_global = Factura.objects.count()
-        ventas_global = Factura.objects.filter(
-            tipo_documento='FACTURA'
-        ).exclude(estado='ANULADA').aggregate(total=Sum('total'))['total'] or Decimal('0.00')
+        folios_dian_procesados = Factura.objects.count()
+        mrr_suscripciones = Empresa.objects.filter(
+            activa=True,
+            plan__isnull=False
+        ).aggregate(total=Sum('plan__precio_mensual'))['total'] or Decimal('0.00')
         empresas_recientes = Empresa.objects.select_related('plan').prefetch_related(
             'usuarios_asignados__user'
         ).order_by('-created_at')[:10]
@@ -44,8 +45,8 @@ def dashboard(request):
             'empresas_activas': empresas_activas,
             'empresas_inactivas': empresas_inactivas,
             'total_usuarios': total_usuarios,
-            'total_facturas_global': total_facturas_global,
-            'ventas_global': ventas_global,
+            'folios_dian_procesados': folios_dian_procesados,
+            'mrr_suscripciones': mrr_suscripciones,
             'empresas_recientes': empresas_recientes,
             'sin_empresa_activa': True,
             'modo_plataforma': True,
