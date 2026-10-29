@@ -31,14 +31,14 @@ def asistente_view(request):
         conversacion = ConversacionIA.objects.create(
             empresa=empresa,
             usuario=request.user,
-            titulo="Consultas y Análisis FacCol AI"
+            titulo="Consultas y Análisis FacCol IA"
         )
         # Mensaje de bienvenida
         MensajeIA.objects.create(
             conversacion=conversacion,
             rol='model',
             contenido=(
-                f"¡Hola {request.user.first_name or request.user.username}! Soy tu Copilot de Inteligencia Artificial para **{empresa.display_name}**.\n\n"
+                f"¡Hola {request.user.first_name or request.user.username}! Soy FacCol IA para **{empresa.display_name}**.\n\n"
                 "Puedo ayudarte a:\n"
                 "- Consultar tus ventas y facturación del mes en tiempo real.\n"
                 "- Identificar clientes con saldos pendientes por cobrar.\n"

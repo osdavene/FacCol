@@ -67,7 +67,7 @@ class Command(BaseCommand):
             },
             {
                 "codigo": "ia",
-                "nombre": "FacCol AI Copilot",
+                "nombre": "FacCol IA",
                 "descripcion": "Asistente inteligente para análisis de ventas, consultas y lectura de documentos",
                 "icono": "fa-wand-magic-sparkles",
                 "ruta": "ia:asistente",
@@ -98,14 +98,14 @@ class Command(BaseCommand):
             },
             {
                 "nombre": "Plan Profesional",
-                "descripcion": "Facturación completa, POS, inventario, órdenes de servicio e IA integrada.",
+                "descripcion": "Facturación completa, POS, inventario, órdenes de servicio y FacCol IA integrada.",
                 "precio_mensual": 99000,
                 "limite_facturas_mes": 1000,
                 "limite_usuarios": 6,
                 "duracion_meses": 1,
                 "destacado": True,
                 "color_tema": "amber",
-                "caracteristicas": "Hasta 1.000 facturas y ventas POS al mes\nHasta 5 usuarios con control de roles\nPunto de Venta (POS) y arqueo de turnos de caja\nKardex de movimientos y control de inventario\nÓrdenes de servicio y panel de taller técnico\nAsistente FacCol Gemini AI incluido",
+                "caracteristicas": "Hasta 1.000 facturas y ventas POS al mes\nHasta 5 usuarios con control de roles\nPunto de Venta (POS) y arqueo de turnos de caja\nKardex de movimientos y control de inventario\nÓrdenes de servicio y panel de taller técnico\nFacCol IA incluida",
                 "modulos_codigos": ["facturacion", "pos", "terceros", "inventario", "servicios", "ia"],
             },
             {

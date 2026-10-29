@@ -4,7 +4,7 @@ from apps.core.models import EmpresaTenantModel
 
 class ConversacionIA(EmpresaTenantModel):
     usuario = models.ForeignKey('usuarios.User', on_delete=models.CASCADE, related_name='conversaciones_ia')
-    titulo = models.CharField(max_length=200, default="Nueva consulta con FacCol AI")
+    titulo = models.CharField(max_length=200, default="Nueva consulta con FacCol IA")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -20,7 +20,7 @@ class ConversacionIA(EmpresaTenantModel):
 class MensajeIA(models.Model):
     ROL_CHOICES = [
         ('user', 'Usuario'),
-        ('model', 'Asistente IA (FacCol Copilot)'),
+        ('model', 'FacCol IA'),
     ]
 
     conversacion = models.ForeignKey(ConversacionIA, on_delete=models.CASCADE, related_name='mensajes')

@@ -554,7 +554,7 @@
         </div>
 
         <!-- ════════════════════════════════════════════════════════════════
-             4. BLOQUE CENTRAL: TABLAS DETALLADAS SEGÚN ROL & COPILOT IA
+             4. BLOQUE CENTRAL: TABLAS DETALLADAS SEGÚN ROL & FACCOL IA
         ════════════════════════════════════════════════════════════════ -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
             
@@ -730,29 +730,29 @@
 
             </div>
 
-            <!-- Columna Derecha (1/3): IA Copilot & Alertas de Inventario -->
+            <!-- Columna Derecha (1/3): FacCol IA & Alertas de Inventario -->
             <div class="space-y-6">
                 
-                <!-- Banner Gemini IA -->
+                <!-- Banner FacCol IA -->
                 <div class="bg-gradient-to-br from-purple-950/40 via-[#111827] to-[#141c2e] border border-purple-500/30 rounded-3xl p-6 relative overflow-hidden">
                     <div class="flex items-center gap-2 text-purple-400 text-xs font-bold uppercase tracking-wider mb-2">
-                        <i class="fas fa-wand-magic-sparkles"></i> FacCol Gemini AI
+                        <i class="fas fa-wand-magic-sparkles"></i> FacCol IA
                     </div>
                     <h3 class="font-display font-extrabold text-lg text-white mb-2">
                         Asistente Inteligente en 1 Clic
                     </h3>
                     <p class="text-xs text-slate-300 mb-4 leading-relaxed">
                         {% if rol_actual == 'contador' %}
-                            Consulte normatividad DIAN 2026, causaciones complejas de retenciones o auditoría de saldos contables con IA.
+                            Consulte normatividad DIAN 2026, causaciones complejas de retenciones o auditoría de saldos contables con FacCol IA.
                         {% elif rol_actual == 'operador' %}
-                            Optimice puntos de reorden, clasificación ABC y logística de repuestos con IA.
+                            Optimice puntos de reorden, clasificación ABC y logística de repuestos con FacCol IA.
                         {% else %}
                             Pregunte sobre impuestos colombianos, clientes con cartera vencida o recomendaciones de ventas.
                         {% endif %}
                     </p>
                     <a href="{% url 'ia:asistente' %}"
                        class="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-purple-600 to-amber-600 hover:from-purple-500 hover:to-amber-500 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl shadow-lg shadow-purple-600/20 transition">
-                        <span>Abrir Copilot IA</span>
+                        <span>Abrir FacCol IA</span>
                         <i class="fas fa-arrow-right text-[10px]"></i>
                     </a>
                 </div>
