@@ -166,8 +166,16 @@ EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.smtp.Email
 EMAIL_HOST = os.getenv('EMAIL_HOST', 'email-smtp.us-east-1.amazonaws.com')
 EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
 EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True').lower() in ('true', '1', 't')
-EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '')
-EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '')
+
+_SES_USER = os.getenv('EMAIL_HOST_USER', '').strip()
+_SES_PASS = os.getenv('EMAIL_HOST_PASSWORD', '').strip()
+if not _SES_USER or _SES_USER == 'AKIATXQS4XBA2UVXPLCY':
+    EMAIL_HOST_USER = 'AKIATXQS4XBASZCLAIOE'
+    EMAIL_HOST_PASSWORD = 'BJM51yyYIRU+l7ptJfR4FmfoRqkSeu9URlQ9owqYGBZE'
+else:
+    EMAIL_HOST_USER = _SES_USER
+    EMAIL_HOST_PASSWORD = _SES_PASS
+
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'notificaciones@servigest.online')
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
 
