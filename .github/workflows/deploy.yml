@@ -45,6 +45,24 @@ jobs:
             venv/bin/python manage.py seed_base
             venv/bin/python manage.py seed_colombia
             venv/bin/python manage.py collectstatic --noinput
+
+            # Sincronizar credenciales activas de Amazon SES en .env
+            venv/bin/python -c "
+with open('.env', 'r') as f:
+    lines = f.readlines()
+new_lines = []
+for line in lines:
+    if line.startswith('EMAIL_HOST_USER='):
+        new_lines.append('EMAIL_HOST_USER=AKIATXQS4XBASZCLAIOE\n')
+    elif line.startswith('EMAIL_HOST_PASSWORD='):
+        new_lines.append('EMAIL_HOST_PASSWORD=BJM51yyYIRU+l7ptJfR4FmfoRqkSeu9URlQ9owqYGBZE\n')
+    elif line.startswith('DEFAULT_FROM_EMAIL='):
+        new_lines.append('DEFAULT_FROM_EMAIL=notificaciones@servigest.online\n')
+    else:
+        new_lines.append(line)
+with open('.env', 'w') as f:
+    f.writelines(new_lines)
+"
             EOF
 
             sudo systemctl restart faccol.service
