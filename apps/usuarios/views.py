@@ -1,10 +1,15 @@
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.tokens import default_token_generator
 from django.contrib import messages
+from django.urls import reverse
+from django.utils.encoding import force_bytes, force_str
+from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 
 from apps.usuarios.models import User, EmpresaUsuario
 from apps.usuarios.decorators import requiere_admin
+from apps.core.mail_service import enviar_recuperacion_contrasena
 
 
 def login_view(request):
@@ -189,3 +194,58 @@ def usuario_cambiar_estado(request, asignacion_id):
     estado_str = "activado" if asignacion.activo else "desactivado"
     messages.success(request, f"Acceso de {asignacion.user.username} a la empresa ha sido {estado_str}.")
     return redirect('usuarios:lista')
+
+
+def password_reset_request_view(request):
+    if request.user.is_authenticated:
+        return redirect('core:dashboard')
+
+    if request.method == 'POST':
+        email = request.POST.get('email', '').strip().lower()
+        if email:
+            users = User.objects.filter(email__iexact=email, is_active=True, activo=True)
+            for u in users:
+                uid = urlsafe_base64_encode(force_bytes(u.pk))
+                token = default_token_generator.make_token(u)
+                reset_url = request.build_absolute_uri(
+                    reverse('usuarios:password_reset_confirm', args=[uid, token])
+                )
+                try:
+                    enviar_recuperacion_contrasena(u, reset_url)
+                except Exception:
+                    pass
+        messages.success(
+            request,
+            "Si el correo está registrado en FacCol, recibirás un enlace para restablecer tu contraseña."
+        )
+        return redirect('usuarios:login')
+
+    return render(request, 'usuarios/password_reset_form.html')
+
+
+def password_reset_confirm_view(request, uidb64, token):
+    try:
+        uid = force_str(urlsafe_base64_decode(uidb64))
+        user = User.objects.get(pk=uid)
+    except Exception:
+        user = None
+
+    token_valido = bool(user and default_token_generator.check_token(user, token))
+    if not token_valido:
+        messages.error(request, "El enlace de recuperación es inválido o ha expirado. Solicita uno nuevo.")
+        return redirect('usuarios:password_reset')
+
+    if request.method == 'POST':
+        p1 = request.POST.get('password1', '').strip()
+        p2 = request.POST.get('password2', '').strip()
+        if len(p1) < 6:
+            messages.error(request, "La nueva contraseña debe tener al menos 6 caracteres.")
+        elif p1 != p2:
+            messages.error(request, "Las contraseñas no coinciden.")
+        else:
+            user.set_password(p1)
+            user.save(update_fields=['password'])
+            messages.success(request, "Tu contraseña ha sido actualizada. Ya puedes iniciar sesión.")
+            return redirect('usuarios:login')
+
+    return render(request, 'usuarios/password_reset_confirm.html', {'token_valido': True})

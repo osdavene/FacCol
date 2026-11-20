@@ -179,3 +179,35 @@ class ReciboCaja(EmpresaTenantModel):
 
     def __str__(self):
         return f"RC-{self.consecutivo} - ${self.valor} ({self.tercero.razon_social})"
+
+
+class TransaccionWompi(EmpresaTenantModel):
+    ESTADO_CHOICES = [
+        ('PENDING', 'Pendiente'),
+        ('APPROVED', 'Aprobada'),
+        ('DECLINED', 'Rechazada'),
+        ('VOIDED', 'Anulada'),
+        ('ERROR', 'Error'),
+        ('AMOUNT_MISMATCH', 'Monto no coincide'),
+    ]
+
+    reference = models.CharField(max_length=80, unique=True)
+    factura = models.ForeignKey(Factura, on_delete=models.SET_NULL, null=True, blank=True, related_name='transacciones_wompi')
+    plan = models.ForeignKey('empresas.Plan', on_delete=models.SET_NULL, null=True, blank=True)
+    usuario = models.ForeignKey('usuarios.User', on_delete=models.SET_NULL, null=True, blank=True)
+    amount_in_cents = models.BigIntegerField()
+    currency = models.CharField(max_length=10, default='COP')
+    status = models.CharField(max_length=25, choices=ESTADO_CHOICES, default='PENDING')
+    wompi_transaction_id = models.CharField(max_length=120, blank=True, db_index=True)
+    payment_method_type = models.CharField(max_length=60, blank=True)
+    customer_email = models.EmailField(blank=True)
+    raw_payload = models.JSONField(default=dict, blank=True)
+    activated_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        verbose_name = "Transacción Wompi"
+        verbose_name_plural = "Transacciones Wompi"
+        ordering = ['-created_at']
+
+    def __str__(self):
+        return f"{self.reference} ({self.status}) - ${self.amount_in_cents // 100:,.0f} COP"

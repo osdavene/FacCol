@@ -17,4 +17,7 @@ urlpatterns = [
     path('cotizaciones/', views.cotizaciones_lista, name='cotizaciones_lista'),
     path('remisiones/', views.remisiones_lista, name='remisiones_lista'),
     path('notas-credito/', views.notas_credito_lista, name='notas_credito_lista'),
+    path('pagos/wompi/iniciar/<int:factura_id>/', views.wompi_iniciar, name='wompi_iniciar'),
+    path('pagos/wompi/retorno/', views.wompi_retorno, name='wompi_retorno'),
+    path('pagos/wompi/webhook/', views.wompi_webhook, name='wompi_webhook'),
 ]

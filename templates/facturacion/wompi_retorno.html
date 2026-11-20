@@ -1,0 +1,47 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Resultado del Pago Wompi{% endblock %}
+
+{% block content %}
+<div class="max-w-xl mx-auto py-10">
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-8 text-center space-y-5 shadow-2xl">
+        {% if tx and tx.status == 'APPROVED' %}
+        <div class="w-16 h-16 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center mx-auto text-2xl">
+            <i class="fas fa-circle-check"></i>
+        </div>
+        <h1 class="font-display font-black text-2xl text-white">¡Pago Aprobado por Wompi!</h1>
+        <p class="text-xs text-slate-300">
+            Referencia <b class="font-mono text-amber-400">{{ tx.reference }}</b> por
+            <b>${{ tx.amount_in_cents|floatformat:0|intcomma }} centavos ({{ tx.currency }})</b>.
+        </p>
+        {% elif tx and tx.status == 'PENDING' %}
+        <div class="w-16 h-16 rounded-2xl bg-amber-500/15 border border-amber-500/30 text-amber-400 flex items-center justify-center mx-auto text-2xl">
+            <i class="fas fa-clock"></i>
+        </div>
+        <h1 class="font-display font-black text-2xl text-white">Pago en Verificación</h1>
+        <p class="text-xs text-slate-300">Tu transacción ({{ tx.reference }}) está siendo confirmada por el banco. El recibo se registrará automáticamente vía webhook.</p>
+        {% else %}
+        <div class="w-16 h-16 rounded-2xl bg-rose-500/15 border border-rose-500/30 text-rose-400 flex items-center justify-center mx-auto text-2xl">
+            <i class="fas fa-circle-xmark"></i>
+        </div>
+        <h1 class="font-display font-black text-2xl text-white">Transacción No Completada</h1>
+        <p class="text-xs text-slate-300">{{ error_msg|default:"El pago fue rechazado o cancelado." }}</p>
+        {% endif %}
+
+        <div class="pt-4 flex justify-center gap-3">
+            {% if tx and tx.factura %}
+            <a href="{% url 'facturacion:factura_detalle' tx.factura.id %}"
+               class="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs uppercase tracking-wider transition">
+                Volver a la Factura
+            </a>
+            {% else %}
+            <a href="{% url 'facturacion:facturas_lista' %}"
+               class="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs uppercase tracking-wider transition">
+                Ir a Facturación
+            </a>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

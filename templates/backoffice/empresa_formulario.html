@@ -192,8 +192,8 @@
 
         <!-- Bloque SMTP -->
         <div class="space-y-4 pt-4 border-t border-[#1e2d47]">
-            <div class="font-bold text-amber-500 uppercase tracking-wider text-xs">3. Servidor de Correo SMTP Saliente</div>
-            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div class="font-bold text-amber-500 uppercase tracking-wider text-xs">4. Servidor de Correo Propio (Opcional — si queda vacío usa el de Plataforma)</div>
+            <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
                 <div>
                     <label class="block font-semibold text-slate-300 mb-1">Host SMTP</label>
                     <input type="text" name="smtp_host" value="{{ empresa.smtp_host|default:'' }}" placeholder="smtp.gmail.com"
@@ -206,8 +206,44 @@
                 </div>
                 <div>
                     <label class="block font-semibold text-slate-300 mb-1">Contraseña SMTP</label>
-                    <input type="password" name="smtp_password" value="{{ empresa.smtp_password|default:'' }}" placeholder="••••••••"
+                    <input type="password" name="smtp_password" value=""
+                           placeholder="{% if empresa and empresa.smtp_password %}•••••••• (guardada cifrada){% else %}••••••••{% endif %}"
                            class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Correo Remitente</label>
+                    <input type="email" name="smtp_from_address" value="{{ empresa.smtp_from_address|default:'' }}" placeholder="facturas@empresa.com"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                </div>
+            </div>
+        </div>
+
+        <!-- Bloque Wompi Empresa -->
+        <div class="space-y-4 pt-4 border-t border-[#1e2d47]">
+            <div class="font-bold text-purple-400 uppercase tracking-wider text-xs">5. Pasarela Wompi Propia (Opcional — si queda vacío usa la de Plataforma)</div>
+            <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Public Key</label>
+                    <input type="text" name="wompi_public_key" value="{{ empresa.wompi_public_key|default:'' }}" placeholder="pub_prod_... / pub_test_..."
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Private Key</label>
+                    <input type="password" name="wompi_private_key" value=""
+                           placeholder="{% if empresa and empresa.wompi_private_key %}•••••••• (guardada){% else %}prv_...{% endif %}"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Integrity Secret</label>
+                    <input type="password" name="wompi_integrity_secret" value=""
+                           placeholder="{% if empresa and empresa.wompi_integrity_secret %}•••••••• (guardado){% else %}prod_integrity_...{% endif %}"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Events Secret</label>
+                    <input type="password" name="wompi_events_secret" value=""
+                           placeholder="{% if empresa and empresa.wompi_events_secret %}•••••••• (guardado){% else %}prod_events_...{% endif %}"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
                 </div>
             </div>
         </div>

@@ -28,3 +28,21 @@ class EmpresaTenantModel(TimestampedModel):
 
     class Meta:
         abstract = True
+
+
+class ConfiguracionPlataforma(models.Model):
+    """
+    Almacenamiento cifrado en base de datos para credenciales sensibles de plataforma
+    (Correo SES/Resend y Pasarela Wompi), evitando exponer secretos en .env.
+    """
+    key = models.CharField(max_length=100, unique=True)
+    value = models.TextField(blank=True, default='')
+    is_secret = models.BooleanField(default=False)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        verbose_name = "Configuración de Plataforma"
+        verbose_name_plural = "Configuraciones de Plataforma"
+
+    def __str__(self):
+        return f"{self.key} ({'secreto' if self.is_secret else 'público'})"

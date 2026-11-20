@@ -1,0 +1,194 @@
+{% extends 'base.html' %}
+
+{% block title %}Configuración Cifrada de Plataforma{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto space-y-6">
+
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+            <h1 class="font-display font-extrabold text-2xl text-white">Configuración de Correo & Wompi</h1>
+            <p class="text-xs text-slate-400">
+                Credenciales compartidas de plataforma (notificaciones, recuperación de claves, facturas sin SMTP propio y pagos Wompi).
+                Todas las llaves privadas se guardan <b>cifradas con Fernet en la base de datos</b>, sin quedar expuestas en <code>.env</code>.
+            </p>
+        </div>
+    </div>
+
+    <!-- Sección 1: Correo Unificado de Plataforma -->
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 sm:p-8 shadow-xl space-y-5 text-xs">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#1e2d47] pb-4">
+            <div>
+                <h2 class="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
+                    <i class="fas fa-envelope-open-text"></i>
+                    <span>1. Correo Unificado de Plataforma (Amazon SES / Resend)</span>
+                </h2>
+                <p class="text-[11px] text-slate-400 mt-0.5">
+                    Usado para recuperaciones de contraseña, avisos del sistema y envío de facturas cuando la empresa inquilina no tenga SMTP propio.
+                </p>
+            </div>
+
+            <!-- Form prueba rápida -->
+            <form method="POST" action="{% url 'backoffice:configuracion_probar_correo' %}" class="flex items-center gap-2">
+                {% csrf_token %}
+                <input type="email" name="email_prueba" placeholder="correo@prueba.com"
+                       class="bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white text-xs w-48">
+                <button type="submit" class="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold text-xs transition whitespace-nowrap">
+                    Probar Envío
+                </button>
+            </form>
+        </div>
+
+        <form method="POST" class="space-y-4">
+            {% csrf_token %}
+            <input type="hidden" name="seccion" value="mail">
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Host SMTP</label>
+                    <input type="text" name="mail_host" value="{{ mail_cfg.host|default:'email-smtp.us-east-1.amazonaws.com' }}"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Puerto SMTP</label>
+                    <input type="number" name="mail_port" value="{{ mail_cfg.port|default:'587' }}"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Cifrado</label>
+                    <select name="mail_encryption" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                        <option value="tls" {% if mail_cfg.use_tls %}selected{% endif %}>TLS (STARTTLS - 587)</option>
+                        <option value="ssl" {% if mail_cfg.use_ssl %}selected{% endif %}>SSL (465)</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Usuario SMTP (IAM SES)</label>
+                    <input type="text" name="mail_username" value="{{ mail_cfg.username|default:'' }}" placeholder="AKIA..."
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">
+                        Contraseña SMTP
+                        {% if mail_cfg.masked_password %}<span class="text-emerald-400 font-mono">({{ mail_cfg.masked_password }})</span>{% endif %}
+                    </label>
+                    <input type="password" name="mail_password" value="" placeholder="Dejar vacío para conservar la actual"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                    <label class="inline-flex items-center gap-1.5 text-[10px] text-rose-400 mt-1 cursor-pointer">
+                        <input type="checkbox" name="clear_mail_password" class="rounded"> Limpiar contraseña guardada
+                    </label>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Correo Remitente Oficial</label>
+                    <input type="email" name="mail_from_address" value="{{ mail_cfg.from_address|default:'notificaciones@servigest.online' }}"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Nombre Visible del Remitente</label>
+                    <input type="text" name="mail_from_name" value="{{ mail_cfg.from_name|default:'FacCol — ServiGest' }}"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">
+                        Resend API Key (Opcional)
+                        {% if mail_cfg.masked_resend_key %}<span class="text-emerald-400 font-mono">({{ mail_cfg.masked_resend_key }})</span>{% endif %}
+                    </label>
+                    <input type="password" name="resend_api_key" value="" placeholder="re_... (dejar vacío para conservar)"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                    <label class="inline-flex items-center gap-1.5 text-[10px] text-rose-400 mt-1 cursor-pointer">
+                        <input type="checkbox" name="clear_resend_api_key" class="rounded"> Limpiar Resend API Key
+                    </label>
+                </div>
+            </div>
+
+            <div class="flex justify-end pt-2">
+                <button type="submit" class="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black uppercase tracking-wider transition">
+                    Guardar Correo Cifrado
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Sección 2: Pasarela Wompi de Plataforma -->
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 sm:p-8 shadow-xl space-y-5 text-xs">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#1e2d47] pb-4">
+            <div>
+                <h2 class="text-sm font-bold text-purple-400 uppercase tracking-wider flex items-center gap-2">
+                    <i class="fas fa-credit-card"></i>
+                    <span>2. Pasarela Wompi Global (Bancolombia / PSE / Nequi)</span>
+                </h2>
+                <p class="text-[11px] text-slate-400 mt-0.5">
+                    URL de Webhook para configurar en el panel de Wompi:
+                    <code class="text-amber-400 font-mono">{{ webhook_url }}</code>
+                </p>
+            </div>
+            <span class="px-3 py-1 rounded-full text-[10px] font-black uppercase {% if wompi_cfg.enabled %}bg-emerald-500/15 text-emerald-400 border border-emerald-500/30{% else %}bg-slate-700 text-slate-300{% endif %}">
+                {% if wompi_cfg.enabled %}{% if wompi_cfg.is_production %}Producción Activa{% else %}Sandbox Activo{% endif %}{% else %}Inactiva{% endif %}
+            </span>
+        </div>
+
+        <form method="POST" class="space-y-4">
+            {% csrf_token %}
+            <input type="hidden" name="seccion" value="wompi">
+
+            <label class="inline-flex items-center gap-2 cursor-pointer font-bold text-white">
+                <input type="checkbox" name="wompi_active_flag" {% if wompi_cfg.wompi_active_flag %}checked{% endif %} class="rounded text-purple-500">
+                <span>Habilitar pasarela Wompi global</span>
+            </label>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Public Key (<code>pub_prod_</code> o <code>pub_test_</code>)</label>
+                    <input type="text" name="wompi_public_key" value="{{ wompi_cfg.public_key|default:'' }}" placeholder="pub_..."
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">
+                        Private Key
+                        {% if wompi_cfg.masked_private_key %}<span class="text-emerald-400 font-mono">({{ wompi_cfg.masked_private_key }})</span>{% endif %}
+                    </label>
+                    <input type="password" name="wompi_private_key" value="" placeholder="Dejar vacío para conservar"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                    <label class="inline-flex items-center gap-1.5 text-[10px] text-rose-400 mt-1 cursor-pointer">
+                        <input type="checkbox" name="clear_wompi_private_key" class="rounded"> Limpiar
+                    </label>
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">
+                        Integrity Secret
+                        {% if wompi_cfg.masked_integrity_secret %}<span class="text-emerald-400 font-mono">({{ wompi_cfg.masked_integrity_secret }})</span>{% endif %}
+                    </label>
+                    <input type="password" name="wompi_integrity_secret" value="" placeholder="Dejar vacío para conservar"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                    <label class="inline-flex items-center gap-1.5 text-[10px] text-rose-400 mt-1 cursor-pointer">
+                        <input type="checkbox" name="clear_wompi_integrity_secret" class="rounded"> Limpiar
+                    </label>
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">
+                        Events Secret (Webhook SHA-256)
+                        {% if wompi_cfg.masked_events_secret %}<span class="text-emerald-400 font-mono">({{ wompi_cfg.masked_events_secret }})</span>{% endif %}
+                    </label>
+                    <input type="password" name="wompi_events_secret" value="" placeholder="Dejar vacío para conservar"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                    <label class="inline-flex items-center gap-1.5 text-[10px] text-rose-400 mt-1 cursor-pointer">
+                        <input type="checkbox" name="clear_wompi_events_secret" class="rounded"> Limpiar
+                    </label>
+                </div>
+            </div>
+
+            <div class="flex justify-end pt-2">
+                <button type="submit" class="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-black uppercase tracking-wider transition">
+                    Guardar Wompi Cifrado
+                </button>
+            </div>
+        </form>
+    </div>
+
+</div>
+{% endblock %}

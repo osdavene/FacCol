@@ -2,10 +2,19 @@ from decimal import Decimal
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import user_passes_test
 from django.contrib import messages
+from django.urls import reverse
 from django.utils.crypto import get_random_string
+from django.views.decorators.http import require_POST
 from apps.empresas.models import Empresa, Plan, Modulo, Departamento, Municipio
 from apps.usuarios.models import User, EmpresaUsuario
 from apps.facturacion.models import Factura
+from apps.core.platform_settings import encrypt_secret, set_platform_setting
+from apps.core.mail_service import (
+    enviar_correo_sistema,
+    enviar_notificacion_bienvenida_empresa,
+    get_mail_runtime_config,
+)
+from apps.facturacion.wompi_service import get_wompi_runtime_config
 
 
 def es_superadmin(user):
@@ -130,6 +139,10 @@ def empresa_crear(request):
                 activo=True
             )
 
+            if admin_password and admin_email:
+                login_url = request.build_absolute_uri(reverse('usuarios:login'))
+                enviar_notificacion_bienvenida_empresa(empresa, admin_email, admin_nombre, admin_password, login_url)
+
             cred_msg = f"Usuario: {admin_email} | Clave temporal: {admin_password}" if admin_password else f"Usuario existente asignado: {admin_email}"
             messages.success(
                 request,
@@ -177,17 +190,26 @@ def empresa_editar(request, empresa_id):
         empresa.dian_pin = request.POST.get('dian_pin', '').strip()
         empresa.dian_test_set_id = request.POST.get('dian_test_set_id', '').strip()
 
-        # Configuración SMTP
+        # Configuración SMTP propia de empresa (solo sobrescribe clave si se ingresa nueva)
         empresa.smtp_host = request.POST.get('smtp_host', '').strip()
         empresa.smtp_port = int(request.POST.get('smtp_port', 587) or 587)
         empresa.smtp_user = request.POST.get('smtp_user', '').strip()
-        empresa.smtp_password = request.POST.get('smtp_password', '').strip()
+        new_smtp_pwd = request.POST.get('smtp_password', '').strip()
+        if new_smtp_pwd:
+            empresa.smtp_password = encrypt_secret(new_smtp_pwd)
         empresa.smtp_from_address = request.POST.get('smtp_from_address', '').strip()
 
-        # Configuración Wompi
+        # Configuración Wompi propia de empresa
         empresa.wompi_public_key = request.POST.get('wompi_public_key', '').strip()
-        empresa.wompi_private_key = request.POST.get('wompi_private_key', '').strip()
-        empresa.wompi_events_secret = request.POST.get('wompi_events_secret', '').strip()
+        new_wompi_priv = request.POST.get('wompi_private_key', '').strip()
+        if new_wompi_priv:
+            empresa.wompi_private_key = encrypt_secret(new_wompi_priv)
+        new_wompi_integ = request.POST.get('wompi_integrity_secret', '').strip()
+        if new_wompi_integ:
+            empresa.wompi_integrity_secret = encrypt_secret(new_wompi_integ)
+        new_wompi_events = request.POST.get('wompi_events_secret', '').strip()
+        if new_wompi_events:
+            empresa.wompi_events_secret = encrypt_secret(new_wompi_events)
 
         empresa.activa = 'activa' in request.POST
         empresa.save()
@@ -367,3 +389,78 @@ def plan_eliminar(request, plan_id):
     plan.delete()
     messages.success(request, f"Plan '{nombre}' eliminado correctamente.")
     return redirect('backoffice:planes_lista')
+
+
+# ══════════════════════════════════════════════════════════════════════
+# CONFIGURACIÓN GLOBAL CIFRADA DE CORREO Y WOMPI (SIN EXPOSICIÓN EN .ENV)
+# ══════════════════════════════════════════════════════════════════════
+
+@user_passes_test(es_superadmin)
+def configuracion_plataforma(request):
+    if request.method == 'POST':
+        seccion = request.POST.get('seccion', 'all')
+
+        if seccion in ('mail', 'all'):
+            set_platform_setting('mail_host', request.POST.get('mail_host', '').strip(), is_secret=False)
+            set_platform_setting('mail_port', request.POST.get('mail_port', '587').strip() or '587', is_secret=False)
+            set_platform_setting('mail_encryption', request.POST.get('mail_encryption', 'tls').strip(), is_secret=False)
+            set_platform_setting('mail_username', request.POST.get('mail_username', '').strip(), is_secret=False)
+            set_platform_setting('mail_from_address', request.POST.get('mail_from_address', '').strip(), is_secret=False)
+            set_platform_setting('mail_from_name', request.POST.get('mail_from_name', '').strip(), is_secret=False)
+
+            new_mail_pwd = request.POST.get('mail_password', '').strip()
+            if 'clear_mail_password' in request.POST:
+                set_platform_setting('mail_password', '', is_secret=True)
+            elif new_mail_pwd:
+                set_platform_setting('mail_password', new_mail_pwd, is_secret=True)
+
+            new_resend = request.POST.get('resend_api_key', '').strip()
+            if 'clear_resend_api_key' in request.POST:
+                set_platform_setting('resend_api_key', '', is_secret=True)
+            elif new_resend:
+                set_platform_setting('resend_api_key', new_resend, is_secret=True)
+
+        if seccion in ('wompi', 'all'):
+            set_platform_setting('wompi_active_flag', '1' if 'wompi_active_flag' in request.POST else '0', is_secret=False)
+            set_platform_setting('wompi_public_key', request.POST.get('wompi_public_key', '').strip(), is_secret=False)
+
+            for field_name, clear_name in (
+                ('wompi_private_key', 'clear_wompi_private_key'),
+                ('wompi_integrity_secret', 'clear_wompi_integrity_secret'),
+                ('wompi_events_secret', 'clear_wompi_events_secret'),
+            ):
+                if clear_name in request.POST:
+                    set_platform_setting(field_name, '', is_secret=True)
+                else:
+                    val = request.POST.get(field_name, '').strip()
+                    if val:
+                        set_platform_setting(field_name, val, is_secret=True)
+
+        messages.success(request, "Configuración cifrada de plataforma guardada exitosamente en la base de datos.")
+        return redirect('backoffice:configuracion_plataforma')
+
+    mail_cfg = get_mail_runtime_config()
+    wompi_cfg = get_wompi_runtime_config()
+    webhook_url = request.build_absolute_uri(reverse('facturacion:wompi_webhook'))
+    return render(request, 'backoffice/configuracion_plataforma.html', {
+        'mail_cfg': mail_cfg,
+        'wompi_cfg': wompi_cfg,
+        'webhook_url': webhook_url,
+    })
+
+
+@user_passes_test(es_superadmin)
+@require_POST
+def configuracion_probar_correo(request):
+    destino = request.POST.get('email_prueba', '').strip() or request.user.email
+    try:
+        enviar_correo_sistema(
+            destino,
+            "Prueba de Correo Unificado FacCol",
+            "<p>Este correo confirma que el servidor unificado de plataforma (Amazon SES / Resend) está operativo y cifrado en base de datos.</p>",
+            fail_silently=False,
+        )
+        messages.success(request, f"Correo de prueba enviado correctamente a {destino}.")
+    except Exception as exc:
+        messages.error(request, f"Error enviando correo de prueba: {exc}")
+    return redirect('backoffice:configuracion_plataforma')

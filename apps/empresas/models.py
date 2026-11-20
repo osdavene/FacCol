@@ -156,15 +156,16 @@ class Empresa(models.Model):
     smtp_host = models.CharField(max_length=150, blank=True, verbose_name="Host SMTP")
     smtp_port = models.IntegerField(default=587, verbose_name="Puerto SMTP")
     smtp_user = models.CharField(max_length=150, blank=True, verbose_name="Usuario SMTP")
-    smtp_password = models.CharField(max_length=150, blank=True, verbose_name="Contraseña SMTP")
+    smtp_password = models.CharField(max_length=255, blank=True, verbose_name="Contraseña SMTP")
     smtp_encryption = models.CharField(max_length=10, default='tls', choices=[('tls', 'TLS'), ('ssl', 'SSL'), ('none', 'Ninguna')])
     smtp_from_address = models.CharField(max_length=150, blank=True, verbose_name="Correo Remitente")
     smtp_from_name = models.CharField(max_length=150, blank=True, verbose_name="Nombre Remitente")
 
     # Wompi (Pagos en línea Colombia)
     wompi_public_key = models.CharField(max_length=200, blank=True)
-    wompi_private_key = models.CharField(max_length=200, blank=True)
-    wompi_events_secret = models.CharField(max_length=200, blank=True)
+    wompi_private_key = models.CharField(max_length=255, blank=True)
+    wompi_integrity_secret = models.CharField(max_length=255, blank=True)
+    wompi_events_secret = models.CharField(max_length=255, blank=True)
     wompi_sandbox = models.BooleanField(default=True)
 
     # Multi-tenancy & Filiales
