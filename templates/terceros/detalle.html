@@ -1,0 +1,132 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}{{ tercero.razon_social }}{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto space-y-6">
+
+    <!-- Cabecera -->
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div class="flex items-center gap-3">
+            <a href="{% url 'terceros:lista' %}" class="p-2.5 rounded-xl bg-[#162034] text-slate-400 hover:text-white transition">
+                <i class="fas fa-arrow-left"></i>
+            </a>
+            <div>
+                <div class="flex items-center gap-2 flex-wrap">
+                    <h1 class="font-display font-extrabold text-2xl text-white">{{ tercero.razon_social }}</h1>
+                    {% if tercero.es_cliente %}
+                        <span class="px-2.5 py-0.5 rounded-full bg-purple-500/15 text-purple-300 border border-purple-500/30 text-[10px] font-bold uppercase">Cliente</span>
+                    {% endif %}
+                    {% if tercero.es_proveedor %}
+                        <span class="px-2.5 py-0.5 rounded-full bg-sky-500/15 text-sky-300 border border-sky-500/30 text-[10px] font-bold uppercase">Proveedor</span>
+                    {% endif %}
+                </div>
+                <p class="text-xs text-slate-400 font-mono mt-0.5">{{ tercero.get_tipo_documento_display }}: {{ tercero.documento_completo }}</p>
+            </div>
+        </div>
+
+        <div class="flex items-center gap-2">
+            <a href="{% url 'terceros:editar' tercero.id %}"
+               class="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs uppercase tracking-wider transition flex items-center gap-1.5">
+                <i class="fas fa-pen-to-square"></i> Editar Tercero
+            </a>
+            <form method="POST" action="{% url 'terceros:eliminar' tercero.id %}" onsubmit="return confirm('¿Desactivar este tercero?');">
+                {% csrf_token %}
+                <button type="submit" class="px-4 py-2.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 font-bold text-xs transition">
+                    Desactivar
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- Ficha Fiscal y de Contacto -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
+        <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 space-y-3 shadow-xl">
+            <div class="font-bold text-amber-400 uppercase tracking-wider text-[11px] border-b border-[#1e2d47] pb-2">
+                Información de Contacto y Ubicación
+            </div>
+            <div class="space-y-2 text-slate-300">
+                <div><b class="text-slate-400">Nombre Comercial:</b> {{ tercero.nombre_comercial|default:"-" }}</div>
+                <div><b class="text-slate-400">Correo Electrónico:</b> {{ tercero.email|default:"No registrado" }}</div>
+                <div><b class="text-slate-400">Teléfono:</b> {{ tercero.telefono|default:"No registrado" }}</div>
+                <div><b class="text-slate-400">Dirección:</b> {{ tercero.direccion|default:"No registrada" }}</div>
+                <div>
+                    <b class="text-slate-400">Municipio / Depto:</b>
+                    {% if tercero.municipio %}{{ tercero.municipio.nombre }} ({{ tercero.departamento.nombre }}){% else %}-{% endif %}
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 space-y-3 shadow-xl">
+            <div class="font-bold text-purple-400 uppercase tracking-wider text-[11px] border-b border-[#1e2d47] pb-2">
+                Perfil Tributario (DIAN)
+            </div>
+            <div class="space-y-2 text-slate-300">
+                <div><b class="text-slate-400">Tipo de Persona:</b> {{ tercero.get_tipo_persona_display }}</div>
+                <div><b class="text-slate-400">Régimen Tributario:</b> {{ tercero.get_regimen_display }}</div>
+                <div><b class="text-slate-400">Responsabilidades Fiscales:</b> <span class="font-mono">{{ tercero.responsabilidades_fiscales|default:"R-99-PN" }}</span></div>
+                <div>
+                    <b class="text-slate-400">Retenciones:</b>
+                    {% if tercero.aplica_retefuente %}ReteFuente {{ tercero.tarifa_retefuente }}%{% else %}Sin ReteFuente{% endif %} |
+                    {% if tercero.aplica_reteica %}ReteICA {{ tercero.tarifa_reteica }}‰{% else %}Sin ReteICA{% endif %}
+                </div>
+                {% if tercero.observaciones %}
+                <div><b class="text-slate-400">Observaciones:</b> {{ tercero.observaciones }}</div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+
+    <!-- Últimos Documentos / Facturas -->
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl overflow-hidden shadow-xl">
+        <div class="p-4 border-b border-[#1e2d47] flex items-center justify-between">
+            <h2 class="font-bold text-white text-xs uppercase tracking-wider">Últimos Documentos Emitidos</h2>
+            <a href="{% url 'facturacion:factura_crear' %}" class="text-xs font-bold text-amber-400 hover:underline">
+                + Nueva Factura
+            </a>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+                <thead>
+                    <tr class="bg-[#141c2e] text-slate-400 font-bold uppercase tracking-wider text-[10px] border-b border-[#1e2d47]">
+                        <th class="p-4">Documento</th>
+                        <th class="p-4">Tipo</th>
+                        <th class="p-4">Fecha</th>
+                        <th class="p-4 text-right">Total ($ COP)</th>
+                        <th class="p-4 text-right">Saldo Pendiente</th>
+                        <th class="p-4 text-center">Estado</th>
+                        <th class="p-4 text-right">Ver</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-[#1e2d47]/50">
+                    {% for f in facturas %}
+                    <tr class="hover:bg-[#162034] transition">
+                        <td class="p-4 font-mono font-bold text-amber-400">{{ f.numero_completo }}</td>
+                        <td class="p-4 text-slate-300">{{ f.get_tipo_documento_display }}</td>
+                        <td class="p-4 text-slate-400">{{ f.fecha_emision|date:"d/m/Y" }}</td>
+                        <td class="p-4 text-right font-bold text-white">${{ f.total|floatformat:0|intcomma }}</td>
+                        <td class="p-4 text-right font-mono {% if f.saldo_pendiente > 0 %}text-rose-400{% else %}text-emerald-400{% endif %}">
+                            ${{ f.saldo_pendiente|floatformat:0|intcomma }}
+                        </td>
+                        <td class="p-4 text-center">
+                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-[#162034] text-slate-300 border border-[#1e2d47]">
+                                {{ f.estado }}
+                            </span>
+                        </td>
+                        <td class="p-4 text-right">
+                            <a href="{% url 'facturacion:factura_detalle' f.id %}" class="p-2 rounded-xl bg-[#162034] hover:bg-[#1f2c47] text-slate-300 hover:text-white inline-block">
+                                <i class="fas fa-eye text-xs"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="7" class="p-8 text-center text-slate-500">No hay documentos registrados para este tercero.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

@@ -2,6 +2,7 @@ from decimal import Decimal
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import user_passes_test
 from django.contrib import messages
+from django.utils.crypto import get_random_string
 from apps.empresas.models import Empresa, Plan, Modulo, Departamento, Municipio
 from apps.usuarios.models import User, EmpresaUsuario
 from apps.facturacion.models import Factura
@@ -98,7 +99,7 @@ def empresa_crear(request):
             # Empresa de un cliente: Creamos su usuario administrador inicial independiente
             admin_email = request.POST.get('admin_email', '').strip().lower() or email
             admin_nombre = request.POST.get('admin_nombre', '').strip() or razon_social
-            admin_password = request.POST.get('admin_password', '').strip() or 'Clave1234*'
+            raw_password = request.POST.get('admin_password', '').strip()
 
             client_user, created = User.objects.get_or_create(
                 username=admin_email,
@@ -110,7 +111,8 @@ def empresa_crear(request):
                     'is_superuser': False,
                 }
             )
-            if created or admin_password:
+            admin_password = raw_password or (get_random_string(12) if created else '')
+            if admin_password:
                 client_user.set_password(admin_password)
                 client_user.save()
 
@@ -121,10 +123,10 @@ def empresa_crear(request):
                 activo=True
             )
 
+            cred_msg = f"Usuario: {admin_email} | Clave temporal: {admin_password}" if admin_password else f"Usuario existente asignado: {admin_email}"
             messages.success(
                 request,
-                f"Empresa inquilina '{empresa.razon_social}' creada exitosamente con Aislamiento Estricto. "
-                f"Credenciales del cliente: Usuario: {admin_email} | Clave: {admin_password}"
+                f"Empresa inquilina '{empresa.razon_social}' creada exitosamente con Aislamiento Estricto. {cred_msg}"
             )
 
         return redirect('backoffice:empresas_lista')

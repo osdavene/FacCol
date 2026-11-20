@@ -99,12 +99,10 @@ Sistema Integral de Facturación Electrónica, Punto de Venta (POS), Inventario,
 
 ---
 
-## 🔑 Credenciales de Acceso Demo
+## 🔑 Acceso Local de Desarrollo
 
 - **URL de Acceso:** [http://127.0.0.1:8000/auth/login/](http://127.0.0.1:8000/auth/login/)
-- **Usuario:** `admin@faccol.com`
-- **Contraseña:** `admin123`
-- **Empresa Demo Activa:** `FacCol Soluciones Empresariales S.A.S.` (NIT `901458789-1`)
+- Ejecuta `python manage.py createsuperuser` o `DEMO_ADMIN_PASSWORD=... python manage.py seed_demo` (solo en `DEBUG=True`) para inicializar credenciales locales.
 
 ---
 

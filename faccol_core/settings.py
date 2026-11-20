@@ -1,6 +1,7 @@
 import os
 from pathlib import Path
 from dotenv import load_dotenv
+from django.core.management.utils import get_random_secret_key
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -8,10 +9,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # Cargar variables de entorno desde .env si existe
 load_dotenv(BASE_DIR / '.env')
 
-# Quick-start development settings - unsuitable for production
-SECRET_KEY = os.getenv('SECRET_KEY', 'django-insecure-faccol-super-secret-key-prod-2026-secure-colombia')
+DEBUG = os.getenv('DEBUG', 'False').lower() in ('true', '1', 't')
 
-DEBUG = os.getenv('DEBUG', 'True').lower() in ('true', '1', 't')
+SECRET_KEY = os.getenv('SECRET_KEY', '').strip()
+if not SECRET_KEY:
+    if DEBUG:
+        SECRET_KEY = get_random_secret_key()
+    else:
+        raise RuntimeError("SECRET_KEY debe configurarse en .env cuando DEBUG=False.")
 
 ALLOWED_HOSTS = [h.strip() for h in os.getenv('ALLOWED_HOSTS', '127.0.0.1,localhost,testserver,faccol.com,www.faccol.com').split(',') if h.strip()]
 if DEBUG and 'testserver' not in ALLOWED_HOSTS:
@@ -96,11 +101,11 @@ TEMPLATES = [
 
 WSGI_APPLICATION = 'faccol_core.wsgi.application'
 
-# Database Configuration (PostgreSQL)
+# Database Configuration (PostgreSQL / MySQL)
 DB_ENGINE = os.getenv('DB_ENGINE', 'django.db.backends.postgresql')
 DB_NAME = os.getenv('DB_NAME', 'faccol')
 DB_USER = os.getenv('DB_USER', 'postgres')
-DB_PASSWORD = os.getenv('DB_PASSWORD', '7420')
+DB_PASSWORD = os.getenv('DB_PASSWORD', '')
 DB_HOST = os.getenv('DB_HOST', '127.0.0.1')
 DB_PORT = os.getenv('DB_PORT', '5432')
 
@@ -161,23 +166,27 @@ LOGOUT_REDIRECT_URL = 'usuarios:login'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Email Settings (Amazon SES / SMTP)
+# Email Settings (Amazon SES / SMTP - estrictamente desde variables de entorno)
 EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
 EMAIL_HOST = os.getenv('EMAIL_HOST', 'email-smtp.us-east-1.amazonaws.com')
 EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
 EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True').lower() in ('true', '1', 't')
-
-_SES_USER = os.getenv('EMAIL_HOST_USER', '').strip()
-_SES_PASS = os.getenv('EMAIL_HOST_PASSWORD', '').strip()
-if not _SES_USER or _SES_USER == 'AKIATXQS4XBA2UVXPLCY':
-    EMAIL_HOST_USER = 'AKIATXQS4XBASZCLAIOE'
-    EMAIL_HOST_PASSWORD = 'BJM51yyYIRU+l7ptJfR4FmfoRqkSeu9URlQ9owqYGBZE'
-else:
-    EMAIL_HOST_USER = _SES_USER
-    EMAIL_HOST_PASSWORD = _SES_PASS
+EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '').strip()
+EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '').strip()
 
 DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'notificaciones@servigest.online')
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
+
+# Seguridad adicional en producción
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = 'Lax'
+CSRF_COOKIE_SAMESITE = 'Lax'
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = 'DENY'
+if not DEBUG:
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
 
 # API Keys & Pasarelas
 GEMINI_API_KEY = os.getenv('GEMINI_API_KEY', '')

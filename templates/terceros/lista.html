@@ -79,7 +79,10 @@
                             </div>
                         </td>
                         <td class="p-4 text-right space-x-1">
-                            <a href="{% url 'terceros:editar' t.id %}" class="p-2 rounded-xl bg-[#162034] hover:bg-[#1f2c47] text-slate-300 hover:text-white inline-block">
+                            <a href="{% url 'terceros:detalle' t.id %}" title="Ver detalle" class="p-2 rounded-xl bg-[#162034] hover:bg-[#1f2c47] text-slate-300 hover:text-amber-400 inline-block">
+                                <i class="fas fa-eye text-xs"></i>
+                            </a>
+                            <a href="{% url 'terceros:editar' t.id %}" title="Editar" class="p-2 rounded-xl bg-[#162034] hover:bg-[#1f2c47] text-slate-300 hover:text-white inline-block">
                                 <i class="fas fa-pen-to-square text-xs"></i>
                             </a>
                         </td>

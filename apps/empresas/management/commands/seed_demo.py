@@ -1,7 +1,10 @@
+import os
 from decimal import Decimal
 from datetime import date, timedelta
-from django.core.management.base import BaseCommand
+from django.conf import settings
+from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
+from django.utils.crypto import get_random_string
 
 from apps.usuarios.models import User, EmpresaUsuario
 from apps.empresas.models import Empresa, Modulo, Plan, Departamento, Municipio, EmpresaModulo
@@ -15,6 +18,9 @@ class Command(BaseCommand):
     help = "Carga usuario superadmin, empresa demo y datos iniciales para pruebas"
 
     def handle(self, *args, **options):
+        if not settings.DEBUG:
+            raise CommandError("seed_demo solo puede ejecutarse en entornos de desarrollo (DEBUG=True).")
+
         self.stdout.write(self.style.WARNING("Creando entorno demo inicial..."))
 
         with transaction.atomic():
@@ -32,8 +38,10 @@ class Command(BaseCommand):
                 }
             )
             if created_admin:
-                admin_user.set_password("admin123")
+                demo_pwd = os.getenv("DEMO_ADMIN_PASSWORD") or get_random_string(12)
+                admin_user.set_password(demo_pwd)
                 admin_user.save()
+                self.stdout.write(self.style.WARNING(f"Usuario demo admin@faccol.com creado con clave temporal: {demo_pwd}"))
 
             # 2. Empresa Demo
             dep_bogota = Departamento.objects.filter(nombre__icontains="BOGOTA").first()
@@ -248,8 +256,5 @@ class Command(BaseCommand):
 
         self.stdout.write(self.style.SUCCESS(
             "Entorno Demo cargado con éxito!\n"
-            "Credenciales Superadmin:\n"
-            "  Usuario: admin@faccol.com\n"
-            "  Password: admin123\n"
             "Empresa: FacCol Soluciones Empresariales S.A.S. (NIT 901458789-1)"
         ))

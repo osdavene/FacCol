@@ -44,8 +44,22 @@ def asiento_crear(request):
         creditos = request.POST.getlist('credito[]')
         descripciones = request.POST.getlist('descripcion[]')
 
-        total_deb = sum(Decimal(d or '0') for d in debitos)
-        total_cred = sum(Decimal(c or '0') for c in creditos)
+        lineas_validas = []
+        total_deb = Decimal('0.00')
+        total_cred = Decimal('0.00')
+        for c_id, t_id, deb, cred, desc in zip(cuentas_ids, terceros_ids, debitos, creditos, descripciones):
+            if not c_id:
+                continue
+            deb_val = Decimal(deb or '0')
+            cred_val = Decimal(cred or '0')
+            if deb_val > 0 or cred_val > 0:
+                total_deb += deb_val
+                total_cred += cred_val
+                lineas_validas.append((c_id, t_id, deb_val, cred_val, desc))
+
+        if not numero or not concepto or not lineas_validas:
+            messages.error(request, "Debe indicar número de comprobante, concepto y al menos una línea con valor mayor a cero.")
+            return render(request, 'contabilidad/asiento_formulario.html', {'cuentas': cuentas, 'terceros': terceros})
 
         if abs(total_deb - total_cred) > Decimal('0.01'):
             messages.error(request, f"El asiento contable no está cuadrado. Débito: ${total_deb:,.2f} vs Crédito: ${total_cred:,.2f}")
@@ -61,21 +75,17 @@ def asiento_crear(request):
                 referencia_origen=ref,
             )
 
-            for c_id, t_id, deb, cred, desc in zip(cuentas_ids, terceros_ids, debitos, creditos, descripciones):
-                c_obj = PlanCuenta.objects.get(id=c_id, empresa=empresa)
+            for c_id, t_id, deb_val, cred_val, desc in lineas_validas:
+                c_obj = get_object_or_404(PlanCuenta, id=c_id, empresa=empresa)
                 t_obj = Tercero.objects.filter(id=t_id, empresa=empresa).first() if t_id else None
-                deb_val = Decimal(deb or '0')
-                cred_val = Decimal(cred or '0')
-
-                if deb_val > 0 or cred_val > 0:
-                    AsientoLinea.objects.create(
-                        asiento=asiento,
-                        cuenta=c_obj,
-                        tercero=t_obj,
-                        descripcion=desc,
-                        debito=deb_val,
-                        credito=cred_val,
-                    )
+                AsientoLinea.objects.create(
+                    asiento=asiento,
+                    cuenta=c_obj,
+                    tercero=t_obj,
+                    descripcion=desc,
+                    debito=deb_val,
+                    credito=cred_val,
+                )
 
         messages.success(request, f"Asiento contable {asiento.numero_comprobante} registrado con éxito.")
         return redirect('contabilidad:asientos_lista')
