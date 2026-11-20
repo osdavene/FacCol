@@ -126,19 +126,25 @@ def generar_xml_ubl(factura):
 
     root = ET.Element(f"{{{ns_invoice}}}Invoice")
     tipo_amb = "1" if empresa.modo_dian == "PRODUCCION" else "2"
-    type_code = "20" if factura.tipo_documento == "POS_ELECTRONICO" else "01"
-    profile_id = (
-        "DIAN 2.1: Documento Equivalente POS"
-        if factura.tipo_documento == "POS_ELECTRONICO"
-        else "DIAN 2.1: Factura Electrónica de Venta"
-    )
+    if factura.tipo_documento == "POS_ELECTRONICO":
+        type_code = "20"
+        profile_id = "DIAN 2.1: Documento Equivalente POS"
+        scheme_name = "CUDE-SHA384"
+    elif factura.tipo_documento == "NOTA_CREDITO":
+        type_code = "91"
+        profile_id = "DIAN 2.1: Nota Crédito de Factura Electrónica"
+        scheme_name = "CUDE-SHA384"
+    else:
+        type_code = "01"
+        profile_id = "DIAN 2.1: Factura Electrónica de Venta"
+        scheme_name = "CUFE-SHA384"
 
     root.append(cbc("UBLVersionID", "UBL 2.1"))
     root.append(cbc("CustomizationID", "10"))
     root.append(cbc("ProfileID", profile_id))
     root.append(cbc("ProfileExecutionID", tipo_amb))
     root.append(cbc("ID", factura.numero_completo))
-    root.append(cbc("UUID", factura.cufe, schemeID=tipo_amb, schemeName="CUDE-SHA384" if type_code == "20" else "CUFE-SHA384"))
+    root.append(cbc("UUID", factura.cufe, schemeID=tipo_amb, schemeName=scheme_name))
     root.append(cbc("IssueDate", factura.fecha_emision.strftime("%Y-%m-%d")))
     hora_dt = factura.created_at or datetime.now()
     root.append(cbc("IssueTime", hora_dt.strftime("%H:%M:%S-05:00")))

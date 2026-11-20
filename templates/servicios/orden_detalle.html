@@ -15,9 +15,26 @@
                 <p class="text-xs text-slate-400">Equipo: <b class="text-white">{{ orden.equipo.marca }} {{ orden.equipo.modelo }}</b> (S/N: {{ orden.equipo.serial }})</p>
             </div>
         </div>
-        <span class="px-3 py-1 rounded-full text-xs font-black uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20">
-            {{ orden.get_estado_display }}
-        </span>
+        <div class="flex items-center gap-2 flex-wrap">
+            <span class="px-3 py-1.5 rounded-full text-xs font-black uppercase bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                {{ orden.get_estado_display }}
+            </span>
+            {% if orden.factura %}
+            <a href="{% url 'facturacion:factura_detalle' orden.factura.id %}"
+               class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs uppercase tracking-wider transition flex items-center gap-2">
+                <i class="fas fa-file-invoice-dollar"></i> Ver Factura {{ orden.factura.numero_completo }}
+            </a>
+            {% elif orden.estado != 'CANCELADO' %}
+            <form method="POST" action="{% url 'servicios:orden_facturar' orden.id %}" class="inline"
+                  onsubmit="return confirm('¿Emitir factura electrónica por ${{ orden.total|floatformat:0|intcomma }} COP y marcar esta orden como Entregada?');">
+                {% csrf_token %}
+                <button type="submit"
+                        class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs uppercase tracking-wider transition flex items-center gap-2">
+                    <i class="fas fa-file-invoice-dollar"></i> Facturar Orden
+                </button>
+            </form>
+            {% endif %}
+        </div>
     </div>
 
     <form method="POST" enctype="multipart/form-data" class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 sm:p-8 space-y-5 shadow-xl text-xs">

@@ -6,6 +6,7 @@ from django.db import transaction
 from django.utils import timezone
 
 from apps.core.platform_settings import decrypt_secret, get_platform_setting, mask_secret
+from apps.contabilidad.services import registrar_asiento_recibo
 from apps.facturacion.models import ReciboCaja, TransaccionWompi
 
 
@@ -128,7 +129,7 @@ def activate_wompi_transaction(tx: TransaccionWompi) -> bool:
             from datetime import date
             from decimal import Decimal
 
-            ReciboCaja.objects.create(
+            rc = ReciboCaja.objects.create(
                 empresa=tx.empresa,
                 consecutivo=consec_rc,
                 factura=fac,
@@ -140,6 +141,7 @@ def activate_wompi_transaction(tx: TransaccionWompi) -> bool:
                 observaciones=f"Pago en línea Wompi ({tx.payment_method_type or 'Checkout'})",
             )
             fac.recalcular_totales()
+            registrar_asiento_recibo(rc)
     return True
 
 

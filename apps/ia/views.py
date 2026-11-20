@@ -13,9 +13,11 @@ from apps.ia.models import ConversacionIA, MensajeIA
 from apps.facturacion.models import Factura, ReciboCaja
 from apps.inventario.models import Producto
 from apps.terceros.models import Tercero
+from apps.usuarios.decorators import requiere_ia
 
 
 @login_required
+@requiere_ia
 def asistente_view(request):
     empresa = request.empresa_activa
     if not empresa:
@@ -61,6 +63,8 @@ def chat_api(request):
     empresa = request.empresa_activa
     if request.method != 'POST' or not empresa:
         return JsonResponse({'error': 'POST requerido'}, status=400)
+    if not request.user.es_superadmin_user() and not empresa.tiene_modulo('ia'):
+        return JsonResponse({'error': 'Módulo FacCol IA no habilitado en tu plan.'}, status=403)
 
     try:
         data = json.loads(request.body)

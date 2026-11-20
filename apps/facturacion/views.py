@@ -27,9 +27,59 @@ from apps.facturacion.wompi_service import (
     verify_wompi_event_checksum,
 )
 from apps.core.mail_service import enviar_correo_sistema
+from apps.contabilidad.services import (
+    registrar_asiento_nota_credito,
+    registrar_asiento_recibo,
+    registrar_asiento_venta,
+)
 from apps.terceros.models import Tercero
 from apps.inventario.models import Producto, MovimientoInventario
 from apps.usuarios.decorators import requiere_facturacion
+
+
+def _obtener_prefijo_y_consecutivo(empresa, tipo_documento):
+    """Obtiene el prefijo y siguiente consecutivo según el tipo de documento."""
+    if tipo_documento == 'POS_ELECTRONICO':
+        return empresa.prefijo_pos_electronico, empresa.obtener_siguiente_consecutivo_pos()
+    if tipo_documento == 'FACTURA':
+        return empresa.prefijo_factura, empresa.obtener_siguiente_consecutivo()
+
+    prefijos = {
+        'COTIZACION': 'COT',
+        'REMISION': 'REM',
+        'NOTA_CREDITO': 'NC',
+    }
+    prefijo = prefijos.get(tipo_documento, 'DOC')
+    ultimo = (
+        Factura.objects.filter(empresa=empresa, tipo_documento=tipo_documento, prefijo=prefijo)
+        .order_by('-consecutivo')
+        .first()
+    )
+    return prefijo, (ultimo.consecutivo + 1) if ultimo else 1
+
+
+def _mover_stock_documento(empresa, producto, cantidad, tipo_mov, motivo, referencia):
+    """Registra una salida o reversión de inventario de forma uniforme."""
+    if not producto or not producto.maneja_inventario:
+        return
+    saldo_anterior = producto.stock_actual
+    if tipo_mov == 'SALIDA':
+        saldo_nuevo = max(Decimal('0.00'), saldo_anterior - cantidad)
+    else:
+        saldo_nuevo = saldo_anterior + cantidad
+    producto.stock_actual = saldo_nuevo
+    producto.save(update_fields=['stock_actual'])
+    MovimientoInventario.objects.create(
+        empresa=empresa,
+        producto=producto,
+        tipo=tipo_mov,
+        cantidad=cantidad,
+        costo_unitario=producto.costo_unitario,
+        saldo_anterior=saldo_anterior,
+        saldo_nuevo=saldo_nuevo,
+        motivo=motivo,
+        referencia_documento=referencia,
+    )
 
 
 @login_required
@@ -71,10 +121,16 @@ def factura_crear(request):
 
     terceros = Tercero.objects.filter(empresa=empresa, es_cliente=True, activo=True)
     productos = Producto.objects.filter(empresa=empresa, activo=True)
+    tipos_validos = ('FACTURA', 'POS_ELECTRONICO', 'COTIZACION', 'REMISION')
+    tipo_sel = (request.GET.get('tipo') or 'FACTURA').upper()
+    if tipo_sel not in tipos_validos:
+        tipo_sel = 'FACTURA'
 
     if request.method == 'POST':
         tercero_id = request.POST.get('tercero')
-        tipo_documento = request.POST.get('tipo_documento', 'FACTURA')
+        tipo_documento = (request.POST.get('tipo_documento') or 'FACTURA').upper()
+        if tipo_documento not in tipos_validos:
+            tipo_documento = 'FACTURA'
         metodo_pago = request.POST.get('metodo_pago', 'CONTADO')
         fecha_emision = request.POST.get('fecha_emision') or date.today()
         dias_venc = int(request.POST.get('dias_vencimiento', empresa.dias_vencimiento or 30))
@@ -89,14 +145,10 @@ def factura_crear(request):
             return redirect('facturacion:facturas_lista')
 
         tercero = get_object_or_404(Tercero, id=tercero_id, empresa=empresa)
-        if tipo_documento == 'POS_ELECTRONICO':
-            prefijo = empresa.prefijo_pos_electronico
-            consecutivo = empresa.obtener_siguiente_consecutivo_pos()
-        else:
-            prefijo = empresa.prefijo_factura
-            consecutivo = empresa.obtener_siguiente_consecutivo()
 
         with transaction.atomic():
+            prefijo, consecutivo = _obtener_prefijo_y_consecutivo(empresa, tipo_documento)
+            es_fiscal = tipo_documento in ('FACTURA', 'POS_ELECTRONICO')
             factura = Factura.objects.create(
                 empresa=empresa,
                 tipo_documento=tipo_documento,
@@ -107,7 +159,8 @@ def factura_crear(request):
                 fecha_vencimiento=date.today() + timedelta(days=dias_venc),
                 estado='EMITIDA',
                 metodo_pago=metodo_pago,
-                es_fiado=(metodo_pago == 'CREDITO'),
+                es_fiado=(metodo_pago == 'CREDITO' and es_fiscal),
+                estado_dian='PENDIENTE' if es_fiscal else 'NO_APLICA',
                 observaciones=observaciones,
             )
 
@@ -148,34 +201,42 @@ def factura_crear(request):
                 )
 
                 # Descontar stock si es factura, DEE POS o remisión y controla inventario
-                if prod and prod.maneja_inventario and tipo_documento in ('FACTURA', 'POS_ELECTRONICO', 'REMISION'):
-                    saldo_anterior = prod.stock_actual
-                    saldo_nuevo = max(Decimal('0.00'), saldo_anterior - cant)
-                    prod.stock_actual = saldo_nuevo
-                    prod.save(update_fields=['stock_actual'])
-
-                    MovimientoInventario.objects.create(
-                        empresa=empresa,
-                        producto=prod,
-                        tipo='SALIDA',
-                        cantidad=cant,
-                        costo_unitario=prod.costo_unitario,
-                        saldo_anterior=saldo_anterior,
-                        saldo_nuevo=saldo_nuevo,
-                        motivo=f"Venta con {factura.numero_completo}",
-                        referencia_documento=factura.numero_completo,
+                if tipo_documento in ('FACTURA', 'POS_ELECTRONICO', 'REMISION'):
+                    _mover_stock_documento(
+                        empresa,
+                        prod,
+                        cant,
+                        'SALIDA',
+                        f"Venta con {factura.numero_completo}",
+                        factura.numero_completo,
                     )
 
             factura.recalcular_totales()
-            factura.generar_cufe()
+            if not es_fiscal:
+                factura.saldo_pendiente = Decimal('0.00')
+                factura.save(update_fields=['saldo_pendiente'])
+            else:
+                factura.generar_cufe()
+                registrar_asiento_venta(factura)
 
-        messages.success(request, f"Factura {factura.numero_completo} emitida exitosamente por ${factura.total:,.0f} COP.")
+        messages.success(
+            request,
+            f"{factura.get_tipo_documento_display()} {factura.numero_completo} emitida exitosamente por ${factura.total:,.0f} COP."
+        )
         return redirect('facturacion:factura_detalle', factura_id=factura.id)
+
+    preview_pref = {
+        'FACTURA': f"{empresa.prefijo_factura}{empresa.consecutivo_actual}",
+        'POS_ELECTRONICO': f"{empresa.prefijo_pos_electronico}{empresa.consecutivo_pos_actual}",
+        'COTIZACION': "COT-Auto",
+        'REMISION': "REM-Auto",
+    }.get(tipo_sel, f"{empresa.prefijo_factura}{empresa.consecutivo_actual}")
 
     return render(request, 'facturacion/factura_formulario.html', {
         'terceros': terceros,
         'productos': productos,
-        'proximo_consecutivo': f"{empresa.prefijo_factura}{empresa.consecutivo_actual}",
+        'proximo_consecutivo': preview_pref,
+        'tipo_sel': tipo_sel,
     })
 
 
@@ -526,7 +587,8 @@ def recibo_crear(request):
 
     facturas_pendientes = Factura.objects.filter(
         empresa=empresa,
-        saldo_pendiente__gt=0
+        tipo_documento__in=('FACTURA', 'POS_ELECTRONICO'),
+        saldo_pendiente__gt=0,
     ).select_related('tercero')
 
     terceros = Tercero.objects.filter(empresa=empresa, es_cliente=True, activo=True)
@@ -542,23 +604,26 @@ def recibo_crear(request):
         referencia = request.POST.get('referencia_pago', '').strip()
         observaciones = request.POST.get('observaciones', '').strip()
 
-        ultimo_recibo = ReciboCaja.objects.filter(empresa=empresa).order_by('-consecutivo').first()
-        nuevo_consecutivo = (ultimo_recibo.consecutivo + 1) if ultimo_recibo else 1
+        with transaction.atomic():
+            ultimo_recibo = ReciboCaja.objects.filter(empresa=empresa).order_by('-consecutivo').first()
+            nuevo_consecutivo = (ultimo_recibo.consecutivo + 1) if ultimo_recibo else 1
 
-        recibo = ReciboCaja.objects.create(
-            empresa=empresa,
-            consecutivo=nuevo_consecutivo,
-            factura=fac,
-            tercero=tercero,
-            fecha=date.today(),
-            valor=valor,
-            metodo_pago=metodo,
-            referencia_pago=referencia,
-            observaciones=observaciones,
-        )
+            recibo = ReciboCaja.objects.create(
+                empresa=empresa,
+                consecutivo=nuevo_consecutivo,
+                factura=fac,
+                tercero=tercero,
+                fecha=date.today(),
+                valor=valor,
+                metodo_pago=metodo,
+                referencia_pago=referencia,
+                observaciones=observaciones,
+            )
 
-        if fac:
-            fac.recalcular_totales()
+            if fac:
+                fac.recalcular_totales()
+
+            registrar_asiento_recibo(recibo)
 
         messages.success(request, f"Recibo RC-{recibo.consecutivo} registrado exitosamente por ${recibo.valor:,.0f} COP.")
         return redirect('facturacion:recibos_lista')
@@ -604,3 +669,166 @@ def notas_credito_lista(request):
         empresa=empresa, tipo_documento='NOTA_CREDITO'
     ).select_related('tercero', 'factura_referencia').order_by('-consecutivo')
     return render(request, 'facturacion/notas_credito_lista.html', {'notas': notas})
+
+
+@login_required
+@requiere_facturacion
+@require_POST
+def cotizacion_convertir_factura(request, factura_id):
+    """Convierte en 1 clic una Cotización en Factura Electrónica con descuento de inventario y asiento."""
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+
+    cotizacion = get_object_or_404(
+        Factura.objects.select_related('tercero', 'factura_referencia').prefetch_related('items__producto'),
+        id=factura_id,
+        empresa=empresa,
+        tipo_documento='COTIZACION',
+    )
+
+    if cotizacion.factura_referencia:
+        messages.info(request, f"La cotización {cotizacion.numero_completo} ya fue convertida en {cotizacion.factura_referencia.numero_completo}.")
+        return redirect('facturacion:factura_detalle', factura_id=cotizacion.factura_referencia.id)
+
+    if cotizacion.estado == 'ANULADA':
+        messages.error(request, "No es posible convertir una cotización anulada.")
+        return redirect('facturacion:factura_detalle', factura_id=cotizacion.id)
+
+    if not empresa.puede_emitir_documento():
+        messages.error(
+            request,
+            f"Alcanzaste el límite mensual de documentos electrónicos de tu plan ({empresa.plan.limite_facturas_mes}/mes)."
+        )
+        return redirect('facturacion:factura_detalle', factura_id=cotizacion.id)
+
+    with transaction.atomic():
+        prefijo, consecutivo = _obtener_prefijo_y_consecutivo(empresa, 'FACTURA')
+        dias_venc = empresa.dias_vencimiento or 30
+        factura = Factura.objects.create(
+            empresa=empresa,
+            tipo_documento='FACTURA',
+            prefijo=prefijo,
+            consecutivo=consecutivo,
+            tercero=cotizacion.tercero,
+            fecha_emision=date.today(),
+            fecha_vencimiento=date.today() + timedelta(days=dias_venc),
+            estado='EMITIDA',
+            metodo_pago=cotizacion.metodo_pago,
+            es_fiado=(cotizacion.metodo_pago == 'CREDITO'),
+            observaciones=f"Generada desde Cotización {cotizacion.numero_completo}. {cotizacion.observaciones}".strip(),
+        )
+
+        for it in cotizacion.items.all():
+            FacturaItem.objects.create(
+                factura=factura,
+                producto=it.producto,
+                descripcion=it.descripcion,
+                cantidad=it.cantidad,
+                precio_unitario=it.precio_unitario,
+                porcentaje_descuento=it.porcentaje_descuento,
+                porcentaje_iva=it.porcentaje_iva,
+                porcentaje_otro_impuesto=it.porcentaje_otro_impuesto,
+            )
+            _mover_stock_documento(
+                empresa,
+                it.producto,
+                it.cantidad,
+                'SALIDA',
+                f"Conversión de cotización {cotizacion.numero_completo} a {factura.numero_completo}",
+                factura.numero_completo,
+            )
+
+        factura.recalcular_totales()
+        factura.generar_cufe()
+        registrar_asiento_venta(factura)
+
+        cotizacion.factura_referencia = factura
+        cotizacion.estado = 'PAGADA'
+        cotizacion.save(update_fields=['factura_referencia', 'estado'])
+
+    messages.success(
+        request,
+        f"Cotización {cotizacion.numero_completo} convertida en Factura {factura.numero_completo} por ${factura.total:,.0f} COP."
+    )
+    return redirect('facturacion:factura_detalle', factura_id=factura.id)
+
+
+@login_required
+@requiere_facturacion
+@require_POST
+def factura_emitir_nota_credito(request, factura_id):
+    """Emite Nota de Crédito por anulación total, reversa stock de inventario y genera asiento contable."""
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+
+    origen = get_object_or_404(
+        Factura.objects.select_related('tercero').prefetch_related('items__producto', 'recibos'),
+        id=factura_id,
+        empresa=empresa,
+    )
+
+    if origen.tipo_documento not in ('FACTURA', 'POS_ELECTRONICO'):
+        messages.error(request, "Solo se pueden emitir Notas Crédito sobre Facturas o DEE POS.")
+        return redirect('facturacion:factura_detalle', factura_id=origen.id)
+
+    if origen.estado == 'ANULADA':
+        messages.info(request, f"El documento {origen.numero_completo} ya se encuentra anulado.")
+        return redirect('facturacion:factura_detalle', factura_id=origen.id)
+
+    motivo = request.POST.get('motivo', '').strip() or f"Anulación total de {origen.numero_completo}"
+
+    with transaction.atomic():
+        pref_nc, cons_nc = _obtener_prefijo_y_consecutivo(empresa, 'NOTA_CREDITO')
+        nc = Factura.objects.create(
+            empresa=empresa,
+            tipo_documento='NOTA_CREDITO',
+            prefijo=pref_nc,
+            consecutivo=cons_nc,
+            tercero=origen.tercero,
+            fecha_emision=date.today(),
+            fecha_vencimiento=date.today(),
+            estado='EMITIDA',
+            metodo_pago=origen.metodo_pago,
+            es_fiado=False,
+            observaciones=motivo,
+            factura_referencia=origen,
+        )
+
+        for it in origen.items.all():
+            FacturaItem.objects.create(
+                factura=nc,
+                producto=it.producto,
+                descripcion=it.descripcion,
+                cantidad=it.cantidad,
+                precio_unitario=it.precio_unitario,
+                porcentaje_descuento=it.porcentaje_descuento,
+                porcentaje_iva=it.porcentaje_iva,
+                porcentaje_otro_impuesto=it.porcentaje_otro_impuesto,
+            )
+            _mover_stock_documento(
+                empresa,
+                it.producto,
+                it.cantidad,
+                'ENTRADA',
+                f"Devolución por Nota Crédito {nc.numero_completo} ({origen.numero_completo})",
+                nc.numero_completo,
+            )
+
+        nc.recalcular_totales()
+        nc.saldo_pendiente = Decimal('0.00')
+        nc.save(update_fields=['saldo_pendiente'])
+        nc.generar_cufe()
+
+        origen.estado = 'ANULADA'
+        origen.saldo_pendiente = Decimal('0.00')
+        origen.save(update_fields=['estado', 'saldo_pendiente'])
+
+        registrar_asiento_nota_credito(nc, factura_origen=origen)
+
+    messages.success(
+        request,
+        f"Nota Crédito {nc.numero_completo} emitida por ${nc.total:,.0f} COP. Documento {origen.numero_completo} anulado e inventario reversado."
+    )
+    return redirect('facturacion:factura_detalle', factura_id=nc.id)

@@ -10,7 +10,7 @@
             <h1 class="font-display font-extrabold text-2xl text-white">Cotizaciones Comerciales</h1>
             <p class="text-xs text-slate-400">Propuestas comerciales y presupuestos para clientes</p>
         </div>
-        <a href="{% url 'facturacion:factura_crear' %}"
+        <a href="{% url 'facturacion:factura_crear' %}?tipo=COTIZACION"
            class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-extrabold text-xs uppercase tracking-wider shadow-lg shadow-amber-500/20 transition flex items-center gap-2">
             <i class="fas fa-plus"></i> Nueva Cotización
         </a>
@@ -41,7 +41,21 @@
                                 {{ cot.estado }}
                             </span>
                         </td>
-                        <td class="p-4 text-right">
+                        <td class="p-4 text-right space-x-1 whitespace-nowrap">
+                            {% if cot.factura_referencia %}
+                            <a href="{% url 'facturacion:factura_detalle' cot.factura_referencia.id %}"
+                               class="px-2.5 py-1.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 font-bold text-[11px] inline-flex items-center gap-1">
+                                <i class="fas fa-check"></i> {{ cot.factura_referencia.numero_completo }}
+                            </a>
+                            {% elif cot.estado != 'ANULADA' %}
+                            <form method="POST" action="{% url 'facturacion:cotizacion_convertir_factura' cot.id %}" class="inline"
+                                  onsubmit="return confirm('¿Convertir {{ cot.numero_completo }} en Factura Electrónica y descontar inventario?');">
+                                {% csrf_token %}
+                                <button type="submit" class="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] transition">
+                                    <i class="fas fa-file-invoice-dollar"></i> Facturar
+                                </button>
+                            </form>
+                            {% endif %}
                             <a href="{% url 'facturacion:factura_detalle' cot.id %}" class="p-2 rounded-xl bg-[#162034] hover:bg-[#1f2c47] text-slate-300 inline-block"><i class="fas fa-eye text-xs"></i></a>
                         </td>
                     </tr>

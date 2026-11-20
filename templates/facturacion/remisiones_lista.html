@@ -10,7 +10,7 @@
             <h1 class="font-display font-extrabold text-2xl text-white">Remisiones de Entrega</h1>
             <p class="text-xs text-slate-400">Control de despacho de mercancía y comprobantes de salida</p>
         </div>
-        <a href="{% url 'facturacion:factura_crear' %}"
+        <a href="{% url 'facturacion:factura_crear' %}?tipo=REMISION"
            class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-extrabold text-xs uppercase tracking-wider shadow-lg shadow-amber-500/20 transition flex items-center gap-2">
             <i class="fas fa-plus"></i> Nueva Remisión
         </a>

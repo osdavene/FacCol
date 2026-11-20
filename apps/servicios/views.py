@@ -1,15 +1,23 @@
 import json
+from datetime import date, timedelta
 from decimal import Decimal
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
+from django.db import transaction
 from django.http import JsonResponse
+from django.utils import timezone
+from django.views.decorators.http import require_POST
 
 from apps.servicios.models import OrdenServicio, ServicioEquipo, EvidenciaServicio
+from apps.facturacion.models import Factura, FacturaItem
+from apps.contabilidad.services import registrar_asiento_venta
 from apps.terceros.models import Tercero
+from apps.usuarios.decorators import requiere_servicios
 
 
 @login_required
+@requiere_servicios
 def servicios_panel(request):
     if request.user.es_superadmin_user():
         messages.warning(request, "Acceso restringido: El SuperAdmin administra la plataforma SaaS y no gestiona el taller de inquilinos.")
@@ -32,6 +40,7 @@ def servicios_panel(request):
 
 
 @login_required
+@requiere_servicios
 def kanban_view(request):
     if request.user.es_superadmin_user():
         return redirect('core:dashboard')
@@ -58,6 +67,8 @@ def kanban_cambiar_estado(request):
     if request.user.es_superadmin_user():
         return JsonResponse({'error': 'No autorizado'}, status=403)
     empresa = request.empresa_activa
+    if not empresa or not empresa.tiene_modulo('servicios'):
+        return JsonResponse({'error': 'Módulo de Servicios no habilitado en tu plan.'}, status=403)
     if request.method != 'POST':
         return JsonResponse({'error': 'POST requerido'}, status=405)
 
@@ -75,6 +86,7 @@ def kanban_cambiar_estado(request):
 
 
 @login_required
+@requiere_servicios
 def ordenes_lista(request):
     if request.user.es_superadmin_user():
         return redirect('core:dashboard')
@@ -86,6 +98,7 @@ def ordenes_lista(request):
 
 
 @login_required
+@requiere_servicios
 def orden_crear(request):
     if request.user.es_superadmin_user():
         return redirect('core:dashboard')
@@ -146,10 +159,15 @@ def orden_crear(request):
 
 
 @login_required
+@requiere_servicios
 def orden_detalle(request, orden_id):
+    if request.user.es_superadmin_user():
+        return redirect('core:dashboard')
     empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
     orden = get_object_or_404(
-        OrdenServicio.objects.select_related('cliente', 'equipo', 'tecnico_asignado').prefetch_related('evidencias'),
+        OrdenServicio.objects.select_related('cliente', 'equipo', 'tecnico_asignado', 'factura').prefetch_related('evidencias'),
         id=orden_id,
         empresa=empresa
     )
@@ -175,3 +193,94 @@ def orden_detalle(request, orden_id):
         return redirect('servicios:orden_detalle', orden_id=orden.id)
 
     return render(request, 'servicios/orden_detalle.html', {'orden': orden})
+
+
+@login_required
+@requiere_servicios
+@require_POST
+def orden_facturar(request, orden_id):
+    """Convierte en 1 clic una Orden de Servicio técnico en Factura Electrónica."""
+    if request.user.es_superadmin_user():
+        return redirect('core:dashboard')
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+
+    orden = get_object_or_404(
+        OrdenServicio.objects.select_related('cliente', 'equipo', 'factura'),
+        id=orden_id,
+        empresa=empresa,
+    )
+
+    if orden.factura:
+        messages.info(request, f"La orden OS-{orden.consecutivo} ya fue facturada ({orden.factura.numero_completo}).")
+        return redirect('facturacion:factura_detalle', factura_id=orden.factura.id)
+
+    if orden.estado == 'CANCELADO':
+        messages.error(request, "No se puede facturar una orden cancelada.")
+        return redirect('servicios:orden_detalle', orden_id=orden.id)
+
+    total_orden = (orden.costo_repuestos or Decimal('0.00')) + (orden.costo_mano_obra or Decimal('0.00'))
+    if total_orden <= Decimal('0.00'):
+        messages.error(request, "Registra primero el costo de repuestos o mano de obra antes de facturar.")
+        return redirect('servicios:orden_detalle', orden_id=orden.id)
+
+    if not empresa.puede_emitir_documento():
+        messages.error(
+            request,
+            f"Alcanzaste el límite mensual de documentos electrónicos de tu plan ({empresa.plan.limite_facturas_mes}/mes)."
+        )
+        return redirect('servicios:orden_detalle', orden_id=orden.id)
+
+    with transaction.atomic():
+        dias_venc = empresa.dias_vencimiento or 30
+        factura = Factura.objects.create(
+            empresa=empresa,
+            tipo_documento='FACTURA',
+            prefijo=empresa.prefijo_factura,
+            consecutivo=empresa.obtener_siguiente_consecutivo(),
+            tercero=orden.cliente,
+            fecha_emision=date.today(),
+            fecha_vencimiento=date.today() + timedelta(days=dias_venc),
+            estado='EMITIDA',
+            metodo_pago='CONTADO',
+            observaciones=(
+                f"Facturación de Orden de Servicio OS-{orden.consecutivo} "
+                f"({orden.equipo.marca} {orden.equipo.modelo} S/N: {orden.equipo.serial})"
+            ),
+        )
+
+        if (orden.costo_repuestos or Decimal('0.00')) > Decimal('0.00'):
+            FacturaItem.objects.create(
+                factura=factura,
+                descripcion=f"Repuestos e insumos - OS-{orden.consecutivo} ({orden.equipo.marca} {orden.equipo.modelo})",
+                cantidad=Decimal('1.000'),
+                precio_unitario=orden.costo_repuestos,
+                porcentaje_iva=Decimal('0.00'),
+                porcentaje_otro_impuesto=Decimal('0.00'),
+            )
+
+        if (orden.costo_mano_obra or Decimal('0.00')) > Decimal('0.00'):
+            FacturaItem.objects.create(
+                factura=factura,
+                descripcion=f"Mano de obra servicio técnico - OS-{orden.consecutivo} ({orden.equipo.marca} {orden.equipo.modelo})",
+                cantidad=Decimal('1.000'),
+                precio_unitario=orden.costo_mano_obra,
+                porcentaje_iva=Decimal('0.00'),
+                porcentaje_otro_impuesto=Decimal('0.00'),
+            )
+
+        factura.recalcular_totales()
+        factura.generar_cufe()
+        registrar_asiento_venta(factura)
+
+        orden.factura = factura
+        orden.estado = 'ENTREGADO'
+        orden.fecha_entrega_real = timezone.now()
+        orden.save(update_fields=['factura', 'estado', 'fecha_entrega_real'])
+
+    messages.success(
+        request,
+        f"Orden OS-{orden.consecutivo} facturada como {factura.numero_completo} por ${factura.total:,.0f} COP."
+    )
+    return redirect('facturacion:factura_detalle', factura_id=factura.id)

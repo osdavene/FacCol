@@ -12,7 +12,7 @@
                 <i class="fas fa-arrow-left"></i>
             </a>
             <div>
-                <h1 class="font-display font-extrabold text-2xl text-white">Nueva Factura Electrónica</h1>
+                <h1 class="font-display font-extrabold text-2xl text-white">Nuevo Documento de Facturación</h1>
                 <p class="text-xs text-slate-400">Consecutivo a emitir: <b class="text-amber-400">{{ proximo_consecutivo }}</b></p>
             </div>
         </div>
@@ -26,10 +26,20 @@
         <!-- Bloque 1: Cliente & Condiciones -->
         <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 space-y-4 shadow-xl">
             <h2 class="font-display font-bold text-sm text-white uppercase tracking-wider text-amber-500">
-                1. Datos del Cliente & Condiciones de Venta
+                1. Tipo de Documento, Cliente & Condiciones
             </h2>
 
-            <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 text-xs">
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Tipo de Documento *</label>
+                    <select name="tipo_documento" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-500">
+                        <option value="FACTURA" {% if tipo_sel == 'FACTURA' %}selected{% endif %}>Factura de Venta Electrónica</option>
+                        <option value="POS_ELECTRONICO" {% if tipo_sel == 'POS_ELECTRONICO' %}selected{% endif %}>Doc. Equivalente POS (DEE)</option>
+                        <option value="COTIZACION" {% if tipo_sel == 'COTIZACION' %}selected{% endif %}>Cotización Comercial</option>
+                        <option value="REMISION" {% if tipo_sel == 'REMISION' %}selected{% endif %}>Remisión de Entrega</option>
+                    </select>
+                </div>
+
                 <div>
                     <label class="block font-semibold text-slate-300 mb-1">Cliente / Adquiriente *</label>
                     <select name="tercero" required class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-500">

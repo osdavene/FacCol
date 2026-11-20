@@ -13,6 +13,7 @@ from apps.inventario.models import Producto, MovimientoInventario
 from apps.terceros.models import Tercero
 from apps.facturacion.models import Factura, FacturaItem, ReciboCaja
 from apps.facturacion.dian_service import desglosar_impuestos_item
+from apps.contabilidad.services import registrar_asiento_venta
 from apps.usuarios.decorators import requiere_facturacion
 
 
@@ -158,6 +159,7 @@ def pos_procesar_venta(request):
 
             factura.recalcular_totales()
             factura.generar_cufe()
+            registrar_asiento_venta(factura, metodo_pago_real=metodo_pago)
 
             if not es_fiado:
                 ultimo_rc = ReciboCaja.objects.filter(empresa=empresa).order_by('-consecutivo').first()
