@@ -8,6 +8,9 @@ def global_context(request):
     user_rol = None
     is_superadmin_user = False
 
+    todos_codigos = ['facturacion', 'pos', 'terceros', 'inventario', 'servicios', 'contabilidad', 'nomina', 'ia']
+    modulos_activos = set(todos_codigos)
+
     if request.user.is_authenticated:
         tema = getattr(request.user, 'tema', 'oscuro') or 'oscuro'
         is_superadmin_user = bool(
@@ -29,10 +32,16 @@ def global_context(request):
             ]
             if empresa:
                 user_rol = request.user.rol_en_empresa(empresa)
+                if empresa.modulos.exists():
+                    modulos_activos = set(
+                        empresa.empresamodulo_set.filter(activo=True).values_list('modulo__codigo', flat=True)
+                    )
 
     return {
         'empresa_activa': empresa,
         'todas_empresas': todas_empresas,
+        'modulos_activos': modulos_activos,
+        'es_perfil_tienda': bool(empresa and empresa.perfil_operativo == 'TIENDA'),
         'tema_actual': tema,
         'user_rol': user_rol,
         'is_superadmin_user': is_superadmin_user,

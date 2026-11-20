@@ -1,18 +1,21 @@
 import json
 from decimal import Decimal
 from datetime import date, timedelta
+from urllib.parse import quote
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import HttpResponse, JsonResponse
 from django.db import transaction
+from django.db.models import Sum
 from django.core.mail import EmailMultiAlternatives
 from django.template.loader import render_to_string
 from django.utils.html import strip_tags
 from django.conf import settings
 
 from apps.facturacion.models import Factura, FacturaItem, ReciboCaja
-from apps.facturacion.pdf_service import generar_pdf_factura
+from apps.facturacion.pdf_service import generar_pdf_factura, generar_pdf_tirilla, generar_qr_base64
+from apps.facturacion.dian_service import desglosar_impuestos_item, generar_xml_ubl
 from apps.terceros.models import Tercero
 from apps.inventario.models import Producto, MovimientoInventario
 from apps.usuarios.decorators import requiere_facturacion
@@ -30,8 +33,8 @@ def facturas_lista(request):
 
     facturas = Factura.objects.filter(
         empresa=empresa,
-        tipo_documento='FACTURA'
-    ).select_related('tercero').order_by('-consecutivo')
+        tipo_documento__in=('FACTURA', 'POS_ELECTRONICO')
+    ).select_related('tercero').order_by('-fecha_emision', '-id')
 
     if estado:
         facturas = facturas.filter(estado=estado)
@@ -66,20 +69,34 @@ def factura_crear(request):
         dias_venc = int(request.POST.get('dias_vencimiento', empresa.dias_vencimiento or 30))
         observaciones = request.POST.get('observaciones', '').strip()
 
+        if tipo_documento in ('FACTURA', 'POS_ELECTRONICO') and not empresa.puede_emitir_documento():
+            messages.error(
+                request,
+                f"Alcanzaste el límite mensual de documentos electrónicos de tu plan ({empresa.plan.limite_facturas_mes}/mes). "
+                "Solicita ampliación de plan al administrador."
+            )
+            return redirect('facturacion:facturas_lista')
+
         tercero = get_object_or_404(Tercero, id=tercero_id, empresa=empresa)
-        consecutivo = empresa.obtener_siguiente_consecutivo()
+        if tipo_documento == 'POS_ELECTRONICO':
+            prefijo = empresa.prefijo_pos_electronico
+            consecutivo = empresa.obtener_siguiente_consecutivo_pos()
+        else:
+            prefijo = empresa.prefijo_factura
+            consecutivo = empresa.obtener_siguiente_consecutivo()
 
         with transaction.atomic():
             factura = Factura.objects.create(
                 empresa=empresa,
                 tipo_documento=tipo_documento,
-                prefijo=empresa.prefijo_factura,
+                prefijo=prefijo,
                 consecutivo=consecutivo,
                 tercero=tercero,
                 fecha_emision=fecha_emision,
                 fecha_vencimiento=date.today() + timedelta(days=dias_venc),
                 estado='EMITIDA',
                 metodo_pago=metodo_pago,
+                es_fiado=(metodo_pago == 'CREDITO'),
                 observaciones=observaciones,
             )
 
@@ -105,22 +122,22 @@ def factura_crear(request):
                 prod = Producto.objects.filter(id=it.get('producto_id'), empresa=empresa).first()
                 desc = it.get('descripcion') or (prod.nombre if prod else "Producto / Servicio")
                 cant = Decimal(str(it.get('cantidad', 1)))
-                precio = Decimal(str(it.get('precio_unitario', 0)))
+                precio_base, iva, otro_imp = desglosar_impuestos_item(prod, it.get('precio_unitario', 0), empresa)
                 porc_desc = Decimal(str(it.get('descuento', 0)))
-                iva = prod.tarifa_iva if prod else Decimal('19.00')
 
                 FacturaItem.objects.create(
                     factura=factura,
                     producto=prod,
                     descripcion=desc,
                     cantidad=cant,
-                    precio_unitario=precio,
+                    precio_unitario=precio_base,
                     porcentaje_descuento=porc_desc,
                     porcentaje_iva=iva,
+                    porcentaje_otro_impuesto=otro_imp,
                 )
 
-                # Descontar stock si es factura o remisión y controla inventario
-                if prod and prod.maneja_inventario and tipo_documento in ('FACTURA', 'REMISION'):
+                # Descontar stock si es factura, DEE POS o remisión y controla inventario
+                if prod and prod.maneja_inventario and tipo_documento in ('FACTURA', 'POS_ELECTRONICO', 'REMISION'):
                     saldo_anterior = prod.stock_actual
                     saldo_nuevo = max(Decimal('0.00'), saldo_anterior - cant)
                     prod.stock_actual = saldo_nuevo
@@ -178,6 +195,86 @@ def factura_pdf(request, factura_id):
     filename = f"{factura.numero_completo}_{factura.tercero.numero_documento}.pdf"
     response['Content-Disposition'] = f'inline; filename="{filename}"'
     return response
+
+
+@login_required
+@requiere_facturacion
+def factura_tirilla(request, factura_id):
+    """
+    Vista imprimible y PDF en formato tirilla térmica (58mm u 80mm) con QR DIAN
+    y enlace de envío rápido por WhatsApp para tiendas de barrio.
+    """
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+    factura = get_object_or_404(
+        Factura.objects.select_related('tercero', 'empresa').prefetch_related('items'),
+        id=factura_id,
+        empresa=empresa
+    )
+    ancho = 58 if request.GET.get('ancho') == '58' else 80
+
+    if request.GET.get('format') == 'pdf':
+        pdf_bytes = generar_pdf_tirilla(factura, ancho_mm=ancho)
+        response = HttpResponse(pdf_bytes, content_type='application/pdf')
+        response['Content-Disposition'] = f'inline; filename="Tirilla_{factura.numero_completo}_{ancho}mm.pdf"'
+        return response
+
+    qr_base64 = generar_qr_base64(factura)
+    tel_cliente = ''.join(ch for ch in (factura.tercero.telefono or '') if ch.isdigit())
+    if tel_cliente and len(tel_cliente) == 10:
+        tel_cliente = '57' + tel_cliente
+    resumen_wa = (
+        f"Hola {factura.tercero.razon_social}, gracias por tu compra en {empresa.display_name}. "
+        f"Documento {factura.numero_completo} por ${factura.total:,.0f} COP. "
+        f"{'Saldo fiado: $' + format(factura.saldo_pendiente, ',.0f') + ' COP. ' if factura.saldo_pendiente > 0 else ''}"
+        f"CUFE/CUDE: {factura.cufe[:24]}..."
+    )
+    wa_url = f"https://wa.me/{tel_cliente}?text={quote(resumen_wa)}" if tel_cliente else f"https://wa.me/?text={quote(resumen_wa)}"
+
+    return render(request, 'facturacion/tirilla_termica.html', {
+        'factura': factura,
+        'ancho': ancho,
+        'qr_base64': qr_base64,
+        'wa_url': wa_url,
+    })
+
+
+@login_required
+@requiere_facturacion
+def factura_xml(request, factura_id):
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+    factura = get_object_or_404(Factura.objects.select_related('tercero', 'empresa').prefetch_related('items'), id=factura_id, empresa=empresa)
+    if not factura.cufe:
+        factura.generar_cufe()
+    xml_str = generar_xml_ubl(factura)
+    response = HttpResponse(xml_str, content_type='application/xml; charset=utf-8')
+    response['Content-Disposition'] = f'attachment; filename="{factura.numero_completo}.xml"'
+    return response
+
+
+@login_required
+@requiere_facturacion
+def fiados_lista(request):
+    """
+    Libreta digital de fiados / cuentas por cobrar de vecinos para tiendas de barrio.
+    """
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+
+    pendientes = Factura.objects.filter(
+        empresa=empresa,
+        saldo_pendiente__gt=Decimal('0.00')
+    ).exclude(estado='ANULADA').select_related('tercero').order_by('-es_fiado', 'fecha_vencimiento', '-id')
+
+    total_fiado = pendientes.aggregate(t=Sum('saldo_pendiente'))['t'] or Decimal('0.00')
+    return render(request, 'facturacion/fiados_lista.html', {
+        'pendientes': pendientes,
+        'total_fiado': total_fiado,
+    })
 
 
 @login_required

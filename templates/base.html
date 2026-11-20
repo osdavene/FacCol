@@ -167,17 +167,21 @@
                     </a>
                     {% else %}
                     {% if user.puede_facturar %}
+                    <a href="{% url 'pos:pos_terminal' %}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-slate-300 hover:text-emerald-400 hover:bg-[#1a2337] transition">
+                        <i class="fas fa-cash-register text-emerald-500 w-4 text-center"></i>
+                        <span>Caja Express (POS)</span>
+                    </a>
+                    <a href="{% url 'facturacion:fiados_lista' %}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-slate-300 hover:text-purple-400 hover:bg-[#1a2337] transition">
+                        <i class="fas fa-book-open text-purple-400 w-4 text-center"></i>
+                        <span>Libreta de Fiados</span>
+                    </a>
                     <a href="{% url 'facturacion:factura_crear' %}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-slate-300 hover:text-amber-400 hover:bg-[#1a2337] transition">
                         <i class="fas fa-file-invoice text-amber-500 w-4 text-center"></i>
                         <span>Nueva Factura</span>
                     </a>
-                    <a href="{% url 'pos:pos_terminal' %}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-slate-300 hover:text-emerald-400 hover:bg-[#1a2337] transition">
-                        <i class="fas fa-cash-register text-emerald-500 w-4 text-center"></i>
-                        <span>Punto de Venta (POS)</span>
-                    </a>
                     <a href="{% url 'facturacion:recibo_crear' %}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-slate-300 hover:text-amber-400 hover:bg-[#1a2337] transition">
                         <i class="fas fa-receipt text-amber-400 w-4 text-center"></i>
-                        <span>Recibo de Caja</span>
+                        <span>Recibo de Caja / Abono</span>
                     </a>
                     {% endif %}
                     {% if user.puede_inventario %}
@@ -192,7 +196,7 @@
                         <span>Nuevo Cliente / Tercero</span>
                     </a>
                     {% endif %}
-                    {% if user.puede_contabilidad %}
+                    {% if user.puede_contabilidad and 'contabilidad' in modulos_activos %}
                     <a href="{% url 'contabilidad:asiento_crear' %}" class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-xs text-slate-300 hover:text-emerald-400 hover:bg-[#1a2337] transition">
                         <i class="fas fa-scale-balanced text-emerald-400 w-4 text-center"></i>
                         <span>Nuevo Asiento Contable</span>
@@ -250,18 +254,21 @@
                 <div x-data="{ open: true }" class="pt-1">
                     <button type="button" @click="open = !open" class="w-full flex items-center justify-between px-3 py-2 rounded-xl text-slate-400 hover:text-white hover:bg-[#151d2e] transition">
                         <span class="flex items-center gap-2.5 font-bold uppercase tracking-wider text-[11px] text-slate-400">
-                            <i class="fas fa-file-invoice-dollar text-amber-500 w-4"></i> Ventas & Facturación
+                            <i class="fas fa-file-invoice-dollar text-amber-500 w-4"></i> Ventas & Caja
                         </span>
                         <i class="fas fa-chevron-down text-[10px] transition-transform" :class="open ? 'rotate-180' : ''"></i>
                     </button>
                     <div x-show="open" class="pl-7 pr-2 space-y-1 mt-1">
-                        <a href="{% url 'facturacion:facturas_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-amber-400 hover:bg-[#162034] transition">Facturas Electrónicas</a>
-                        <a href="{% url 'pos:pos_terminal' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-amber-400 hover:bg-[#162034] transition">Punto de Venta (POS)</a>
+                        <a href="{% url 'pos:pos_terminal' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-amber-400 hover:bg-[#162034] transition">Caja Express (POS)</a>
+                        <a href="{% url 'facturacion:fiados_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-amber-400 hover:bg-[#162034] transition">Libreta de Fiados</a>
+                        <a href="{% url 'facturacion:facturas_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-amber-400 hover:bg-[#162034] transition">Facturas & Doc. POS</a>
                         <a href="{% url 'pos:cajas_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-amber-400 hover:bg-[#162034] transition">Control de Cajas & Turnos</a>
-                        <a href="{% url 'facturacion:recibos_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-amber-400 hover:bg-[#162034] transition">Recibos de Caja (Cobros)</a>
+                        <a href="{% url 'facturacion:recibos_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-amber-400 hover:bg-[#162034] transition">Recibos de Caja (Abonos)</a>
+                        {% if not es_perfil_tienda %}
                         <a href="{% url 'facturacion:cotizaciones_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-amber-400 hover:bg-[#162034] transition">Cotizaciones</a>
                         <a href="{% url 'facturacion:remisiones_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-amber-400 hover:bg-[#162034] transition">Remisiones</a>
                         <a href="{% url 'facturacion:notas_credito_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-amber-400 hover:bg-[#162034] transition">Notas de Crédito</a>
+                        {% endif %}
                     </div>
                 </div>
                 {% endif %}
@@ -284,7 +291,7 @@
                 {% endif %}
 
                 <!-- Inventario & Catálogo -->
-                {% if user.puede_inventario %}
+                {% if user.puede_inventario and 'inventario' in modulos_activos %}
                 <div x-data="{ open: false }" class="pt-1">
                     <button type="button" @click="open = !open" class="w-full flex items-center justify-between px-3 py-2 rounded-xl text-slate-400 hover:text-white hover:bg-[#151d2e] transition">
                         <span class="flex items-center gap-2.5 font-bold uppercase tracking-wider text-[11px] text-slate-400">
@@ -293,7 +300,7 @@
                         <i class="fas fa-chevron-down text-[10px] transition-transform" :class="open ? 'rotate-180' : ''"></i>
                     </button>
                     <div x-show="open" class="pl-7 pr-2 space-y-1 mt-1">
-                        <a href="{% url 'inventario:productos_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-sky-400 hover:bg-[#162034] transition">Productos & Servicios</a>
+                        <a href="{% url 'inventario:productos_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-sky-400 hover:bg-[#162034] transition">Productos & Precios</a>
                         <a href="{% url 'inventario:kardex' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-sky-400 hover:bg-[#162034] transition">Kardex de Movimientos</a>
                         <a href="{% url 'inventario:categorias_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-sky-400 hover:bg-[#162034] transition">Categorías</a>
                         <a href="{% url 'inventario:unidades_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-sky-400 hover:bg-[#162034] transition">Unidades de Medida</a>
@@ -302,6 +309,7 @@
                 {% endif %}
 
                 <!-- Servicios Técnicos & Taller -->
+                {% if 'servicios' in modulos_activos %}
                 {% if user.es_operador or user.es_admin %}
                 <div x-data="{ open: false }" class="pt-1">
                     <button type="button" @click="open = !open" class="w-full flex items-center justify-between px-3 py-2 rounded-xl text-slate-400 hover:text-white hover:bg-[#151d2e] transition">
@@ -317,9 +325,10 @@
                     </div>
                 </div>
                 {% endif %}
+                {% endif %}
 
                 <!-- Contabilidad & PUC -->
-                {% if user.puede_contabilidad %}
+                {% if user.puede_contabilidad and 'contabilidad' in modulos_activos %}
                 <div x-data="{ open: false }" class="pt-1">
                     <button type="button" @click="open = !open" class="w-full flex items-center justify-between px-3 py-2 rounded-xl text-slate-400 hover:text-white hover:bg-[#151d2e] transition">
                         <span class="flex items-center gap-2.5 font-bold uppercase tracking-wider text-[11px] text-slate-400">
@@ -335,7 +344,7 @@
                 {% endif %}
 
                 <!-- Nómina Electrónica -->
-                {% if user.puede_nomina %}
+                {% if user.puede_nomina and 'nomina' in modulos_activos %}
                 <div x-data="{ open: false }" class="pt-1">
                     <button type="button" @click="open = !open" class="w-full flex items-center justify-between px-3 py-2 rounded-xl text-slate-400 hover:text-white hover:bg-[#151d2e] transition">
                         <span class="flex items-center gap-2.5 font-bold uppercase tracking-wider text-[11px] text-slate-400">
@@ -365,6 +374,7 @@
                 {% endif %}
 
                 <!-- FacCol IA -->
+                {% if is_superadmin_user or 'ia' in modulos_activos %}
                 <div class="pt-2">
                     <a href="{% url 'ia:asistente' %}"
                        class="flex items-center gap-3 px-3 py-2.5 rounded-xl font-bold transition bg-gradient-to-r from-amber-500/10 via-purple-500/10 to-blue-500/10 border border-amber-500/30 text-amber-400 hover:border-amber-400">
@@ -372,6 +382,7 @@
                         <span>FacCol IA</span>
                     </a>
                 </div>
+                {% endif %}
 
             </nav>
 

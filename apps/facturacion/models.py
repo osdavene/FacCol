@@ -7,6 +7,7 @@ from apps.core.models import EmpresaTenantModel
 class Factura(EmpresaTenantModel):
     TIPO_DOCUMENTO_CHOICES = [
         ('FACTURA', 'Factura de Venta Electrónica'),
+        ('POS_ELECTRONICO', 'Documento Equivalente Electrónico POS'),
         ('COTIZACION', 'Cotización Comercial'),
         ('REMISION', 'Remisión de Entrega'),
         ('NOTA_CREDITO', 'Nota de Crédito'),
@@ -25,6 +26,14 @@ class Factura(EmpresaTenantModel):
         ('CREDITO', 'Crédito'),
     ]
 
+    ESTADO_DIAN_CHOICES = [
+        ('PENDIENTE', 'En Cola DIAN'),
+        ('CONTINGENCIA', 'Contingencia / Offline'),
+        ('ENVIADA', 'Aceptada DIAN'),
+        ('RECHAZADA', 'Rechazada DIAN'),
+        ('NO_APLICA', 'No Aplica'),
+    ]
+
     tipo_documento = models.CharField(max_length=25, choices=TIPO_DOCUMENTO_CHOICES, default='FACTURA')
     prefijo = models.CharField(max_length=10, default='FE')
     consecutivo = models.BigIntegerField()
@@ -35,18 +44,23 @@ class Factura(EmpresaTenantModel):
     fecha_vencimiento = models.DateField(verbose_name="Fecha de Vencimiento")
     estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='BORRADOR')
     metodo_pago = models.CharField(max_length=20, choices=METODO_PAGO_CHOICES, default='CONTADO')
+    es_fiado = models.BooleanField(default=False, verbose_name="Venta a Fiado")
 
     # Totales monetarios (COP)
     subtotal = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal('0.00'))
     descuento = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal('0.00'))
     iva = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal('0.00'))
+    impuestos_adicionales = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal('0.00'))
     retenciones = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal('0.00'))
     total = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal('0.00'))
     saldo_pendiente = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal('0.00'))
 
-    # DIAN y Facturación Electrónica
+    # DIAN y Facturación Electrónica (Resolución 000165)
     cufe = models.CharField(max_length=255, blank=True, verbose_name="Código CUFE / CUDE")
     qr_data = models.TextField(blank=True, verbose_name="Cadena Código QR DIAN")
+    estado_dian = models.CharField(max_length=25, choices=ESTADO_DIAN_CHOICES, default='PENDIENTE')
+    dian_track_id = models.CharField(max_length=120, blank=True, verbose_name="TrackId DIAN")
+    dian_mensaje = models.TextField(blank=True, verbose_name="Respuesta DIAN / Bitácora")
 
     observaciones = models.TextField(blank=True, verbose_name="Términos y Observaciones")
     pdf_archivo = models.FileField(upload_to='facturas_pdf/', blank=True, null=True)
@@ -74,16 +88,19 @@ class Factura(EmpresaTenantModel):
         subt = Decimal('0.00')
         desc = Decimal('0.00')
         tax = Decimal('0.00')
+        otros_imp = Decimal('0.00')
 
         for it in items:
             subt += it.subtotal
             desc += it.descuento
             tax += it.iva
+            otros_imp += it.otro_impuesto
 
         self.subtotal = subt
         self.descuento = desc
         self.iva = tax
-        self.total = subt - desc + tax - self.retenciones
+        self.impuestos_adicionales = otros_imp
+        self.total = subt - desc + tax + otros_imp - self.retenciones
 
         # Si ya se han pagado recibos, calcular saldo
         pagado = self.recibos.aggregate(total_pagado=models.Sum('valor'))['total_pagado'] or Decimal('0.00')
@@ -92,13 +109,18 @@ class Factura(EmpresaTenantModel):
         if self.saldo_pendiente == Decimal('0.00') and self.total > Decimal('0.00') and self.estado == 'EMITIDA':
             self.estado = 'PAGADA'
 
-        self.save(update_fields=['subtotal', 'descuento', 'iva', 'total', 'saldo_pendiente', 'estado'])
+        self.save(update_fields=[
+            'subtotal', 'descuento', 'iva', 'impuestos_adicionales',
+            'total', 'saldo_pendiente', 'estado'
+        ])
 
     def generar_cufe(self):
-        cadena = f"{self.numero_completo}{self.fecha_emision}{self.total}{self.empresa.nit}{self.tercero.numero_documento}"
-        self.cufe = hashlib.sha384(cadena.encode('utf-8')).hexdigest()
-        self.qr_data = f"NumFac={self.numero_completo}&FecFac={self.fecha_emision}&NitFac={self.empresa.nit}&DocAdq={self.tercero.numero_documento}&ValFac={self.subtotal}&ValIva={self.iva}&ValTolFac={self.total}&CUFE={self.cufe}"
-        self.save(update_fields=['cufe', 'qr_data'])
+        from apps.facturacion.dian_service import calcular_cufe_y_qr, encolar_documento_dian
+        cufe, qr = calcular_cufe_y_qr(self)
+        self.cufe = cufe
+        self.qr_data = qr
+        encolar_documento_dian(self, save=False)
+        self.save(update_fields=['cufe', 'qr_data', 'estado_dian', 'dian_mensaje'])
 
 
 class FacturaItem(models.Model):
@@ -106,21 +128,24 @@ class FacturaItem(models.Model):
     producto = models.ForeignKey('inventario.Producto', on_delete=models.SET_NULL, null=True, blank=True)
 
     descripcion = models.CharField(max_length=255, verbose_name="Descripción del Producto / Servicio")
-    cantidad = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('1.00'))
+    cantidad = models.DecimalField(max_digits=12, decimal_places=3, default=Decimal('1.000'))
     precio_unitario = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal('0.00'))
     porcentaje_descuento = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal('0.00'))
     descuento = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal('0.00'))
     porcentaje_iva = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal('19.00'))
     iva = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal('0.00'))
+    porcentaje_otro_impuesto = models.DecimalField(max_digits=5, decimal_places=2, default=Decimal('0.00'))
+    otro_impuesto = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal('0.00'))
     subtotal = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal('0.00'))
     total = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal('0.00'))
 
     def save(self, *args, **kwargs):
-        self.subtotal = self.cantidad * self.precio_unitario
+        self.subtotal = (self.cantidad * self.precio_unitario).quantize(Decimal('0.01'))
         self.descuento = (self.subtotal * (self.porcentaje_descuento / Decimal('100.00'))).quantize(Decimal('0.01'))
         base_gravable = self.subtotal - self.descuento
         self.iva = (base_gravable * (self.porcentaje_iva / Decimal('100.00'))).quantize(Decimal('0.01'))
-        self.total = base_gravable + self.iva
+        self.otro_impuesto = (base_gravable * (self.porcentaje_otro_impuesto / Decimal('100.00'))).quantize(Decimal('0.01'))
+        self.total = base_gravable + self.iva + self.otro_impuesto
         super().save(*args, **kwargs)
 
     def __str__(self):
@@ -130,7 +155,8 @@ class FacturaItem(models.Model):
 class ReciboCaja(EmpresaTenantModel):
     METODO_PAGO_CHOICES = [
         ('EFECTIVO', 'Efectivo'),
-        ('TRANSFERENCIA', 'Transferencia Bancaria (Bancolombia, Nequi, Daviplata)'),
+        ('NEQUI', 'Nequi / Daviplata'),
+        ('TRANSFERENCIA', 'Transferencia Bancaria (Bancolombia, Bre-B, PSE)'),
         ('WOMPI', 'Pago en Línea Wompi (PSE / Tarjeta)'),
         ('TARJETA', 'Datáfono / Tarjeta Crédito o Débito'),
         ('CHEQUE', 'Cheque'),

@@ -112,12 +112,23 @@ class Empresa(models.Model):
         ('REGIMEN_SIMPLE', 'Régimen Simple de Tributación (RST)'),
     ]
 
+    PERFIL_OPERATIVO_CHOICES = [
+        ('GENERAL', 'Empresa Estándar (Completa)'),
+        ('TIENDA', 'Tienda de Barrio / Minimercado (Caja Express)'),
+    ]
+
+    MODO_DIAN_CHOICES = [
+        ('PRUEBAS', 'Habilitación / Pruebas DIAN'),
+        ('PRODUCCION', 'Producción DIAN'),
+    ]
+
     razon_social = models.CharField(max_length=200, verbose_name="Razón Social")
     nombre_comercial = models.CharField(max_length=200, blank=True, verbose_name="Nombre Comercial")
     nit = models.CharField(max_length=30, unique=True, verbose_name="NIT / Identificación")
     dv = models.CharField(max_length=1, blank=True, verbose_name="Dígito Verificación")
     tipo_persona = models.CharField(max_length=20, choices=TIPO_PERSONA_CHOICES, default='JURIDICA')
     regimen_tributario = models.CharField(max_length=30, choices=REGIMEN_CHOICES, default='RESPONSABLE_IVA')
+    perfil_operativo = models.CharField(max_length=20, choices=PERFIL_OPERATIVO_CHOICES, default='GENERAL', verbose_name="Perfil Operativo")
 
     direccion = models.CharField(max_length=200, blank=True, verbose_name="Dirección")
     departamento = models.ForeignKey(Departamento, on_delete=models.SET_NULL, null=True, blank=True)
@@ -126,14 +137,20 @@ class Empresa(models.Model):
     email = models.EmailField(blank=True, verbose_name="Correo Electrónico")
     logo = models.ImageField(upload_to='logos/', blank=True, null=True, verbose_name="Logo")
 
-    # Configuración de Facturación DIAN
+    # Configuración de Facturación DIAN y POS Electrónico (Resolución 000165)
     prefijo_factura = models.CharField(max_length=10, default='FE', verbose_name="Prefijo Factura")
     resolucion_dian = models.CharField(max_length=100, blank=True, verbose_name="Número Resolución DIAN")
     fecha_resolucion = models.DateField(null=True, blank=True, verbose_name="Fecha Resolución")
     rango_desde = models.BigIntegerField(default=1, verbose_name="Rango Desde")
     rango_hasta = models.BigIntegerField(default=5000, verbose_name="Rango Hasta")
     consecutivo_actual = models.BigIntegerField(default=1, verbose_name="Consecutivo Actual")
+    prefijo_pos_electronico = models.CharField(max_length=10, default='POS', verbose_name="Prefijo Doc. Equivalente POS")
+    consecutivo_pos_actual = models.BigIntegerField(default=1, verbose_name="Consecutivo Actual POS Electrónico")
     dias_vencimiento = models.IntegerField(default=30, verbose_name="Días de vencimiento por defecto")
+    modo_dian = models.CharField(max_length=20, choices=MODO_DIAN_CHOICES, default='PRUEBAS')
+    dian_software_id = models.CharField(max_length=120, blank=True, verbose_name="Software ID DIAN")
+    dian_pin = models.CharField(max_length=50, blank=True, verbose_name="PIN Software DIAN")
+    dian_test_set_id = models.CharField(max_length=120, blank=True, verbose_name="TestSetId Habilitación DIAN")
 
     # Servidor SMTP de la Empresa
     smtp_host = models.CharField(max_length=150, blank=True, verbose_name="Host SMTP")
@@ -188,6 +205,39 @@ class Empresa(models.Model):
         self.consecutivo_actual += 1
         self.save(update_fields=['consecutivo_actual'])
         return num
+
+    def obtener_siguiente_consecutivo_pos(self):
+        num = self.consecutivo_pos_actual
+        self.consecutivo_pos_actual += 1
+        self.save(update_fields=['consecutivo_pos_actual'])
+        return num
+
+    def tiene_modulo(self, codigo):
+        if not self.modulos.exists():
+            return True
+        return self.empresamodulo_set.filter(modulo__codigo=codigo, activo=True).exists()
+
+    def documentos_mes_actual(self):
+        from datetime import date
+        from apps.facturacion.models import Factura
+        hoy = date.today()
+        return Factura.objects.filter(
+            empresa=self,
+            fecha_emision__year=hoy.year,
+            fecha_emision__month=hoy.month,
+            tipo_documento__in=('FACTURA', 'POS_ELECTRONICO'),
+        ).exclude(estado='ANULADA').count()
+
+    def puede_emitir_documento(self):
+        if not self.plan or self.plan.limite_facturas_mes == 0:
+            return True
+        return self.documentos_mes_actual() < self.plan.limite_facturas_mes
+
+    def puede_agregar_usuario(self):
+        if not self.plan or self.plan.limite_usuarios == 0:
+            return True
+        activos = self.usuarios_asignados.filter(activo=True).count()
+        return activos < self.plan.limite_usuarios
 
 
 class EmpresaModulo(models.Model):

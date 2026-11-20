@@ -73,6 +73,7 @@ def producto_crear(request):
         prod = Producto.objects.create(
             empresa=empresa,
             codigo=codigo,
+            codigo_barras=request.POST.get('codigo_barras', '').strip(),
             nombre=nombre,
             descripcion=request.POST.get('descripcion', '').strip(),
             categoria_id=cat_id if cat_id else None,
@@ -80,6 +81,11 @@ def producto_crear(request):
             precio_venta=precio_venta,
             costo_unitario=costo_unitario,
             tarifa_iva=tarifa_iva,
+            impuesto_saludable_pct=Decimal(request.POST.get('impuesto_saludable_pct', '0') or '0'),
+            precio_incluye_impuestos='precio_incluye_impuestos' in request.POST,
+            es_favorito_pos='es_favorito_pos' in request.POST,
+            permite_fraccion='permite_fraccion' in request.POST,
+            factor_conversion=Decimal(request.POST.get('factor_conversion', '1') or '1'),
             stock_actual=stock_actual,
             stock_minimo=stock_minimo,
             maneja_inventario=maneja_inventario,
@@ -124,11 +130,17 @@ def producto_editar(request, producto_id):
 
     if request.method == 'POST':
         prod.codigo = request.POST.get('codigo', prod.codigo).strip()
+        prod.codigo_barras = request.POST.get('codigo_barras', '').strip()
         prod.nombre = request.POST.get('nombre', prod.nombre).strip()
         prod.descripcion = request.POST.get('descripcion', '').strip()
         prod.precio_venta = Decimal(request.POST.get('precio_venta', '0') or '0')
         prod.costo_unitario = Decimal(request.POST.get('costo_unitario', '0') or '0')
         prod.tarifa_iva = Decimal(request.POST.get('tarifa_iva', '19') or '19')
+        prod.impuesto_saludable_pct = Decimal(request.POST.get('impuesto_saludable_pct', '0') or '0')
+        prod.precio_incluye_impuestos = 'precio_incluye_impuestos' in request.POST
+        prod.es_favorito_pos = 'es_favorito_pos' in request.POST
+        prod.permite_fraccion = 'permite_fraccion' in request.POST
+        prod.factor_conversion = Decimal(request.POST.get('factor_conversion', '1') or '1')
         prod.stock_minimo = Decimal(request.POST.get('stock_minimo', '0') or '0')
         prod.maneja_inventario = 'maneja_inventario' in request.POST
 

@@ -1,0 +1,72 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Libreta de Fiados{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+            <h1 class="font-display font-extrabold text-2xl text-white">Libreta de Fiados & Cuentas por Cobrar</h1>
+            <p class="text-xs text-slate-400">Control sencillo de fiados diarios de clientes y vecinos con abonos rápidos</p>
+        </div>
+
+        <div class="flex items-center gap-3">
+            <div class="px-4 py-2 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-right">
+                <div class="text-[10px] font-bold text-rose-300 uppercase">Total por Cobrar</div>
+                <div class="font-display font-black text-lg text-rose-400">${{ total_fiado|floatformat:0|intcomma }} COP</div>
+            </div>
+            <a href="{% url 'pos:pos_terminal' %}" class="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs uppercase tracking-wider transition">
+                <i class="fas fa-cash-register mr-1"></i> Ir a Caja
+            </a>
+        </div>
+    </div>
+
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl overflow-hidden shadow-xl">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+                <thead>
+                    <tr class="bg-[#141c2e] text-slate-400 font-bold uppercase tracking-wider text-[10px] border-b border-[#1e2d47]">
+                        <th class="p-4">Documento</th>
+                        <th class="p-4">Cliente / Vecino</th>
+                        <th class="p-4">Teléfono</th>
+                        <th class="p-4">Fecha Venta</th>
+                        <th class="p-4 text-right">Total Venta</th>
+                        <th class="p-4 text-right">Saldo Pendiente</th>
+                        <th class="p-4 text-right">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-[#1e2d47]/50">
+                    {% for f in pendientes %}
+                    <tr class="hover:bg-[#162034] transition">
+                        <td class="p-4">
+                            <span class="font-mono font-bold text-amber-400">{{ f.numero_completo }}</span>
+                            {% if f.es_fiado %}
+                            <span class="ml-1 px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300 text-[9px] font-bold uppercase">Fiado</span>
+                            {% endif %}
+                        </td>
+                        <td class="p-4 font-bold text-white">{{ f.tercero.razon_social }}</td>
+                        <td class="p-4 text-slate-400 font-mono">{{ f.tercero.telefono|default:"-" }}</td>
+                        <td class="p-4 text-slate-400">{{ f.fecha_emision|date:"d/m/Y" }}</td>
+                        <td class="p-4 text-right text-slate-300">${{ f.total|floatformat:0|intcomma }}</td>
+                        <td class="p-4 text-right font-black text-rose-400">${{ f.saldo_pendiente|floatformat:0|intcomma }}</td>
+                        <td class="p-4 text-right space-x-1">
+                            <a href="{% url 'facturacion:recibo_crear' %}?factura={{ f.id }}"
+                               class="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold text-[11px] inline-flex items-center gap-1">
+                                <i class="fas fa-hand-holding-dollar"></i> Abonar
+                            </a>
+                            <a href="{% url 'facturacion:factura_tirilla' f.id %}" title="Tirilla / WhatsApp"
+                               class="p-2 rounded-xl bg-[#162034] hover:bg-[#1f2c47] text-slate-300 hover:text-amber-400 inline-block">
+                                <i class="fas fa-receipt text-xs"></i>
+                            </a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="7" class="p-8 text-center text-slate-500">No tienes fiados ni saldos pendientes por cobrar.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

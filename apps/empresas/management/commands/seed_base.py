@@ -85,6 +85,18 @@ class Command(BaseCommand):
 
         planes_data = [
             {
+                "nombre": "Plan Tienda Express",
+                "descripcion": "Diseñado para tiendas de barrio y minimercados: Caja Express, Fiados, Tirilla 58/80mm y DEE POS DIAN.",
+                "precio_mensual": 29900,
+                "limite_facturas_mes": 1500,
+                "limite_usuarios": 2,
+                "duracion_meses": 1,
+                "destacado": False,
+                "color_tema": "emerald",
+                "caracteristicas": "Caja Express con Consumidor Final en 1 clic\nDocumento Equivalente POS DIAN y Tirilla 58/80mm\nLibreta digital de Fiados y abonos Nequi/Efectivo\nMenudeo fraccionado y lector de código de barras\nImpuestos saludables IBUA/ICUI e IVA incluido\nInterfaz simple sin contabilidad compleja",
+                "modulos_codigos": ["pos", "facturacion", "terceros", "inventario"],
+            },
+            {
                 "nombre": "Plan Básico / Emprendedor",
                 "descripcion": "Ideal para personas naturales y pequeños negocios con facturación electrónica DIAN.",
                 "precio_mensual": 49000,

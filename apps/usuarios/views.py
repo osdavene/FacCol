@@ -108,6 +108,14 @@ def usuario_crear(request):
         return redirect('core:dashboard')
 
     if request.method == 'POST':
+        if not empresa.puede_agregar_usuario():
+            messages.error(
+                request,
+                f"Alcanzaste el límite de usuarios de tu plan ({empresa.plan.limite_usuarios} usuarios). "
+                "Solicita ampliación al administrador."
+            )
+            return redirect('usuarios:lista')
+
         email = request.POST.get('email', '').strip().lower()
         first_name = request.POST.get('first_name', '').strip()
         last_name = request.POST.get('last_name', '').strip()

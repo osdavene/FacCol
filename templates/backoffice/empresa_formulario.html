@@ -61,6 +61,24 @@
                     </select>
                 </div>
             </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-2">
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Régimen Tributario (DIAN)</label>
+                    <select name="regimen_tributario" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                        <option value="RESPONSABLE_IVA" {% if not empresa or empresa.regimen_tributario == 'RESPONSABLE_IVA' %}selected{% endif %}>Responsable de IVA (Común)</option>
+                        <option value="NO_RESPONSABLE_IVA" {% if empresa and empresa.regimen_tributario == 'NO_RESPONSABLE_IVA' %}selected{% endif %}>No Responsable de IVA (Simplificado / Tienda)</option>
+                        <option value="REGIMEN_SIMPLE" {% if empresa and empresa.regimen_tributario == 'REGIMEN_SIMPLE' %}selected{% endif %}>Régimen Simple de Tributación (RST)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Perfil Operativo del Interfaz</label>
+                    <select name="perfil_operativo" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                        <option value="GENERAL" {% if not empresa or empresa.perfil_operativo == 'GENERAL' %}selected{% endif %}>Empresa Estándar (Completa)</option>
+                        <option value="TIENDA" {% if empresa and empresa.perfil_operativo == 'TIENDA' %}selected{% endif %}>Tienda de Barrio / Minimercado (Caja Express)</option>
+                    </select>
+                </div>
+            </div>
         </div>
 
         {% if accion == 'Crear' %}
@@ -126,10 +144,24 @@
                            class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono uppercase">
                 </div>
                 <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Prefijo Doc. Equiv. POS</label>
+                    <input type="text" name="prefijo_pos_electronico" value="{{ empresa.prefijo_pos_electronico|default:'POS' }}" placeholder="POS"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono uppercase">
+                </div>
+                <div>
                     <label class="block font-semibold text-slate-300 mb-1">No. Resolución DIAN</label>
                     <input type="text" name="resolucion_dian" value="{{ empresa.resolucion_dian|default:'' }}" placeholder="1876400000..."
                            class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
                 </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Ambiente DIAN</label>
+                    <select name="modo_dian" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                        <option value="PRUEBAS" {% if not empresa or empresa.modo_dian == 'PRUEBAS' %}selected{% endif %}>Habilitación / Pruebas</option>
+                        <option value="PRODUCCION" {% if empresa and empresa.modo_dian == 'PRODUCCION' %}selected{% endif %}>Producción DIAN</option>
+                    </select>
+                </div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-5 gap-4">
                 <div>
                     <label class="block font-semibold text-slate-300 mb-1">Rango Desde</label>
                     <input type="number" name="rango_desde" value="{{ empresa.rango_desde|default:'1' }}"
@@ -139,6 +171,21 @@
                     <label class="block font-semibold text-slate-300 mb-1">Rango Hasta</label>
                     <input type="number" name="rango_hasta" value="{{ empresa.rango_hasta|default:'5000' }}"
                            class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Software ID DIAN</label>
+                    <input type="text" name="dian_software_id" value="{{ empresa.dian_software_id|default:'' }}" placeholder="UUID Software"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">PIN Software DIAN</label>
+                    <input type="password" name="dian_pin" value="{{ empresa.dian_pin|default:'' }}" placeholder="PIN"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">TestSetId DIAN</label>
+                    <input type="text" name="dian_test_set_id" value="{{ empresa.dian_test_set_id|default:'' }}" placeholder="UUID Pruebas"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
                 </div>
             </div>
         </div>

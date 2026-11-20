@@ -67,12 +67,19 @@ def empresa_crear(request):
             nombre_comercial=request.POST.get('nombre_comercial', '').strip(),
             nit=nit,
             dv=dv,
+            regimen_tributario=request.POST.get('regimen_tributario', 'RESPONSABLE_IVA'),
+            perfil_operativo=request.POST.get('perfil_operativo', 'GENERAL'),
             email=email,
             telefono=request.POST.get('telefono', '').strip(),
             direccion=request.POST.get('direccion', '').strip(),
             plan_id=plan_id if plan_id else None,
             prefijo_factura=request.POST.get('prefijo_factura', 'FE').strip().upper(),
+            prefijo_pos_electronico=request.POST.get('prefijo_pos_electronico', 'POS').strip().upper() or 'POS',
             resolucion_dian=request.POST.get('resolucion_dian', '').strip(),
+            modo_dian=request.POST.get('modo_dian', 'PRUEBAS'),
+            dian_software_id=request.POST.get('dian_software_id', '').strip(),
+            dian_pin=request.POST.get('dian_pin', '').strip(),
+            dian_test_set_id=request.POST.get('dian_test_set_id', '').strip(),
         )
 
         # Habilitar módulos según el plan o por defecto
@@ -150,6 +157,8 @@ def empresa_editar(request, empresa_id):
         empresa.nombre_comercial = request.POST.get('nombre_comercial', '').strip()
         empresa.nit = request.POST.get('nit', empresa.nit).strip()
         empresa.dv = request.POST.get('dv', '').strip()
+        empresa.regimen_tributario = request.POST.get('regimen_tributario', empresa.regimen_tributario)
+        empresa.perfil_operativo = request.POST.get('perfil_operativo', empresa.perfil_operativo)
         empresa.email = request.POST.get('email', '').strip()
         empresa.telefono = request.POST.get('telefono', '').strip()
         empresa.direccion = request.POST.get('direccion', '').strip()
@@ -157,11 +166,16 @@ def empresa_editar(request, empresa_id):
         plan_id = request.POST.get('plan')
         empresa.plan_id = plan_id if plan_id else None
 
-        # Configuración DIAN
+        # Configuración DIAN y POS Electrónico
         empresa.prefijo_factura = request.POST.get('prefijo_factura', 'FE').strip().upper()
+        empresa.prefijo_pos_electronico = request.POST.get('prefijo_pos_electronico', 'POS').strip().upper() or 'POS'
         empresa.resolucion_dian = request.POST.get('resolucion_dian', '').strip()
         empresa.rango_desde = int(request.POST.get('rango_desde', 1) or 1)
         empresa.rango_hasta = int(request.POST.get('rango_hasta', 5000) or 5000)
+        empresa.modo_dian = request.POST.get('modo_dian', empresa.modo_dian)
+        empresa.dian_software_id = request.POST.get('dian_software_id', '').strip()
+        empresa.dian_pin = request.POST.get('dian_pin', '').strip()
+        empresa.dian_test_set_id = request.POST.get('dian_test_set_id', '').strip()
 
         # Configuración SMTP
         empresa.smtp_host = request.POST.get('smtp_host', '').strip()

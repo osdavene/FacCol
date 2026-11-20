@@ -7,10 +7,12 @@ from django.contrib import messages
 from django.http import JsonResponse
 from django.db import transaction
 
+from django.urls import reverse
 from apps.pos.models import Caja, CajaTurno, MovimientoCaja
 from apps.inventario.models import Producto, MovimientoInventario
 from apps.terceros.models import Tercero
 from apps.facturacion.models import Factura, FacturaItem, ReciboCaja
+from apps.facturacion.dian_service import desglosar_impuestos_item
 from apps.usuarios.decorators import requiere_facturacion
 
 
@@ -32,15 +34,28 @@ def pos_terminal(request):
         messages.warning(request, "Debe abrir un turno de caja antes de realizar ventas en el Punto de Venta.")
         return redirect('pos:caja_abrir_turno')
 
-    productos = Producto.objects.filter(empresa=empresa, activo=True).select_related('categoria')
-    clientes = Tercero.objects.filter(empresa=empresa, es_cliente=True, activo=True)
-    cliente_por_defecto = clientes.filter(numero_documento='222222222222').first() or clientes.first()
+    # Asegurar Consumidor Final (222222222222) requerido por normativa DIAN
+    consumidor_final, _ = Tercero.objects.get_or_create(
+        empresa=empresa,
+        numero_documento='222222222222',
+        defaults={
+            'razon_social': 'Consumidor Final',
+            'tipo_persona': 'NATURAL',
+            'tipo_documento': 'CC',
+            'es_cliente': True,
+            'regimen': 'NO_RESPONSABLE_IVA',
+        }
+    )
+
+    productos = Producto.objects.filter(empresa=empresa, activo=True).select_related('categoria').order_by('-es_favorito_pos', 'nombre')
+    clientes = Tercero.objects.filter(empresa=empresa, es_cliente=True, activo=True).order_by('razon_social')
 
     return render(request, 'pos/terminal.html', {
         'turno': turno,
         'productos': productos,
         'clientes': clientes,
-        'cliente_por_defecto': cliente_por_defecto,
+        'cliente_por_defecto': consumidor_final,
+        'tiene_favoritos': productos.filter(es_favorito_pos=True).exists(),
     })
 
 
@@ -55,44 +70,72 @@ def pos_procesar_venta(request):
     if not turno:
         return JsonResponse({'error': 'No hay turno abierto'}, status=400)
 
+    if not empresa.puede_emitir_documento():
+        return JsonResponse({
+            'error': f'Alcanzaste el límite de documentos mensuales de tu plan ({empresa.plan.limite_facturas_mes}/mes).'
+        }, status=403)
+
     try:
         data = json.loads(request.body)
         tercero_id = data.get('tercero_id')
         metodo_pago = data.get('metodo_pago', 'EFECTIVO')
+        tipo_documento = data.get('tipo_documento', 'POS_ELECTRONICO')
+        if tipo_documento not in ('POS_ELECTRONICO', 'FACTURA'):
+            tipo_documento = 'POS_ELECTRONICO'
         items = data.get('items', [])
 
         if not items:
             return JsonResponse({'error': 'El carrito está vacío'}, status=400)
 
-        tercero = Tercero.objects.filter(id=tercero_id, empresa=empresa).first() or Tercero.objects.filter(empresa=empresa).first()
-        consecutivo = empresa.obtener_siguiente_consecutivo()
+        tercero = Tercero.objects.filter(id=tercero_id, empresa=empresa).first()
+        if not tercero:
+            tercero, _ = Tercero.objects.get_or_create(
+                empresa=empresa,
+                numero_documento='222222222222',
+                defaults={'razon_social': 'Consumidor Final', 'es_cliente': True}
+            )
+
+        es_fiado = (metodo_pago == 'FIADO')
+        if es_fiado and tercero.numero_documento == '222222222222':
+            return JsonResponse({
+                'error': 'Para anotar un fiado debes seleccionar al cliente/vecino específico, no Consumidor Final.'
+            }, status=400)
+
+        if tipo_documento == 'POS_ELECTRONICO':
+            prefijo = empresa.prefijo_pos_electronico
+            consecutivo = empresa.obtener_siguiente_consecutivo_pos()
+        else:
+            prefijo = empresa.prefijo_factura
+            consecutivo = empresa.obtener_siguiente_consecutivo()
 
         with transaction.atomic():
             factura = Factura.objects.create(
                 empresa=empresa,
-                tipo_documento='FACTURA',
-                prefijo=empresa.prefijo_factura,
+                tipo_documento=tipo_documento,
+                prefijo=prefijo,
                 consecutivo=consecutivo,
                 tercero=tercero,
                 fecha_emision=date.today(),
-                fecha_vencimiento=date.today(),
-                estado='PAGADA',
-                metodo_pago='CONTADO',
-                observaciones='Venta POS mostrador.',
+                fecha_vencimiento=date.today() if not es_fiado else date.fromordinal(date.today().toordinal() + 15),
+                estado='EMITIDA' if es_fiado else 'PAGADA',
+                metodo_pago='CREDITO' if es_fiado else 'CONTADO',
+                es_fiado=es_fiado,
+                observaciones='Fiado registrado en Caja Express.' if es_fiado else 'Venta en Caja Express POS.',
             )
 
             for it in items:
                 prod = Producto.objects.get(id=it['producto_id'], empresa=empresa)
                 cant = Decimal(str(it['cantidad']))
-                precio = Decimal(str(it['precio']))
+                precio_base, iva_pct, otro_pct = desglosar_impuestos_item(prod, it['precio'], empresa)
 
                 FacturaItem.objects.create(
                     factura=factura,
                     producto=prod,
                     descripcion=prod.nombre,
                     cantidad=cant,
-                    precio_unitario=precio,
-                    porcentaje_iva=prod.tarifa_iva,
+                    precio_unitario=precio_base,
+                    porcentaje_iva=iva_pct,
+                    porcentaje_otro_impuesto=otro_pct,
                 )
 
                 if prod.maneja_inventario:
@@ -116,37 +159,40 @@ def pos_procesar_venta(request):
             factura.recalcular_totales()
             factura.generar_cufe()
 
-            # Registrar Recibo de Caja automático por pago completo
-            ultimo_rc = ReciboCaja.objects.filter(empresa=empresa).order_by('-consecutivo').first()
-            consec_rc = (ultimo_rc.consecutivo + 1) if ultimo_rc else 1
+            if not es_fiado:
+                ultimo_rc = ReciboCaja.objects.filter(empresa=empresa).order_by('-consecutivo').first()
+                consec_rc = (ultimo_rc.consecutivo + 1) if ultimo_rc else 1
 
-            ReciboCaja.objects.create(
-                empresa=empresa,
-                consecutivo=consec_rc,
-                factura=factura,
-                tercero=tercero,
-                fecha=date.today(),
-                valor=factura.total,
-                metodo_pago=metodo_pago,
-                referencia_pago=f"POS Turno #{turno.id}",
-                observaciones="Cobro automático en terminal POS",
-            )
-            factura.recalcular_totales()
+                ReciboCaja.objects.create(
+                    empresa=empresa,
+                    consecutivo=consec_rc,
+                    factura=factura,
+                    tercero=tercero,
+                    fecha=date.today(),
+                    valor=factura.total,
+                    metodo_pago=metodo_pago,
+                    referencia_pago=f"POS Turno #{turno.id}",
+                    observaciones="Cobro automático en Caja Express",
+                )
+                factura.recalcular_totales()
 
-            # Actualizar totales del turno de caja
-            if metodo_pago == 'EFECTIVO':
-                turno.monto_ventas_efectivo += factura.total
-            else:
-                turno.monto_ventas_otros += factura.total
+                if metodo_pago == 'EFECTIVO':
+                    turno.monto_ventas_efectivo += factura.total
+                else:
+                    turno.monto_ventas_otros += factura.total
 
-            turno.monto_total_esperado = turno.monto_inicial + turno.monto_ventas_efectivo
-            turno.save()
+                turno.monto_total_esperado = turno.monto_inicial + turno.monto_ventas_efectivo
+                turno.save()
 
         return JsonResponse({
             'success': True,
             'factura_id': factura.id,
             'numero': factura.numero_completo,
             'total': float(factura.total),
+            'es_fiado': es_fiado,
+            'estado_dian': factura.get_estado_dian_display(),
+            'tirilla_url': reverse('facturacion:factura_tirilla', args=[factura.id]),
+            'pdf_url': reverse('facturacion:factura_pdf', args=[factura.id]),
         })
 
     except Exception as e:

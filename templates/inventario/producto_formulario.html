@@ -18,16 +18,22 @@
     <form method="POST" enctype="multipart/form-data" class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 sm:p-8 space-y-5 shadow-xl">
         {% csrf_token %}
 
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+        <div class="grid grid-cols-1 sm:grid-cols-4 gap-4 text-xs">
             <div>
                 <label class="block font-semibold text-slate-300 mb-1">Código / SKU *</label>
                 <input type="text" name="codigo" value="{{ producto.codigo|default:'' }}" required placeholder="Ej: PROD-101"
                        class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-500 uppercase font-mono">
             </div>
 
+            <div>
+                <label class="block font-semibold text-slate-300 mb-1">Código de Barras (EAN)</label>
+                <input type="text" name="codigo_barras" value="{{ producto.codigo_barras|default:'' }}" placeholder="770..."
+                       class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-500 font-mono">
+            </div>
+
             <div class="sm:col-span-2">
                 <label class="block font-semibold text-slate-300 mb-1">Nombre del Producto / Servicio *</label>
-                <input type="text" name="nombre" value="{{ producto.nombre|default:'' }}" required placeholder="Ej: Memoria RAM DDR5 16GB Kingston"
+                <input type="text" name="nombre" value="{{ producto.nombre|default:'' }}" required placeholder="Ej: Gaseosa Postobón 400ml"
                        class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-500 font-bold">
             </div>
         </div>
@@ -53,7 +59,7 @@
             </div>
         </div>
 
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+        <div class="grid grid-cols-1 sm:grid-cols-4 gap-4 text-xs">
             <div>
                 <label class="block font-semibold text-slate-300 mb-1">Precio de Venta ($ COP) *</label>
                 <input type="number" step="0.01" name="precio_venta" value="{{ producto.precio_venta|default:'0' }}" required
@@ -73,6 +79,34 @@
                     <option value="5" {% if producto and producto.tarifa_iva == 5 %}selected{% endif %}>5% (Reducido)</option>
                     <option value="0" {% if producto and producto.tarifa_iva == 0 %}selected{% endif %}>0% (Exento / Excluido)</option>
                 </select>
+            </div>
+
+            <div>
+                <label class="block font-semibold text-slate-300 mb-1">Imp. Saludable / INC (%)</label>
+                <input type="number" step="0.01" min="0" name="impuesto_saludable_pct" value="{{ producto.impuesto_saludable_pct|default:'0' }}"
+                       placeholder="0, 8, 10, 20"
+                       class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-500">
+            </div>
+        </div>
+
+        <!-- Opciones de Tienda de Barrio y Menudeo -->
+        <div class="p-4 rounded-2xl bg-[#141c2e] border border-[#1e2d47] grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+            <label class="flex items-center gap-2 cursor-pointer text-amber-400 font-semibold">
+                <input type="checkbox" name="precio_incluye_impuestos" {% if producto and producto.precio_incluye_impuestos %}checked{% endif %} class="rounded text-amber-500 focus:ring-0">
+                <span>El precio ya incluye IVA / Imp. Saludable</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer text-amber-300 font-semibold">
+                <input type="checkbox" name="es_favorito_pos" {% if producto and producto.es_favorito_pos %}checked{% endif %} class="rounded text-amber-500 focus:ring-0">
+                <span>Favorito en Caja Express (Más vendidos)</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer text-sky-300 font-semibold">
+                <input type="checkbox" name="permite_fraccion" {% if producto and producto.permite_fraccion %}checked{% endif %} class="rounded text-sky-500 focus:ring-0">
+                <span>Permite menudeo fraccionado (peso o valor en $)</span>
+            </label>
+            <div class="flex items-center gap-2">
+                <span class="text-slate-400 font-semibold whitespace-nowrap">Unidades por empaque:</span>
+                <input type="number" step="0.001" min="0.001" name="factor_conversion" value="{{ producto.factor_conversion|default:'1' }}"
+                       class="w-24 bg-[#162034] border border-[#1e2d47] rounded-lg px-2 py-1 text-white font-mono">
             </div>
         </div>
 

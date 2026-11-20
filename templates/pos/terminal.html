@@ -1,23 +1,36 @@
 {% extends 'base.html' %}
 {% load humanize %}
 
-{% block title %}Punto de Venta (POS){% endblock %}
+{% block title %}Caja Express (POS){% endblock %}
 
 {% block content %}
 <div class="h-[calc(100vh-140px)] flex flex-col md:flex-row gap-4" x-data="posApp()">
 
-    <!-- Panel Izquierdo: Catálogo de Productos y Búsqueda (65%) -->
+    <!-- Panel Izquierdo: Catálogo Rápido / Caja Express (65%) -->
     <div class="flex-1 flex flex-col bg-[#111827] border border-[#1e2d47] rounded-3xl p-4 overflow-hidden shadow-xl">
-        
-        <!-- Barra de Búsqueda y Filtros -->
-        <div class="flex items-center gap-3 mb-4">
-            <div class="relative flex-1">
-                <input type="text" x-model="searchQuery" placeholder="Buscar por nombre o código de barras (Enter para agregar)..."
+
+        <!-- Barra de Búsqueda, Favoritos y Turno -->
+        <div class="flex flex-wrap items-center gap-2.5 mb-4">
+            <div class="relative flex-1 min-w-[200px]">
+                <input type="text" x-model="searchQuery" x-ref="searchInput"
+                       placeholder="Escanear código de barras o buscar producto (Enter)..."
                        @keydown.enter.prevent="buscarYAgregar()"
                        class="w-full bg-[#162034] border border-[#1e2d47] rounded-2xl pl-10 pr-4 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500">
-                <i class="fas fa-barcode absolute left-3.5 top-3.5 text-slate-500 text-xs"></i>
+                <i class="fas fa-barcode absolute left-3.5 top-3 text-slate-500 text-xs"></i>
             </div>
-            
+
+            <button type="button" @click="soloFavoritos = !soloFavoritos"
+                    :class="soloFavoritos ? 'bg-amber-500 text-black border-amber-500 font-extrabold' : 'bg-[#162034] text-amber-400 border-[#1e2d47] font-bold'"
+                    class="px-3.5 py-2.5 rounded-2xl border text-xs transition flex items-center gap-1.5 flex-shrink-0">
+                <i class="fas fa-star"></i>
+                <span>Más Vendidos</span>
+            </button>
+
+            <a href="{% url 'facturacion:fiados_lista' %}"
+               class="px-3.5 py-2.5 rounded-2xl bg-purple-500/15 hover:bg-purple-500/25 text-purple-300 border border-purple-500/30 text-xs font-bold transition flex items-center gap-1.5 flex-shrink-0">
+                <i class="fas fa-book-open"></i> Fiados
+            </a>
+
             <a href="{% url 'pos:caja_cerrar_turno' turno.id %}"
                class="px-3.5 py-2.5 rounded-2xl bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 text-xs font-bold transition flex items-center gap-1.5 flex-shrink-0">
                 <i class="fas fa-lock"></i> Cerrar Caja
@@ -25,19 +38,41 @@
         </div>
 
         <!-- Grid de Tarjetas de Productos -->
-        <div class="flex-1 overflow-y-auto pr-1 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+        <div class="flex-1 overflow-y-auto pr-1 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 content-start">
             {% for p in productos %}
-            <div @click="agregarAlCarrito({{ p.id }}, '{{ p.nombre|escapejs }}', {{ p.precio_venta }}, '{{ p.codigo|escapejs }}')"
-                 x-show="coincideBusqueda('{{ p.nombre|lower|escapejs }}', '{{ p.codigo|lower|escapejs }}')"
+            <div data-pos-card
+                 data-id="{{ p.id }}"
+                 data-nombre="{{ p.nombre|escapejs }}"
+                 data-precio="{{ p.precio_venta }}"
+                 data-codigo="{{ p.codigo|lower|escapejs }}"
+                 data-barras="{{ p.codigo_barras|lower|escapejs }}"
+                 data-fraccion="{% if p.permite_fraccion %}1{% else %}0{% endif %}"
+                 @click="agregarAlCarrito({{ p.id }}, '{{ p.nombre|escapejs }}', {{ p.precio_venta }}, '{{ p.codigo|escapejs }}', {% if p.permite_fraccion %}true{% else %}false{% endif %})"
+                 x-show="coincideBusqueda('{{ p.nombre|lower|escapejs }}', '{{ p.codigo|lower|escapejs }}', '{{ p.codigo_barras|lower|escapejs }}', {% if p.es_favorito_pos %}true{% else %}false{% endif %})"
                  class="bg-[#162034] hover:bg-[#1c2842] border border-[#1e2d47] hover:border-amber-500/50 p-3 rounded-2xl flex flex-col justify-between cursor-pointer transition select-none group">
                 <div>
-                    <div class="text-[10px] text-slate-500 font-mono">{{ p.codigo }}</div>
+                    <div class="flex items-center justify-between gap-1">
+                        <span class="text-[10px] text-slate-500 font-mono truncate">{{ p.codigo_barras|default:p.codigo }}</span>
+                        {% if p.es_favorito_pos %}
+                        <i class="fas fa-star text-[10px] text-amber-400"></i>
+                        {% endif %}
+                    </div>
                     <div class="font-bold text-white text-xs mt-1 leading-snug group-hover:text-amber-400 transition">{{ p.nombre }}</div>
+                    <div class="flex flex-wrap gap-1 mt-1">
+                        {% if p.permite_fraccion %}
+                        <span class="px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-300 text-[9px] font-semibold">Menudeo / Peso</span>
+                        {% endif %}
+                        {% if p.impuesto_saludable_pct > 0 %}
+                        <span class="px-1.5 py-0.5 rounded bg-rose-500/10 text-rose-300 text-[9px] font-semibold">IBUA/ICUI {{ p.impuesto_saludable_pct|floatformat:0 }}%</span>
+                        {% endif %}
+                    </div>
                 </div>
                 <div class="mt-3 flex items-center justify-between">
                     <span class="font-black text-amber-400 text-sm">${{ p.precio_venta|floatformat:0|intcomma }}</span>
                     {% if p.maneja_inventario %}
-                    <span class="text-[9px] text-slate-400 font-semibold">{{ p.stock_actual }} un.</span>
+                    <span class="text-[9px] {% if p.stock_bajo %}text-rose-400 font-bold{% else %}text-slate-400 font-semibold{% endif %}">
+                        {{ p.stock_actual|floatformat:"-2" }} un.
+                    </span>
                     {% endif %}
                 </div>
             </div>
@@ -46,12 +81,12 @@
 
     </div>
 
-    <!-- Panel Derecho: Carrito de Compras & Cobro (35%) -->
-    <div class="w-full md:w-96 flex flex-col bg-[#111827] border border-[#1e2d47] rounded-3xl p-5 shadow-2xl flex-shrink-0">
-        
+    <!-- Panel Derecho: Ticket Express & Cobro (35%) -->
+    <div class="w-full md:w-[410px] flex flex-col bg-[#111827] border border-[#1e2d47] rounded-3xl p-5 shadow-2xl flex-shrink-0">
+
         <div class="flex items-center justify-between pb-3 border-b border-[#1e2d47]">
             <div>
-                <h2 class="font-display font-extrabold text-base text-white">Ticket de Venta</h2>
+                <h2 class="font-display font-extrabold text-base text-white">Caja Express</h2>
                 <div class="text-[10px] text-slate-400">Turno #{{ turno.id }} — {{ turno.caja.nombre }}</div>
             </div>
             <button type="button" @click="vaciarCarrito()" class="text-xs text-slate-500 hover:text-red-400 transition">
@@ -59,72 +94,147 @@
             </button>
         </div>
 
-        <!-- Selector de Cliente -->
-        <div class="my-3 text-xs">
-            <label class="block text-[11px] font-semibold text-slate-400 mb-1">Cliente Adquiriente</label>
-            <select x-model="clienteId" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-2.5 py-2 text-white focus:outline-none focus:border-amber-500">
-                {% for c in clientes %}
-                <option value="{{ c.id }}">{{ c.razon_social }} ({{ c.documento_completo }})</option>
-                {% endfor %}
-            </select>
+        <!-- Tipo Documento DIAN & Cliente -->
+        <div class="grid grid-cols-2 gap-2 my-3 text-xs">
+            <div>
+                <label class="block text-[10px] font-bold uppercase text-slate-400 mb-1">Documento DIAN</label>
+                <select x-model="tipoDocumento" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-2 py-2 text-white text-[11px] focus:outline-none focus:border-amber-500">
+                    <option value="POS_ELECTRONICO">Doc. Equiv. POS</option>
+                    <option value="FACTURA">Factura Electrónica</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-[10px] font-bold uppercase text-slate-400 mb-1">Cliente</label>
+                <select x-model="clienteId" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-2 py-2 text-white text-[11px] focus:outline-none focus:border-amber-500">
+                    {% for c in clientes %}
+                    <option value="{{ c.id }}" data-doc="{{ c.numero_documento }}">{{ c.razon_social }}</option>
+                    {% endfor %}
+                </select>
+            </div>
         </div>
 
         <!-- Lista de Artículos en Carrito -->
-        <div class="flex-1 overflow-y-auto space-y-2 pr-1 my-2">
+        <div class="flex-1 overflow-y-auto space-y-2 pr-1 my-1">
             <template x-for="(item, index) in carrito" :key="index">
-                <div class="p-2.5 rounded-xl bg-[#162034] border border-[#1e2d47] flex items-center justify-between text-xs">
-                    <div class="flex-1 min-w-0 pr-2">
+                <div class="p-2.5 rounded-xl bg-[#162034] border border-[#1e2d47] flex items-center justify-between text-xs gap-2">
+                    <div class="flex-1 min-w-0">
                         <div class="font-bold text-white truncate" x-text="item.nombre"></div>
-                        <div class="text-[10px] text-amber-400 font-mono">$<span x-text="format(item.precio)"></span> x <span x-text="item.cantidad"></span></div>
+                        <div class="text-[10px] text-amber-400 font-mono">
+                            $<span x-text="format(item.precio)"></span> x <span x-text="Number(item.cantidad).toFixed(item.cantidad % 1 === 0 ? 0 : 3)"></span>
+                        </div>
                     </div>
-                    <div class="flex items-center gap-2 flex-shrink-0">
+                    <div class="flex items-center gap-1.5 flex-shrink-0">
+                        <button type="button" x-show="item.permite_fraccion" @click="venderPorValor(index)"
+                                title="Vender por valor en pesos ($)"
+                                class="px-1.5 py-1 rounded-lg bg-sky-500/15 text-sky-300 hover:bg-sky-500/25 font-bold text-[10px]">
+                            $
+                        </button>
                         <div class="flex items-center border border-[#1e2d47] rounded-lg bg-[#111827]">
                             <button type="button" @click="modificarCantidad(index, -1)" class="px-2 py-0.5 text-slate-400 hover:text-white">-</button>
-                            <span class="px-1.5 font-bold text-white text-[11px]" x-text="item.cantidad"></span>
+                            <span class="px-1.5 font-bold text-white text-[11px]" x-text="item.cantidad % 1 === 0 ? item.cantidad : Number(item.cantidad).toFixed(2)"></span>
                             <button type="button" @click="modificarCantidad(index, 1)" class="px-2 py-0.5 text-slate-400 hover:text-white">+</button>
                         </div>
                         <span class="font-black text-white text-xs w-16 text-right">$<span x-text="format(item.precio * item.cantidad)"></span></span>
                     </div>
                 </div>
             </template>
-            <div x-show="carrito.length === 0" class="h-40 flex flex-col items-center justify-center text-slate-500 text-xs">
+            <div x-show="carrito.length === 0" class="h-36 flex flex-col items-center justify-center text-slate-500 text-xs text-center">
                 <i class="fas fa-cart-shopping text-2xl mb-2 text-slate-600"></i>
-                <span>El carrito está vacío. Haz clic en un producto para agregarlo.</span>
+                <span>Toca un producto o escanea el código de barras para comenzar.</span>
             </div>
         </div>
 
-        <!-- Forma de Pago & Total -->
-        <div class="pt-3 border-t border-[#1e2d47] space-y-3">
-            <div class="grid grid-cols-3 gap-1.5 text-xs">
+        <!-- Forma de Pago, Devuelta & Total -->
+        <div class="pt-3 border-t border-[#1e2d47] space-y-2.5">
+            <div class="grid grid-cols-4 gap-1.5 text-[11px]">
                 <button type="button" @click="metodoPago = 'EFECTIVO'"
-                        :class="metodoPago === 'EFECTIVO' ? 'bg-amber-500 text-black font-extrabold' : 'bg-[#162034] text-slate-400'"
-                        class="py-1.5 rounded-xl border border-[#1e2d47] transition text-center">
+                        :class="metodoPago === 'EFECTIVO' ? 'bg-amber-500 text-black font-extrabold' : 'bg-[#162034] text-slate-300'"
+                        class="py-2 rounded-xl border border-[#1e2d47] transition text-center">
                     Efectivo
                 </button>
-                <button type="button" @click="metodoPago = 'TRANSFERENCIA'"
-                        :class="metodoPago === 'TRANSFERENCIA' ? 'bg-amber-500 text-black font-extrabold' : 'bg-[#162034] text-slate-400'"
-                        class="py-1.5 rounded-xl border border-[#1e2d47] transition text-center">
-                    Transferencia
+                <button type="button" @click="metodoPago = 'NEQUI'"
+                        :class="metodoPago === 'NEQUI' ? 'bg-purple-500 text-white font-extrabold' : 'bg-[#162034] text-slate-300'"
+                        class="py-2 rounded-xl border border-[#1e2d47] transition text-center">
+                    Nequi
                 </button>
                 <button type="button" @click="metodoPago = 'TARJETA'"
-                        :class="metodoPago === 'TARJETA' ? 'bg-amber-500 text-black font-extrabold' : 'bg-[#162034] text-slate-400'"
-                        class="py-1.5 rounded-xl border border-[#1e2d47] transition text-center">
+                        :class="metodoPago === 'TARJETA' ? 'bg-sky-500 text-black font-extrabold' : 'bg-[#162034] text-slate-300'"
+                        class="py-2 rounded-xl border border-[#1e2d47] transition text-center">
                     Datáfono
+                </button>
+                <button type="button" @click="metodoPago = 'FIADO'"
+                        :class="metodoPago === 'FIADO' ? 'bg-rose-500 text-white font-extrabold' : 'bg-[#162034] text-rose-300'"
+                        class="py-2 rounded-xl border border-[#1e2d47] transition text-center">
+                    Fiado
                 </button>
             </div>
 
+            <!-- Calculadora rápida de devuelta en Efectivo -->
+            <div x-show="metodoPago === 'EFECTIVO' && total > 0" class="bg-[#0e1422] border border-[#1e2d47] rounded-2xl p-2.5 space-y-2 text-xs">
+                <div class="flex items-center justify-between gap-2">
+                    <span class="text-[11px] text-slate-400 font-semibold">Recibido:</span>
+                    <input type="number" x-model.number="efectivoRecibido" placeholder="0"
+                           class="w-28 bg-[#162034] border border-[#1e2d47] rounded-lg px-2 py-1 text-right text-white font-mono text-xs">
+                    <span class="text-[11px] font-bold" :class="devuelta >= 0 ? 'text-emerald-400' : 'text-rose-400'">
+                        Cambio: $<span x-text="format(Math.max(0, devuelta))"></span>
+                    </span>
+                </div>
+                <div class="flex items-center gap-1 text-[10px]">
+                    <button type="button" @click="efectivoRecibido = Math.round(total)" class="flex-1 py-1 rounded-lg bg-[#162034] hover:bg-[#1f2c47] text-slate-300">Exacto</button>
+                    <button type="button" @click="efectivoRecibido = 10000" class="flex-1 py-1 rounded-lg bg-[#162034] hover:bg-[#1f2c47] text-slate-300">$10k</button>
+                    <button type="button" @click="efectivoRecibido = 20000" class="flex-1 py-1 rounded-lg bg-[#162034] hover:bg-[#1f2c47] text-slate-300">$20k</button>
+                    <button type="button" @click="efectivoRecibido = 50000" class="flex-1 py-1 rounded-lg bg-[#162034] hover:bg-[#1f2c47] text-slate-300">$50k</button>
+                </div>
+            </div>
+
             <div class="bg-[#162034] p-3 rounded-2xl flex items-center justify-between">
-                <span class="text-xs font-bold text-slate-300">TOTAL A COBRAR:</span>
+                <span class="text-xs font-bold text-slate-300" x-text="metodoPago === 'FIADO' ? 'TOTAL AL FIADO:' : 'TOTAL A COBRAR:'"></span>
                 <span class="font-display font-black text-2xl text-amber-400">$<span x-text="format(total)"></span></span>
             </div>
 
             <button type="button" @click="procesarCobro()" :disabled="carrito.length === 0 || procesando"
                     class="w-full py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-black font-black text-sm uppercase tracking-wider rounded-2xl shadow-xl shadow-emerald-500/20 transition flex items-center justify-center gap-2">
-                <span x-show="!procesando"><i class="fas fa-check-circle"></i> Cobrar e Imprimir Ticket</span>
-                <span x-show="procesando"><i class="fas fa-spinner fa-spin"></i> Emitiendo Factura...</span>
+                <span x-show="!procesando">
+                    <i class="fas fa-check-circle"></i>
+                    <span x-text="metodoPago === 'FIADO' ? 'Anotar Fiado e Imprimir' : 'Cobrar e Imprimir Tirilla'"></span>
+                </span>
+                <span x-show="procesando"><i class="fas fa-spinner fa-spin"></i> Generando Documento...</span>
             </button>
         </div>
 
+    </div>
+
+    <!-- Modal Post-Venta con Tirilla Térmica y WhatsApp -->
+    <div x-show="ultimaVenta" x-cloak class="fixed inset-0 z-50 bg-black/75 flex items-center justify-center p-4">
+        <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 max-w-md w-full space-y-4 shadow-2xl text-center">
+            <div class="w-12 h-12 rounded-2xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 flex items-center justify-center mx-auto text-xl">
+                <i class="fas fa-check"></i>
+            </div>
+            <div>
+                <h3 class="font-display font-black text-xl text-white" x-text="ultimaVenta?.es_fiado ? '¡Fiado Anotado!' : '¡Venta Registrada!'"></h3>
+                <p class="text-xs text-slate-400 mt-1">
+                    Documento <b class="text-amber-400" x-text="ultimaVenta?.numero"></b> por <b class="text-white">$<span x-text="format(ultimaVenta?.total)"></span> COP</b>
+                </p>
+                <p class="text-[11px] text-emerald-400 mt-1" x-show="ultimaVenta?.devuelta > 0">
+                    Devuelta al cliente: <b>$<span x-text="format(ultimaVenta?.devuelta)"></span> COP</b>
+                </p>
+                <p class="text-[10px] text-slate-400 mt-1" x-text="'DIAN: ' + (ultimaVenta?.estado_dian || '')"></p>
+            </div>
+            <div class="grid grid-cols-2 gap-2 text-xs">
+                <a :href="ultimaVenta?.tirilla_url" target="_blank"
+                   class="py-2.5 px-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold transition flex items-center justify-center gap-1.5">
+                    <i class="fas fa-receipt"></i> Tirilla / WhatsApp
+                </a>
+                <a :href="ultimaVenta?.pdf_url" target="_blank"
+                   class="py-2.5 px-3 rounded-xl bg-[#162034] hover:bg-[#1f2c47] border border-[#1e2d47] text-white font-bold transition flex items-center justify-center gap-1.5">
+                    <i class="fas fa-file-pdf text-rose-400"></i> PDF Carta
+                </a>
+            </div>
+            <button type="button" @click="ultimaVenta = null; $nextTick(() => $refs.searchInput.focus())"
+                    class="w-full py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs uppercase tracking-wider transition">
+                Seguir Vendiendo (Nueva Venta)
+            </button>
+        </div>
     </div>
 
 </div>
@@ -133,42 +243,79 @@
 function posApp() {
     return {
         searchQuery: '',
+        soloFavoritos: false,
         clienteId: '{{ cliente_por_defecto.id|default:"" }}',
+        tipoDocumento: 'POS_ELECTRONICO',
         metodoPago: 'EFECTIVO',
+        efectivoRecibido: 0,
         carrito: [],
         procesando: false,
+        ultimaVenta: null,
 
-        agregarAlCarrito(id, nombre, precio, codigo) {
+        agregarAlCarrito(id, nombre, precio, codigo, permiteFraccion) {
             const index = this.carrito.findIndex(i => i.producto_id === id);
             if (index >= 0) {
                 this.carrito[index].cantidad += 1;
             } else {
-                this.carrito.push({ producto_id: id, nombre: nombre, precio: precio, codigo: codigo, cantidad: 1 });
+                this.carrito.push({
+                    producto_id: id,
+                    nombre: nombre,
+                    precio: precio,
+                    codigo: codigo,
+                    permite_fraccion: !!permiteFraccion,
+                    cantidad: 1
+                });
             }
         },
         modificarCantidad(index, delta) {
-            this.carrito[index].cantidad += delta;
+            this.carrito[index].cantidad = Number((this.carrito[index].cantidad + delta).toFixed(3));
             if (this.carrito[index].cantidad <= 0) {
                 this.carrito.splice(index, 1);
             }
         },
+        venderPorValor(index) {
+            const item = this.carrito[index];
+            const valStr = prompt(`Ingresa el valor exacto en $ COP a vender de "${item.nombre}" (Precio unitario: $${this.format(item.precio)}):`);
+            if (!valStr) return;
+            const monto = parseFloat(valStr);
+            if (monto > 0 && item.precio > 0) {
+                item.cantidad = Number((monto / item.precio).toFixed(3));
+            }
+        },
         vaciarCarrito() {
             this.carrito = [];
+            this.efectivoRecibido = 0;
         },
-        coincideBusqueda(nombre, codigo) {
+        coincideBusqueda(nombre, codigo, barras, esFavorito) {
+            if (this.soloFavoritos && !esFavorito) return false;
             if (!this.searchQuery) return true;
-            const q = this.searchQuery.toLowerCase();
-            return nombre.includes(q) || codigo.includes(q);
+            const q = this.searchQuery.toLowerCase().trim();
+            return nombre.includes(q) || codigo.includes(q) || barras.includes(q);
         },
         buscarYAgregar() {
             if (!this.searchQuery) return;
-            const q = this.searchQuery.toLowerCase();
-            // Buscar coincidencia exacta de código
-            const cards = document.querySelectorAll('[data-codigo]');
+            const q = this.searchQuery.toLowerCase().trim();
+            const cards = Array.from(document.querySelectorAll('[data-pos-card]'));
+            let target = cards.find(c => c.dataset.barras === q || c.dataset.codigo === q);
+            if (!target) {
+                target = cards.find(c => c.dataset.nombre.toLowerCase().includes(q));
+            }
+            if (target) {
+                this.agregarAlCarrito(
+                    parseInt(target.dataset.id, 10),
+                    target.dataset.nombre,
+                    parseFloat(target.dataset.precio),
+                    target.dataset.codigo,
+                    target.dataset.fraccion === '1'
+                );
+            }
             this.searchQuery = '';
         },
         get total() {
             return this.carrito.reduce((acc, it) => acc + (it.precio * it.cantidad), 0);
+        },
+        get devuelta() {
+            return (this.efectivoRecibido || 0) - this.total;
         },
         format(val) {
             return Math.round(val || 0).toLocaleString('es-CO');
@@ -186,15 +333,21 @@ function posApp() {
                     },
                     body: JSON.stringify({
                         tercero_id: this.clienteId,
+                        tipo_documento: this.tipoDocumento,
                         metodo_pago: this.metodoPago,
                         items: this.carrito
                     })
                 });
                 const data = await res.json();
                 if (data.success) {
-                    alert(`¡Venta completada con éxito!\nFactura generada: ${data.numero}\nTotal: $${this.format(data.total)} COP`);
+                    const cambio = this.metodoPago === 'EFECTIVO' && this.efectivoRecibido > data.total
+                        ? (this.efectivoRecibido - data.total)
+                        : 0;
+                    this.ultimaVenta = {
+                        ...data,
+                        devuelta: cambio
+                    };
                     this.vaciarCarrito();
-                    window.open(`/facturacion/${data.factura_id}/pdf/`, '_blank');
                 } else {
                     alert('Error: ' + (data.error || 'No se pudo procesar la venta.'));
                 }

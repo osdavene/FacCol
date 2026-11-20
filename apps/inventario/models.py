@@ -1,3 +1,4 @@
+from decimal import Decimal
 from django.db import models
 from apps.core.models import EmpresaTenantModel
 
@@ -34,15 +35,32 @@ class UnidadMedida(EmpresaTenantModel):
 
 class Producto(EmpresaTenantModel):
     codigo = models.CharField(max_length=50, verbose_name="Código / SKU")
+    codigo_barras = models.CharField(max_length=60, blank=True, db_index=True, verbose_name="Código de Barras (EAN/UPC)")
     nombre = models.CharField(max_length=200, verbose_name="Nombre del Producto")
     descripcion = models.TextField(blank=True, verbose_name="Descripción detallada")
 
     categoria = models.ForeignKey(Categoria, on_delete=models.SET_NULL, null=True, blank=True, related_name='productos')
     unidad_medida = models.ForeignKey(UnidadMedida, on_delete=models.SET_NULL, null=True, blank=True, related_name='productos')
 
-    precio_venta = models.DecimalField(max_digits=14, decimal_places=2, default=0, verbose_name="Precio de Venta (sin IVA)")
+    precio_venta = models.DecimalField(max_digits=14, decimal_places=2, default=0, verbose_name="Precio de Venta")
     costo_unitario = models.DecimalField(max_digits=14, decimal_places=2, default=0, verbose_name="Costo de Compra")
     tarifa_iva = models.DecimalField(max_digits=5, decimal_places=2, default=19.00, verbose_name="% IVA")
+    impuesto_saludable_pct = models.DecimalField(
+        max_digits=5, decimal_places=2, default=0,
+        verbose_name="% Imp. Saludable / IBUA / ICUI / Impoconsumo"
+    )
+    precio_incluye_impuestos = models.BooleanField(
+        default=False,
+        verbose_name="El precio de venta ya incluye IVA y otros impuestos"
+    )
+
+    # Atributos para menudeo de Tienda de Barrio
+    es_favorito_pos = models.BooleanField(default=False, verbose_name="Favorito en Caja Express")
+    permite_fraccion = models.BooleanField(default=False, verbose_name="Permite venta fraccionada / por valor")
+    factor_conversion = models.DecimalField(
+        max_digits=10, decimal_places=3, default=Decimal('1.000'),
+        verbose_name="Unidades de menudeo por empaque de compra"
+    )
 
     stock_actual = models.DecimalField(max_digits=12, decimal_places=2, default=0, verbose_name="Stock Actual")
     stock_minimo = models.DecimalField(max_digits=12, decimal_places=2, default=0, verbose_name="Stock Mínimo")
@@ -63,7 +81,18 @@ class Producto(EmpresaTenantModel):
 
     @property
     def precio_con_iva(self):
-        return self.precio_venta * (1 + (self.tarifa_iva / 100))
+        if self.precio_incluye_impuestos:
+            return self.precio_venta
+        total_pct = (self.tarifa_iva or Decimal('0')) + (self.impuesto_saludable_pct or Decimal('0'))
+        return self.precio_venta * (Decimal('1') + (total_pct / Decimal('100')))
+
+    @property
+    def precio_base_sin_impuestos(self):
+        if not self.precio_incluye_impuestos:
+            return self.precio_venta
+        total_pct = (self.tarifa_iva or Decimal('0')) + (self.impuesto_saludable_pct or Decimal('0'))
+        factor = Decimal('1') + (total_pct / Decimal('100'))
+        return (self.precio_venta / factor).quantize(Decimal('0.01')) if factor > 0 else self.precio_venta
 
     @property
     def stock_bajo(self):

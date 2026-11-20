@@ -1,0 +1,131 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Tirilla {{ factura.numero_completo }}{% endblock %}
+
+{% block content %}
+<style>
+@media print {
+    body * { visibility: hidden !important; }
+    #tirilla-imprimible, #tirilla-imprimible * { visibility: visible !important; }
+    #tirilla-imprimible {
+        position: absolute !important;
+        left: 0 !important;
+        top: 0 !important;
+        width: {{ ancho }}mm !important;
+        box-shadow: none !important;
+        border: none !important;
+        margin: 0 !important;
+        padding: 3mm !important;
+    }
+}
+</style>
+
+<div class="max-w-3xl mx-auto space-y-6">
+    <!-- Barra de acciones -->
+    <div class="flex flex-wrap items-center justify-between gap-3">
+        <div class="flex items-center gap-2">
+            <a href="{% url 'facturacion:factura_detalle' factura.id %}" class="p-2.5 rounded-xl bg-[#162034] text-slate-300 hover:text-white transition">
+                <i class="fas fa-arrow-left"></i>
+            </a>
+            <h1 class="font-display font-extrabold text-xl text-white">Tirilla Térmica {{ factura.numero_completo }}</h1>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2 text-xs">
+            <a href="?ancho=58" class="px-3 py-2 rounded-xl border {% if ancho == 58 %}bg-amber-500 text-black font-bold border-amber-500{% else %}bg-[#162034] text-slate-300 border-[#1e2d47]{% endif %}">
+                58 mm
+            </a>
+            <a href="?ancho=80" class="px-3 py-2 rounded-xl border {% if ancho == 80 %}bg-amber-500 text-black font-bold border-amber-500{% else %}bg-[#162034] text-slate-300 border-[#1e2d47]{% endif %}">
+                80 mm
+            </a>
+            <button type="button" onclick="window.print()" class="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold transition flex items-center gap-1.5">
+                <i class="fas fa-print"></i> Imprimir
+            </button>
+            <a href="?format=pdf&ancho={{ ancho }}" target="_blank" class="px-3.5 py-2 rounded-xl bg-[#162034] hover:bg-[#1f2c47] border border-[#1e2d47] text-white font-bold transition flex items-center gap-1.5">
+                <i class="fas fa-file-pdf text-amber-400"></i> PDF {{ ancho }}mm
+            </a>
+            <a href="{{ wa_url }}" target="_blank" rel="noopener" class="px-3.5 py-2 rounded-xl bg-green-600 hover:bg-green-500 text-white font-bold transition flex items-center gap-1.5">
+                <i class="fab fa-whatsapp"></i> WhatsApp
+            </a>
+        </div>
+    </div>
+
+    <!-- Vista previa de tirilla papel térmico -->
+    <div class="flex justify-center">
+        <div id="tirilla-imprimible"
+             class="bg-white text-black font-mono p-5 rounded-xl shadow-2xl border border-slate-300 text-[11px] leading-snug"
+             style="width: {% if ancho == 58 %}230px{% else %}310px{% endif %};">
+
+            <div class="text-center border-b border-dashed border-slate-400 pb-2 mb-2">
+                <div class="font-black text-sm uppercase">{{ factura.empresa.display_name }}</div>
+                <div>NIT: {{ factura.empresa.nit_completo }}</div>
+                <div class="text-[10px]">{{ factura.empresa.get_regimen_tributario_display }}</div>
+                {% if factura.empresa.direccion %}<div>{{ factura.empresa.direccion }}</div>{% endif %}
+                {% if factura.empresa.telefono %}<div>Tel: {{ factura.empresa.telefono }}</div>{% endif %}
+            </div>
+
+            <div class="text-center border-b border-dashed border-slate-400 pb-2 mb-2">
+                <div class="font-bold">
+                    {% if factura.tipo_documento == 'POS_ELECTRONICO' %}
+                        DOC. EQUIVALENTE ELECTRÓNICO POS
+                    {% else %}
+                        {{ factura.get_tipo_documento_display|upper }}
+                    {% endif %}
+                </div>
+                <div class="font-black text-xs">No. {{ factura.numero_completo }}</div>
+                <div>Fecha: {{ factura.fecha_emision|date:"d/m/Y" }}</div>
+            </div>
+
+            <div class="border-b border-dashed border-slate-400 pb-2 mb-2 text-[10px]">
+                <div><b>Cliente:</b> {{ factura.tercero.razon_social }}</div>
+                <div><b>Doc:</b> {{ factura.tercero.tipo_documento }} {{ factura.tercero.documento_completo }}</div>
+                {% if factura.es_fiado %}
+                <div class="font-black text-center mt-1">** VENTA A FIADO / CRÉDITO **</div>
+                {% endif %}
+            </div>
+
+            <table class="w-full text-[10px] border-b border-dashed border-slate-400 mb-2">
+                <thead>
+                    <tr class="border-b border-slate-300">
+                        <th class="text-left py-1">Cant / Detalle</th>
+                        <th class="text-right py-1">Total</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for it in factura.items.all %}
+                    <tr>
+                        <td class="py-1 pr-1">{{ it.cantidad|floatformat:"-3" }} x {{ it.descripcion }}</td>
+                        <td class="py-1 text-right font-bold">${{ it.total|floatformat:0|intcomma }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+
+            <div class="space-y-0.5 text-[10px] border-b border-dashed border-slate-400 pb-2 mb-2">
+                <div class="flex justify-between"><span>Subtotal:</span><span>${{ factura.subtotal|floatformat:0|intcomma }}</span></div>
+                <div class="flex justify-between"><span>IVA:</span><span>${{ factura.iva|floatformat:0|intcomma }}</span></div>
+                {% if factura.impuestos_adicionales > 0 %}
+                <div class="flex justify-between"><span>Imp. Saludable/Otro:</span><span>${{ factura.impuestos_adicionales|floatformat:0|intcomma }}</span></div>
+                {% endif %}
+                <div class="flex justify-between font-black text-sm pt-1">
+                    <span>TOTAL:</span><span>${{ factura.total|floatformat:0|intcomma }}</span>
+                </div>
+                {% if factura.saldo_pendiente > 0 %}
+                <div class="flex justify-between font-bold text-xs">
+                    <span>SALDO FIADO:</span><span>${{ factura.saldo_pendiente|floatformat:0|intcomma }}</span>
+                </div>
+                {% endif %}
+            </div>
+
+            <div class="text-center space-y-1">
+                <img src="data:image/png;base64,{{ qr_base64 }}" alt="QR DIAN" class="mx-auto w-28 h-28">
+                {% if factura.cufe %}
+                <div class="text-[8px] break-all"><b>CUFE/CUDE:</b> {{ factura.cufe }}</div>
+                {% endif %}
+                <div class="text-[9px] text-slate-600">Estado DIAN: {{ factura.get_estado_dian_display }}</div>
+                <div class="text-[9px] pt-1 font-bold">¡Gracias por su compra!</div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

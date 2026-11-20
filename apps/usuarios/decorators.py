@@ -53,6 +53,9 @@ def requiere_contador(view_func):
         if not request.user.puede_contabilidad(empresa):
             messages.warning(request, "Acceso restringido: El módulo contable está reservado para Contadores y Administradores.")
             return redirect('core:dashboard')
+        if empresa and not empresa.tiene_modulo('contabilidad'):
+            messages.warning(request, "Tu plan actual no incluye el módulo de Contabilidad.")
+            return redirect('core:dashboard')
         return view_func(request, *args, **kwargs)
     return _wrapped
 
@@ -71,6 +74,9 @@ def requiere_nomina(view_func):
         empresa = getattr(request, 'empresa_activa', None)
         if not request.user.puede_nomina(empresa):
             messages.warning(request, "Acceso restringido: El módulo de Nómina está reservado para Administración y Contabilidad.")
+            return redirect('core:dashboard')
+        if empresa and not empresa.tiene_modulo('nomina'):
+            messages.warning(request, "Tu plan actual no incluye el módulo de Nómina.")
             return redirect('core:dashboard')
         return view_func(request, *args, **kwargs)
     return _wrapped
