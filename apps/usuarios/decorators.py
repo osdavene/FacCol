@@ -126,25 +126,6 @@ def requiere_inventario(view_func):
     return _wrapped
 
 
-def requiere_servicios(view_func):
-    """
-    Exige que el módulo Servicios & Taller esté activo en el plan de la empresa.
-    """
-    @wraps(view_func)
-    def _wrapped(request, *args, **kwargs):
-        if not request.user.is_authenticated:
-            return redirect('usuarios:login')
-        if request.user.es_superadmin_user():
-            messages.warning(request, "Acceso restringido: El SuperAdmin administra la plataforma SaaS y no gestiona el taller de inquilinos.")
-            return redirect('core:dashboard')
-        empresa = getattr(request, 'empresa_activa', None)
-        if empresa and not empresa.tiene_modulo('servicios'):
-            messages.warning(request, "Tu plan actual no incluye el módulo de Servicios & Taller.")
-            return redirect('core:dashboard')
-        return view_func(request, *args, **kwargs)
-    return _wrapped
-
-
 def requiere_ia(view_func):
     """
     Exige que el módulo FacCol IA esté habilitado para la empresa.

@@ -58,23 +58,16 @@ class Command(BaseCommand):
                 "orden": 6,
             },
             {
-                "codigo": "servicios",
-                "nombre": "Servicios Técnicos",
-                "descripcion": "Control de reparaciones, tablero Kanban y evidencias de servicio",
-                "icono": "fa-screwdriver-wrench",
-                "ruta": "servicios:kanban",
-                "orden": 7,
-            },
-            {
                 "codigo": "ia",
                 "nombre": "FacCol IA",
                 "descripcion": "Asistente inteligente para análisis de ventas, consultas y lectura de documentos",
                 "icono": "fa-wand-magic-sparkles",
                 "ruta": "ia:asistente",
-                "orden": 8,
+                "orden": 7,
             },
         ]
 
+        Modulo.objects.filter(codigo="servicios").delete()
         for m in modulos_data:
             Modulo.objects.update_or_create(
                 codigo=m["codigo"],
@@ -110,15 +103,15 @@ class Command(BaseCommand):
             },
             {
                 "nombre": "Plan Profesional",
-                "descripcion": "Facturación completa, POS, inventario, órdenes de servicio y FacCol IA integrada.",
+                "descripcion": "Facturación completa, POS, inventario, compras DIAN y FacCol IA integrada.",
                 "precio_mensual": 99000,
                 "limite_facturas_mes": 1000,
                 "limite_usuarios": 6,
                 "duracion_meses": 1,
                 "destacado": True,
                 "color_tema": "amber",
-                "caracteristicas": "Hasta 1.000 facturas y ventas POS al mes\nHasta 5 usuarios con control de roles\nPunto de Venta (POS) y arqueo de turnos de caja\nKardex de movimientos y control de inventario\nÓrdenes de servicio y panel de taller técnico\nFacCol IA incluida",
-                "modulos_codigos": ["facturacion", "pos", "terceros", "inventario", "servicios", "ia"],
+                "caracteristicas": "Hasta 1.000 facturas y ventas POS al mes\nHasta 5 usuarios con control de roles\nPunto de Venta (POS) y arqueo de turnos de caja\nKardex de movimientos y control de inventario\nCompras a proveedores y Documento Soporte DIAN\nFacCol IA incluida",
+                "modulos_codigos": ["facturacion", "pos", "terceros", "inventario", "ia"],
             },
             {
                 "nombre": "Plan Empresarial Ilimitado",
@@ -130,7 +123,7 @@ class Command(BaseCommand):
                 "destacado": False,
                 "color_tema": "purple",
                 "caracteristicas": "Facturación electrónica y tickets POS ILIMITADOS\nUsuarios y terminales ilimitadas\nNómina Electrónica DIAN para empleados\nContabilidad completa con PUC y Libro Diario\nKardex multi-bodega y trazabilidad total\nSoporte técnico prioritario 24/7 y respaldos continuos",
-                "modulos_codigos": ["facturacion", "pos", "terceros", "inventario", "contabilidad", "nomina", "servicios", "ia"],
+                "modulos_codigos": ["facturacion", "pos", "terceros", "inventario", "contabilidad", "nomina", "ia"],
             },
         ]
 

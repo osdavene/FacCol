@@ -29,7 +29,6 @@ from apps.inventario.models import (
 )
 from apps.nomina.models import Empleado, Nomina, NominaEmpleado
 from apps.pos.models import Caja, CajaTurno
-from apps.servicios.models import OrdenServicio, ServicioEquipo
 from apps.terceros.models import Tercero
 from apps.usuarios.models import EmpresaUsuario, User
 
@@ -472,47 +471,7 @@ class Command(BaseCommand):
             empresa.consecutivo_pos_actual = 4
             empresa.save(update_fields=["consecutivo_actual", "consecutivo_pos_actual"])
 
-            # 8. Servicios y Taller Kanban (4 equipos y 5 órdenes)
-            eq1 = ServicioEquipo.objects.create(
-                empresa=empresa, cliente=cli_fiado_1, tipo_equipo="Laptop", marca="HP", modelo="Pavilion 15",
-                serial="HP-998811", accesorios="Cargador original",
-            )
-            eq2 = ServicioEquipo.objects.create(
-                empresa=empresa, cliente=cli_corp_1, tipo_equipo="Impresora POS", marca="Epson", modelo="TM-T20III",
-                serial="EP-554422", accesorios="Cable de poder",
-            )
-            eq3 = ServicioEquipo.objects.create(
-                empresa=empresa, cliente=cli_fiado_2, tipo_equipo="Smartphone", marca="Samsung", modelo="Galaxy A54",
-                serial="IMEI-35998877", accesorios="Funda transparente",
-            )
-            eq4 = ServicioEquipo.objects.create(
-                empresa=empresa, cliente=cli_corp_2, tipo_equipo="PC Escritorio", marca="Dell", modelo="OptiPlex 7090",
-                serial="DL-774411", accesorios="Solo torre",
-            )
-
-            tecnico = usuarios_creados["operador"]
-            OrdenServicio.objects.create(
-                empresa=empresa, consecutivo=1, cliente=cli_fiado_1, equipo=eq1, tecnico_asignado=tecnico,
-                falla_reportada="Lentitud extrema y recalentamiento", diagnostico_tecnico="Pasta térmica seca y disco mecánico lento",
-                solucion_aplicada="Cambio a SSD y limpieza interna", costo_repuestos=Decimal("195000"),
-                costo_mano_obra=Decimal("90000"), estado="LISTO", prioridad="ALTA",
-            )
-            OrdenServicio.objects.create(
-                empresa=empresa, consecutivo=2, cliente=cli_corp_1, equipo=eq2, tecnico_asignado=tecnico,
-                falla_reportada="No corta el papel térmico automáticamente", diagnostico_tecnico="Cuchilla atascada con etiqueta",
-                costo_repuestos=Decimal("45000"), costo_mano_obra=Decimal("60000"), estado="EN_REPARACION", prioridad="NORMAL",
-            )
-            OrdenServicio.objects.create(
-                empresa=empresa, consecutivo=3, cliente=cli_fiado_2, equipo=eq3, tecnico_asignado=tecnico,
-                falla_reportada="Puerto USB-C con falso contacto al cargar",
-                costo_repuestos=Decimal("55000"), costo_mano_obra=Decimal("65000"), estado="PRESUPUESTADO", prioridad="NORMAL",
-            )
-            OrdenServicio.objects.create(
-                empresa=empresa, consecutivo=4, cliente=cli_corp_2, equipo=eq4, tecnico_asignado=tecnico,
-                falla_reportada="No da video al encender", estado="RECIBIDO", prioridad="BAJA",
-            )
-
-            # 9. Empleados y Nómina Electrónica liquidada del mes actual
+            # 8. Empleados y Nómina Electrónica liquidada del mes actual
             emp1 = Empleado.objects.create(
                 empresa=empresa, tipo_documento="CC", numero_documento="1020304050",
                 nombres="Camila", apellidos="Castillo", email="camila@elprogreso.co",
@@ -605,7 +564,7 @@ class Command(BaseCommand):
                     f"<li>Contador: <code>contador.pruebas@faccol.online</code></li>"
                     f"<li>Técnico / Operador: <code>tecnico.pruebas@faccol.online</code></li>"
                     f"</ul>"
-                    f"<p>Incluye productos, compras/DSE, facturas, DEE POS, fiados, cotizaciones, remisiones, nota crédito, asientos PUC, taller Kanban y nómina liquidada.</p>"
+                    f"<p>Incluye productos, compras/DSE, facturas, DEE POS, fiados, cotizaciones, remisiones, nota crédito, asientos PUC y nómina liquidada.</p>"
                 )
                 for dest in destinos:
                     try:

@@ -61,7 +61,6 @@ INSTALLED_APPS = [
     'apps.pos',
     'apps.contabilidad',
     'apps.nomina',
-    'apps.servicios',
     'apps.backoffice',
     'apps.ia',
 ]

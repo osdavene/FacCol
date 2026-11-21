@@ -8,7 +8,7 @@ def global_context(request):
     user_rol = None
     is_superadmin_user = False
 
-    todos_codigos = ['facturacion', 'pos', 'terceros', 'inventario', 'servicios', 'contabilidad', 'nomina', 'ia']
+    todos_codigos = ['facturacion', 'pos', 'terceros', 'inventario', 'contabilidad', 'nomina', 'ia']
     modulos_activos = set(todos_codigos)
 
     if request.user.is_authenticated:

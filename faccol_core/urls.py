@@ -13,7 +13,6 @@ urlpatterns = [
     path('pos/', include('apps.pos.urls')),
     path('contabilidad/', include('apps.contabilidad.urls')),
     path('nomina/', include('apps.nomina.urls')),
-    path('servicios/', include('apps.servicios.urls')),
     path('backoffice/', include('apps.backoffice.urls')),
     path('ia/', include('apps.ia.urls')),
 ]

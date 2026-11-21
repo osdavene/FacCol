@@ -27,7 +27,6 @@ from apps.core.platform_settings import encrypt_secret
 from apps.inventario.models import Producto, MovimientoInventario
 from apps.terceros.models import Tercero
 from apps.contabilidad.models import AsientoContable, PlanCuenta
-from apps.servicios.models import OrdenServicio
 from apps.nomina.models import Empleado
 
 
@@ -293,15 +292,11 @@ def dashboard(request):
 
     total_productos = 0
     ultimos_movimientos = []
-    ordenes_activas = 0
     if is_superadmin or rol_actual in ('propietario', 'admin', 'operador'):
         total_productos = Producto.objects.filter(empresa=empresa, activo=True).count()
         ultimos_movimientos = MovimientoInventario.objects.filter(
             empresa=empresa
         ).select_related('producto').order_by('-created_at')[:5]
-        ordenes_activas = OrdenServicio.objects.filter(
-            empresa=empresa
-        ).exclude(estado__in=['ENTREGADO', 'CANCELADO']).count()
 
     context = {
         'rol_actual': rol_actual,
@@ -315,7 +310,6 @@ def dashboard(request):
         'total_cuentas_puc': total_cuentas_puc,
         'total_productos': total_productos,
         'ultimos_movimientos': ultimos_movimientos,
-        'ordenes_activas': ordenes_activas,
     }
     return render(request, 'core/dashboard.html', context)
 

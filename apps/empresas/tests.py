@@ -8,7 +8,6 @@ from apps.empresas.models import Empresa
 from apps.facturacion.models import Factura
 from apps.inventario.models import CompraProveedor, Producto
 from apps.nomina.models import Nomina
-from apps.servicios.models import OrdenServicio
 from apps.terceros.models import Tercero
 from apps.usuarios.models import User
 
@@ -29,7 +28,6 @@ class SeedEmpresaPruebasTests(TestCase):
         self.assertGreaterEqual(Tercero.objects.filter(empresa=emp).count(), 8)
         self.assertEqual(CompraProveedor.objects.filter(empresa=emp).count(), 2)
         self.assertGreaterEqual(Factura.objects.filter(empresa=emp).count(), 8)
-        self.assertEqual(OrdenServicio.objects.filter(empresa=emp).count(), 4)
         self.assertEqual(Nomina.objects.filter(empresa=emp).count(), 1)
 
         asientos = AsientoContable.objects.filter(empresa=emp)
