@@ -87,6 +87,11 @@ class ConfiguracionCifradaYCorreoTests(TestCase):
     def test_recuperacion_contrasena_flujo_completo(self):
         set_platform_setting("mail_from_address", "notificaciones@servigest.online")
         client = Client()
+        r_form = client.get(reverse("usuarios:password_reset"))
+        self.assertEqual(r_form.status_code, 200)
+        self.assertContains(r_form, "css/app.css")
+        self.assertContains(r_form, "fc-auth-card")
+
         resp = client.post(reverse("usuarios:password_reset"), {"email": "cliente@negocio.co"}, follow=True)
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(len(mail.outbox), 1)
@@ -95,6 +100,11 @@ class ConfiguracionCifradaYCorreoTests(TestCase):
         m = re.search(r'href="([^"]+/auth/password-reset/[^"]+)"', body)
         self.assertIsNotNone(m)
         reset_path = "/" + m.group(1).split("://", 1)[1].split("/", 1)[1]
+        r_confirm_get = client.get(reset_path)
+        self.assertEqual(r_confirm_get.status_code, 200)
+        self.assertContains(r_confirm_get, "css/app.css")
+        self.assertContains(r_confirm_get, "fc-auth-card")
+
         resp_confirm = client.post(reset_path, {"password1": "NewPass!2026", "password2": "NewPass!2026"}, follow=True)
         self.assertEqual(resp_confirm.status_code, 200)
         self.usuario.refresh_from_db()
