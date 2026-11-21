@@ -10,6 +10,18 @@
         <p class="text-xs text-slate-400">Consulta tu consumo mensual y renueva o actualiza tu plan pagando directo a la plataforma FacCol.</p>
     </div>
 
+    {% if solicitud_pendiente %}
+    <div class="bg-blue-500/10 border border-blue-500/30 rounded-2xl p-4 flex items-start gap-3 text-xs text-blue-200">
+        <i class="fas fa-clock text-blue-400 text-base mt-0.5"></i>
+        <div>
+            <div class="font-bold text-blue-300">Solicitud de cambio de plan en revisión</div>
+            <p class="text-slate-300 mt-0.5">
+                Solicitaste cambiar a <b>{{ solicitud_pendiente.plan_solicitado.nombre }}</b> el {{ solicitud_pendiente.created_at|date:"d/m/Y H:i" }}. Está pendiente de aprobación por el SuperAdministrador en Backoffice.
+            </p>
+        </div>
+    </div>
+    {% endif %}
+
     {% if not wompi_platform.enabled %}
     <div class="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex items-start gap-3 text-xs text-amber-200">
         <i class="fas fa-circle-info text-amber-400 text-base mt-0.5"></i>
@@ -86,6 +98,10 @@
             {% elif empresa.plan_id == p.id %}
             <div class="w-full py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold text-center uppercase tracking-wider">
                 Plan Actual Activo
+            </div>
+            {% elif solicitud_pendiente and solicitud_pendiente.plan_solicitado_id == p.id %}
+            <div class="w-full py-2.5 rounded-xl bg-blue-500/15 border border-blue-500/30 text-blue-300 font-bold text-center uppercase tracking-wider">
+                Solicitud Pendiente
             </div>
             {% else %}
             <form method="POST" action="{% url 'core:solicitar_cambio_plan' %}">

@@ -2,7 +2,7 @@ from django.core import mail
 from django.test import TestCase, Client, override_settings
 from django.urls import reverse
 from apps.usuarios.models import User, EmpresaUsuario
-from apps.empresas.models import Empresa, Modulo, Plan
+from apps.empresas.models import Empresa, Modulo, Plan, SolicitudCambioPlan
 from apps.facturacion.models import TransaccionWompi
 from apps.facturacion.wompi_service import activate_wompi_transaction
 from apps.core.models import ConfiguracionPlataforma
@@ -199,6 +199,30 @@ class MiPlanYCambioPlanTests(TestCase):
         self.assertTrue(any("sa_plan@faccol.test" in m.to for m in mail.outbox))
         emp2.refresh_from_db()
         self.assertEqual(emp2.plan_id, plan_tienda.id)
+        sol = SolicitudCambioPlan.objects.get(empresa=emp2, estado="PENDIENTE")
+        self.assertEqual(sol.plan_solicitado_id, plan_emp.id)
+
+        # El SuperAdmin ve la solicitud en Planes & Suscripciones y la aprueba en un clic
+        sa_client = Client()
+        sa_client.force_login(sa)
+        r_planes = sa_client.get(reverse("backoffice:planes_lista"))
+        self.assertContains(r_planes, emp2.display_name)
+        sa_client.post(
+            reverse("backoffice:solicitud_plan_resolver", args=[sol.id]),
+            {"accion": "aprobar"},
+            follow=True,
+        )
+        emp2.refresh_from_db()
+        sol.refresh_from_db()
+        self.assertEqual(sol.estado, "APROBADA")
+        self.assertEqual(emp2.plan_id, plan_emp.id)
+        self.assertTrue(emp2.tiene_modulo("nomina"))
+
+        # Devolvemos emp2 a plan_tienda para probar también el flujo automático con Wompi
+        emp2.plan = plan_tienda
+        emp2.save(update_fields=["plan"])
+        emp2.sincronizar_modulos_con_plan(plan_tienda)
+        self.assertFalse(emp2.tiene_modulo("nomina"))
 
         # Con Wompi Plataforma activo: inicia checkout y activa exactamente emp2 (por NIT), sincronizando módulos
         set_platform_setting("wompi_active_flag", "1", is_secret=False)

@@ -12,7 +12,7 @@ from django.http import JsonResponse
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 
-from apps.empresas.models import Empresa, Plan
+from apps.empresas.models import Empresa, Plan, SolicitudCambioPlan
 from apps.usuarios.models import User, EmpresaUsuario
 from apps.usuarios.decorators import requiere_admin
 from apps.facturacion.models import Factura, ReciboCaja, TransaccionWompi
@@ -429,6 +429,11 @@ def mi_plan_view(request):
     limite_docs = empresa.plan.limite_facturas_mes if empresa.plan else 0
     porcentaje_docs = min(100, int((docs_mes / limite_docs) * 100)) if limite_docs else 0
     usuarios_activos = empresa.usuarios_asignados.filter(activo=True).count()
+    solicitud_pendiente = (
+        SolicitudCambioPlan.objects.filter(empresa=empresa, estado='PENDIENTE')
+        .select_related('plan_solicitado')
+        .first()
+    )
 
     return render(request, 'core/mi_plan.html', {
         'empresa': empresa,
@@ -438,6 +443,7 @@ def mi_plan_view(request):
         'limite_docs': limite_docs,
         'porcentaje_docs': porcentaje_docs,
         'usuarios_activos': usuarios_activos,
+        'solicitud_pendiente': solicitud_pendiente,
     })
 
 
@@ -471,6 +477,15 @@ def solicitar_cambio_plan(request):
         messages.info(request, "Usa el botón de pago Wompi en la tarjeta del plan para activar el cambio de inmediato.")
         return redirect('core:mi_plan')
 
+    SolicitudCambioPlan.objects.filter(empresa=empresa, estado='PENDIENTE').update(estado='RECHAZADA')
+    SolicitudCambioPlan.objects.create(
+        empresa=empresa,
+        plan_actual=empresa.plan,
+        plan_solicitado=plan,
+        solicitado_por=request.user,
+        estado='PENDIENTE',
+    )
+
     superadmins = list(
         User.objects.filter(Q(is_superadmin=True) | Q(is_superuser=True), is_active=True)
         .exclude(email='')
@@ -497,9 +512,9 @@ def solicitar_cambio_plan(request):
             enviado = True
 
     aviso_envio = (
-        "Notificamos al administrador de plataforma por correo para activar tu nuevo plan."
+        "Notificamos al administrador por correo y quedó registrada en Backoffice → Planes & Suscripciones para activación."
         if enviado
-        else "Comunícate con el SuperAdministrador para activar este plan manualmente desde Backoffice -> Gestión de Inquilinos."
+        else "Quedó registrada en Backoffice → Planes & Suscripciones para que el SuperAdministrador la apruebe en un clic."
     )
     messages.success(
         request,

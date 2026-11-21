@@ -167,13 +167,14 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Email Settings (Amazon SES / SMTP - estrictamente desde variables de entorno)
 EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
-EMAIL_HOST = os.getenv('EMAIL_HOST', 'email-smtp.us-east-1.amazonaws.com')
-EMAIL_PORT = int(os.getenv('EMAIL_PORT', 587))
-EMAIL_USE_TLS = os.getenv('EMAIL_USE_TLS', 'True').lower() in ('true', '1', 't')
-EMAIL_HOST_USER = os.getenv('EMAIL_HOST_USER', '').strip()
-EMAIL_HOST_PASSWORD = os.getenv('EMAIL_HOST_PASSWORD', '').strip()
+EMAIL_HOST = (os.getenv('EMAIL_HOST') or os.getenv('MAIL_HOST') or 'email-smtp.us-east-1.amazonaws.com').strip()
+EMAIL_PORT = int(os.getenv('EMAIL_PORT') or os.getenv('MAIL_PORT') or 587)
+EMAIL_USE_TLS = (os.getenv('EMAIL_USE_TLS') or ('true' if os.getenv('MAIL_ENCRYPTION', 'tls').lower() == 'tls' else 'false')).lower() in ('true', '1', 't')
+EMAIL_HOST_USER = (os.getenv('EMAIL_HOST_USER') or os.getenv('MAIL_USERNAME') or '').strip()
+EMAIL_HOST_PASSWORD = (os.getenv('EMAIL_HOST_PASSWORD') or os.getenv('MAIL_PASSWORD') or '').strip()
+RESEND_API_KEY = os.getenv('RESEND_API_KEY', '').strip()
 
-DEFAULT_FROM_EMAIL = os.getenv('DEFAULT_FROM_EMAIL', 'notificaciones@servigest.online')
+DEFAULT_FROM_EMAIL = (os.getenv('DEFAULT_FROM_EMAIL') or os.getenv('MAIL_FROM_ADDRESS') or 'notificaciones@servigest.online').strip()
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
 
 # Seguridad adicional en producción

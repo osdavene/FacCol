@@ -266,3 +266,24 @@ class EmpresaModulo(models.Model):
         unique_together = ('empresa', 'modulo')
         verbose_name = "Módulo de Empresa"
         verbose_name_plural = "Módulos de Empresas"
+
+
+class SolicitudCambioPlan(models.Model):
+    ESTADOS = [
+        ('PENDIENTE', 'Pendiente'),
+        ('APROBADA', 'Aprobada'),
+        ('RECHAZADA', 'Rechazada'),
+    ]
+
+    empresa = models.ForeignKey(Empresa, on_delete=models.CASCADE, related_name='solicitudes_plan')
+    plan_actual = models.ForeignKey(Plan, null=True, blank=True, on_delete=models.SET_NULL, related_name='solicitudes_origen')
+    plan_solicitado = models.ForeignKey(Plan, on_delete=models.CASCADE, related_name='solicitudes_destino')
+    solicitado_por = models.ForeignKey('usuarios.User', null=True, blank=True, on_delete=models.SET_NULL)
+    estado = models.CharField(max_length=15, choices=ESTADOS, default='PENDIENTE')
+    created_at = models.DateTimeField(auto_now_add=True)
+    resolved_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = "Solicitud de Cambio de Plan"
+        verbose_name_plural = "Solicitudes de Cambio de Plan"

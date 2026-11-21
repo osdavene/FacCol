@@ -69,7 +69,7 @@ def get_mail_runtime_config(empresa=None):
         get_platform_setting("mail_from_address", getattr(settings, "DEFAULT_FROM_EMAIL", "notificaciones@servigest.online"))
     )
     from_name = _sanitize_header(get_platform_setting("mail_from_name", "FacCol — ServiGest"))
-    resend_key = get_platform_setting("resend_api_key", "").strip()
+    resend_key = get_platform_setting("resend_api_key", getattr(settings, "RESEND_API_KEY", "")).strip()
 
     return {
         "source": "plataforma",

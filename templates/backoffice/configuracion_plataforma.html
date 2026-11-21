@@ -43,6 +43,20 @@
             {% csrf_token %}
             <input type="hidden" name="seccion" value="mail">
 
+            {% if not mail_cfg.password and not mail_cfg.resend_api_key %}
+            <div class="p-3.5 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-rose-200 flex items-start gap-2.5">
+                <i class="fas fa-triangle-exclamation text-rose-400 mt-0.5"></i>
+                <div>
+                    <b>Pendiente credencial de correo en este servidor:</b> Aún no hay Contraseña SMTP ni Resend API Key guardada en esta base de datos. Pega la contraseña SMTP de Amazon SES (o Resend API Key) aquí y pulsa <b>Guardar Correo Cifrado</b> para activar recuperaciones de clave y notificaciones.
+                </div>
+            </div>
+            {% else %}
+            <div class="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 flex items-center gap-2">
+                <i class="fas fa-circle-check text-emerald-400"></i>
+                <span><b>Correo de plataforma activo:</b> credenciales cifradas presentes en este servidor. Usa <b>Probar Envío</b> para verificar entrega en tu bandeja.</span>
+            </div>
+            {% endif %}
+
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                     <label class="block font-semibold text-slate-300 mb-1">Host SMTP</label>

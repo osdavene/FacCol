@@ -5,7 +5,7 @@ from django.contrib import messages
 from django.urls import reverse
 from django.utils.crypto import get_random_string
 from django.views.decorators.http import require_POST
-from apps.empresas.models import Empresa, Plan, Modulo, Departamento, Municipio
+from apps.empresas.models import Empresa, Plan, Modulo, Departamento, Municipio, SolicitudCambioPlan
 from apps.usuarios.models import User, EmpresaUsuario
 from apps.facturacion.models import Factura
 from apps.core.platform_settings import encrypt_secret, set_platform_setting
@@ -235,6 +235,11 @@ def planes_lista(request):
     planes_activos = planes.filter(activo=True).count()
     total_mrr = sum(p.mrr_generado for p in planes)
     total_empresas_suscritas = Empresa.objects.filter(plan__isnull=False, activa=True).count()
+    solicitudes_pendientes = (
+        SolicitudCambioPlan.objects.filter(estado='PENDIENTE')
+        .select_related('empresa', 'plan_actual', 'plan_solicitado', 'solicitado_por')
+        .order_by('-created_at')
+    )
 
     context = {
         'planes': planes,
@@ -242,8 +247,53 @@ def planes_lista(request):
         'planes_activos': planes_activos,
         'total_mrr': total_mrr,
         'total_empresas_suscritas': total_empresas_suscritas,
+        'solicitudes_pendientes': solicitudes_pendientes,
     }
     return render(request, 'backoffice/planes_lista.html', context)
+
+
+@user_passes_test(es_superadmin)
+@require_POST
+def solicitud_plan_resolver(request, solicitud_id):
+    """Aprueba o rechaza una solicitud de cambio de plan enviada por un administrador inquilino."""
+    from django.utils import timezone
+    solicitud = get_object_or_404(
+        SolicitudCambioPlan.objects.select_related('empresa', 'plan_solicitado', 'solicitado_por'),
+        id=solicitud_id,
+    )
+    accion = request.POST.get('accion', '').strip().lower()
+    if solicitud.estado != 'PENDIENTE':
+        messages.info(request, "Esta solicitud ya fue procesada anteriormente.")
+        return redirect('backoffice:planes_lista')
+
+    if accion == 'aprobar':
+        emp = solicitud.empresa
+        nuevo_plan = solicitud.plan_solicitado
+        emp.plan = nuevo_plan
+        emp.activa = True
+        emp.save(update_fields=['plan', 'activa'])
+        emp.sincronizar_modulos_con_plan(nuevo_plan)
+        solicitud.estado = 'APROBADA'
+        solicitud.resolved_at = timezone.now()
+        solicitud.save(update_fields=['estado', 'resolved_at'])
+        dest = (solicitud.solicitado_por.email if solicitud.solicitado_por and solicitud.solicitado_por.email else emp.email)
+        if dest:
+            enviar_correo_sistema(
+                dest,
+                f"FacCol — Plan actualizado a {nuevo_plan.nombre}",
+                f"<h3>¡Cambio de plan aprobado!</h3><p>Tu empresa <b>{emp.display_name}</b> ya tiene activo el plan <b>{nuevo_plan.nombre}</b> y todos sus módulos habilitados.</p>",
+                fail_silently=True,
+            )
+        messages.success(request, f"Plan de '{emp.display_name}' actualizado a '{nuevo_plan.nombre}'.")
+    elif accion == 'rechazar':
+        solicitud.estado = 'RECHAZADA'
+        solicitud.resolved_at = timezone.now()
+        solicitud.save(update_fields=['estado', 'resolved_at'])
+        messages.info(request, f"Solicitud de '{solicitud.empresa.display_name}' rechazada.")
+    else:
+        messages.error(request, "Acción inválida sobre la solicitud.")
+
+    return redirect('backoffice:planes_lista')
 
 
 @user_passes_test(es_superadmin)

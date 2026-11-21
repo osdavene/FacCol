@@ -16,6 +16,7 @@ urlpatterns = [
     path('planes/<int:plan_id>/editar/', views.plan_editar, name='plan_editar'),
     path('planes/<int:plan_id>/toggle-activo/', views.plan_toggle_activo, name='plan_toggle_activo'),
     path('planes/<int:plan_id>/eliminar/', views.plan_eliminar, name='plan_eliminar'),
+    path('planes/solicitudes/<int:solicitud_id>/resolver/', views.solicitud_plan_resolver, name='solicitud_plan_resolver'),
 
     # Configuración Global Cifrada (Correo y Wompi)
     path('configuracion/', views.configuracion_plataforma, name='configuracion_plataforma'),

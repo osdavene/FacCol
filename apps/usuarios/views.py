@@ -247,6 +247,22 @@ def password_reset_request_view(request):
 
     if request.method == 'POST':
         email = request.POST.get('email', '').strip().lower()
+        from django.conf import settings as django_settings
+        from apps.core.mail_service import get_mail_runtime_config
+        cfg = get_mail_runtime_config()
+        backend = getattr(django_settings, 'EMAIL_BACKEND', '')
+        mail_sin_credenciales = (
+            'smtp' in backend.lower()
+            and not cfg.get('resend_api_key')
+            and (not cfg.get('host') or not cfg.get('username') or not cfg.get('password'))
+        )
+        if mail_sin_credenciales:
+            messages.warning(
+                request,
+                "El servidor de correo de la plataforma aún no tiene contraseña SMTP o API Key configurada en Backoffice → Correo & Wompi."
+            )
+            return redirect('usuarios:password_reset')
+
         if email:
             users = User.objects.filter(email__iexact=email, is_active=True, activo=True)
             for u in users:
@@ -257,8 +273,9 @@ def password_reset_request_view(request):
                 )
                 try:
                     enviar_recuperacion_contrasena(u, reset_url)
-                except Exception:
-                    pass
+                except Exception as exc:
+                    import logging
+                    logging.getLogger(__name__).warning("Error enviando recuperacion a %s: %s", email, exc)
         messages.success(
             request,
             "Si el correo está registrado en FacCol, recibirás un enlace para restablecer tu contraseña."
