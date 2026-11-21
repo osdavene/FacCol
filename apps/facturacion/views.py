@@ -18,10 +18,16 @@ from django.views.decorators.http import require_POST
 
 from apps.facturacion.models import Factura, FacturaItem, ReciboCaja, TransaccionWompi
 from apps.facturacion.pdf_service import generar_pdf_factura, generar_pdf_tirilla, generar_qr_base64
-from apps.facturacion.dian_service import desglosar_impuestos_item, generar_xml_ubl
+from apps.facturacion.dian_service import (
+    desglosar_impuestos_item,
+    generar_xml_ubl,
+    procesar_cola_dian,
+    transmitir_documento_dian,
+)
 from apps.facturacion.wompi_service import (
     activate_wompi_transaction,
     build_integrity_signature,
+    get_platform_wompi_config,
     get_wompi_runtime_config,
     sync_wompi_transaction_by_id,
     verify_wompi_event_checksum,
@@ -420,13 +426,20 @@ def wompi_iniciar(request, factura_id):
         return redirect('core:dashboard')
 
     factura = get_object_or_404(Factura.objects.select_related('tercero'), id=factura_id, empresa=empresa)
+    if factura.estado == 'ANULADA':
+        messages.error(request, "No se puede cobrar por Wompi una factura anulada.")
+        return redirect('facturacion:factura_detalle', factura_id=factura.id)
     if factura.saldo_pendiente <= 0:
         messages.info(request, "Esta factura no tiene saldo pendiente por pagar.")
         return redirect('facturacion:factura_detalle', factura_id=factura.id)
 
     wompi_cfg = get_wompi_runtime_config(empresa)
     if not wompi_cfg['enabled']:
-        messages.error(request, "La pasarela de pagos Wompi no está habilitada. Configúrala primero en Backoffice.")
+        messages.error(
+            request,
+            "Tu empresa aún no tiene configurada su propia pasarela Wompi. "
+            "Ingrésala en Configuración de Empresa para recibir pagos directamente en tu cuenta."
+        )
         return redirect('facturacion:factura_detalle', factura_id=factura.id)
 
     amount_in_cents = int(factura.saldo_pendiente * 100)
@@ -832,3 +845,60 @@ def factura_emitir_nota_credito(request, factura_id):
         f"Nota Crédito {nc.numero_completo} emitida por ${nc.total:,.0f} COP. Documento {origen.numero_completo} anulado e inventario reversado."
     )
     return redirect('facturacion:factura_detalle', factura_id=nc.id)
+
+
+@login_required
+@requiere_facturacion
+def dian_cola_view(request):
+    """Panel de monitoreo y envío asíncrono DIAN (Habilitación y Producción)."""
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+
+    documentos = Factura.objects.filter(
+        empresa=empresa,
+        tipo_documento__in=('FACTURA', 'POS_ELECTRONICO', 'NOTA_CREDITO'),
+    ).select_related('tercero').order_by('-fecha_emision', '-id')[:60]
+
+    resumen = {
+        'pendientes': Factura.objects.filter(empresa=empresa, estado_dian='PENDIENTE').count(),
+        'contingencia': Factura.objects.filter(empresa=empresa, estado_dian='CONTINGENCIA').count(),
+        'enviadas': Factura.objects.filter(empresa=empresa, estado_dian='ENVIADA').count(),
+        'rechazadas': Factura.objects.filter(empresa=empresa, estado_dian='RECHAZADA').count(),
+    }
+    return render(request, 'facturacion/dian_cola.html', {
+        'documentos': documentos,
+        'resumen': resumen,
+    })
+
+
+@login_required
+@requiere_facturacion
+@require_POST
+def dian_transmitir_documento(request, factura_id):
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+    factura = get_object_or_404(Factura, id=factura_id, empresa=empresa)
+    ok, msg = transmitir_documento_dian(factura)
+    if ok:
+        messages.success(request, f"{factura.numero_completo}: {msg}")
+    else:
+        messages.warning(request, f"{factura.numero_completo}: {msg}")
+    return redirect('facturacion:dian_cola')
+
+
+@login_required
+@requiere_facturacion
+@require_POST
+def dian_procesar_lote(request):
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+    resultado = procesar_cola_dian(empresa)
+    messages.info(
+        request,
+        f"Lote DIAN procesado: {resultado['enviados']} aceptado(s), "
+        f"{resultado['contingencia']} en contingencia."
+    )
+    return redirect('facturacion:dian_cola')

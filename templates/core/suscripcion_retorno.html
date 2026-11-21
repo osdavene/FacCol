@@ -1,0 +1,46 @@
+{% load static humanize %}
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Estado de Suscripción FacCol — Wompi</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+</head>
+<body class="bg-[#0b0f1a] text-slate-200 min-h-screen flex items-center justify-center p-4">
+    <div class="max-w-lg w-full bg-[#111827] border border-[#1e2d47] rounded-3xl p-8 text-center space-y-5 shadow-2xl">
+        {% if tx and tx.status == 'APPROVED' %}
+        <div class="w-16 h-16 mx-auto rounded-2xl bg-emerald-500/15 text-emerald-400 flex items-center justify-center text-3xl">
+            <i class="fas fa-circle-check"></i>
+        </div>
+        <h1 class="font-black text-2xl text-white">¡Suscripción Activada!</h1>
+        <p class="text-xs text-slate-400">
+            Referencia <code class="text-amber-400">{{ tx.reference }}</code> aprobada para el plan <b>{{ tx.plan.nombre }}</b>.
+            Enviamos los datos de acceso a <b>{{ tx.customer_email }}</b>.
+        </p>
+        {% elif error_msg %}
+        <div class="w-16 h-16 mx-auto rounded-2xl bg-amber-500/15 text-amber-400 flex items-center justify-center text-3xl">
+            <i class="fas fa-clock"></i>
+        </div>
+        <h1 class="font-black text-xl text-white">Verificando Transacción</h1>
+        <p class="text-xs text-slate-400">{{ error_msg }}</p>
+        {% else %}
+        <div class="w-16 h-16 mx-auto rounded-2xl bg-slate-700/40 text-slate-300 flex items-center justify-center text-3xl">
+            <i class="fas fa-receipt"></i>
+        </div>
+        <h1 class="font-black text-xl text-white">Estado del Pago: {{ tx.get_status_display|default:"Pendiente" }}</h1>
+        <p class="text-xs text-slate-400">Transacción Wompi: {{ wompi_tx_id|default:"Sin ID" }}</p>
+        {% endif %}
+
+        <div class="flex justify-center gap-3 pt-2">
+            <a href="{% url 'usuarios:login' %}" class="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase tracking-wider">
+                Iniciar Sesión
+            </a>
+            <a href="{% url 'core:dashboard' %}" class="px-5 py-2.5 rounded-xl bg-[#162034] border border-[#1e2d47] text-slate-300 font-bold text-xs uppercase tracking-wider">
+                Volver al Inicio
+            </a>
+        </div>
+    </div>
+</body>
+</html>

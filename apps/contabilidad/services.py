@@ -189,3 +189,64 @@ def registrar_asiento_nota_credito(nota_credito, factura_origen=None):
             descripcion=f"Crédito cliente / devolución {ref}", debito=Decimal("0.00"), credito=nota_credito.total
         )
         return asiento
+
+
+def registrar_asiento_nomina(nomina):
+    """
+    Genera o actualiza el asiento contable de causación de Nómina (Gasto vs Retenciones y Salarios por Pagar).
+    """
+    empresa = nomina.empresa
+    if not empresa.tiene_modulo("contabilidad") or nomina.total_devengado <= 0:
+        return None
+
+    ref = f"NOM-{nomina.periodo_ano}{nomina.periodo_mes:02d}"
+    with transaction.atomic():
+        AsientoContable.objects.filter(empresa=empresa, referencia_origen=ref, tipo="NOMINA").delete()
+
+        cta_sueldos = _asegurar_cuenta(empresa, "510506", "Sueldos y Salarios", "DEBITO")
+        cta_aux = _asegurar_cuenta(empresa, "510527", "Auxilio de Transporte", "DEBITO")
+        cta_eps = _asegurar_cuenta(empresa, "237005", "Aportes a Entidades Promotoras de Salud (EPS)", "CREDITO")
+        cta_pension = _asegurar_cuenta(empresa, "238030", "Fondos de Cesantías y/o Pensiones", "CREDITO")
+        cta_por_pagar = _asegurar_cuenta(empresa, "250505", "Salarios por Pagar", "CREDITO")
+
+        detalles = nomina.detalles.all()
+        total_sueldos = sum((d.sueldo_basico_devengado + d.horas_extras + d.bonificaciones for d in detalles), Decimal("0.00"))
+        total_aux = sum((d.auxilio_transporte for d in detalles), Decimal("0.00"))
+        total_salud = sum((d.salud_empleado_4 for d in detalles), Decimal("0.00"))
+        total_pension = sum((d.pension_empleado_4 for d in detalles), Decimal("0.00"))
+        total_otras = sum((d.otras_deducciones for d in detalles), Decimal("0.00"))
+
+        asiento = AsientoContable.objects.create(
+            empresa=empresa,
+            numero_comprobante=ref,
+            fecha=nomina.fecha_fin,
+            tipo="NOMINA",
+            concepto=f"Causación Nómina {nomina.periodo_mes}/{nomina.periodo_ano}",
+            referencia_origen=ref,
+        )
+        if total_sueldos > 0:
+            AsientoLinea.objects.create(
+                asiento=asiento, cuenta=cta_sueldos, descripcion=f"Sueldos {ref}",
+                debito=total_sueldos, credito=Decimal("0.00")
+            )
+        if total_aux > 0:
+            AsientoLinea.objects.create(
+                asiento=asiento, cuenta=cta_aux, descripcion=f"Auxilio transporte {ref}",
+                debito=total_aux, credito=Decimal("0.00")
+            )
+        if total_salud > 0:
+            AsientoLinea.objects.create(
+                asiento=asiento, cuenta=cta_eps, descripcion=f"Aporte salud empleado 4% {ref}",
+                debito=Decimal("0.00"), credito=total_salud
+            )
+        if (total_pension + total_otras) > 0:
+            AsientoLinea.objects.create(
+                asiento=asiento, cuenta=cta_pension, descripcion=f"Aporte pensión / otras ded. {ref}",
+                debito=Decimal("0.00"), credito=total_pension + total_otras
+            )
+        if nomina.total_neto > 0:
+            AsientoLinea.objects.create(
+                asiento=asiento, cuenta=cta_por_pagar, descripcion=f"Neto salarios por pagar {ref}",
+                debito=Decimal("0.00"), credito=nomina.total_neto
+            )
+        return asiento

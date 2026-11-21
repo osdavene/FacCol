@@ -1,20 +1,203 @@
+import secrets
+import time
 from decimal import Decimal
 from datetime import date
+from urllib.parse import urlencode
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.db import models
 from django.db.models import Sum, Count, Q
 from django.http import JsonResponse
+from django.urls import reverse
+from django.views.decorators.http import require_POST
 
-from apps.empresas.models import Empresa
+from apps.empresas.models import Empresa, Plan
 from apps.usuarios.models import User, EmpresaUsuario
-from apps.facturacion.models import Factura, ReciboCaja
+from apps.usuarios.decorators import requiere_admin
+from apps.facturacion.models import Factura, ReciboCaja, TransaccionWompi
+from apps.facturacion.wompi_service import (
+    build_integrity_signature,
+    get_platform_wompi_config,
+    get_wompi_runtime_config,
+    sync_wompi_transaction_by_id,
+)
+from apps.core.mail_service import get_mail_runtime_config
+from apps.core.platform_settings import encrypt_secret
 from apps.inventario.models import Producto, MovimientoInventario
 from apps.terceros.models import Tercero
 from apps.contabilidad.models import AsientoContable, PlanCuenta
 from apps.servicios.models import OrdenServicio
 from apps.nomina.models import Empleado
+
+
+def inicio(request):
+    """
+    Página principal:
+    - Visitantes anónimos ven el catálogo comercial SaaS con pago directo de planes vía Wompi de Plataforma.
+    - Usuarios autenticados entran directamente a su Dashboard operativo o SuperAdmin.
+    """
+    if request.user.is_authenticated:
+        return dashboard(request)
+
+    planes = Plan.objects.filter(activo=True).prefetch_related('modulos').order_by('precio_mensual')
+    wompi_platform = get_platform_wompi_config()
+    return render(request, 'core/landing.html', {
+        'planes': planes,
+        'wompi_platform': wompi_platform,
+    })
+
+
+@require_POST
+def suscripcion_wompi_iniciar(request):
+    """Inicia el pago de un Plan SaaS desde la página principal usando únicamente el Wompi de la Plataforma."""
+    plan_id = request.POST.get('plan_id')
+    plan = get_object_or_404(Plan, id=plan_id, activo=True)
+    razon_social = request.POST.get('razon_social', '').strip()
+    nit = request.POST.get('nit', '').strip()
+    email = request.POST.get('email', '').strip().lower()
+
+    if not email or not razon_social:
+        messages.error(request, "Ingresa el nombre de tu negocio y un correo electrónico válido.")
+        return redirect('core:dashboard')
+
+    if plan.precio_mensual <= 0:
+        messages.info(request, "Este plan es gratuito o personalizado; contáctanos para activarlo.")
+        return redirect('core:dashboard')
+
+    wompi_cfg = get_platform_wompi_config()
+    if not wompi_cfg['enabled']:
+        messages.error(request, "La pasarela de pagos Wompi de la plataforma aún no está habilitada.")
+        return redirect('core:dashboard')
+
+    amount_in_cents = int(plan.precio_mensual * 100)
+    currency = "COP"
+    reference = f"PLAN-{plan.id}-{int(time.time())}-{secrets.token_hex(3).upper()}"
+
+    TransaccionWompi.objects.create(
+        empresa=None,
+        plan=plan,
+        usuario=request.user if request.user.is_authenticated else None,
+        reference=reference,
+        amount_in_cents=amount_in_cents,
+        currency=currency,
+        status='PENDING',
+        customer_name=razon_social,
+        customer_nit=nit,
+        customer_email=email,
+    )
+
+    sig = build_integrity_signature(reference, amount_in_cents, currency, wompi_cfg['integrity_secret'])
+    redirect_url = request.build_absolute_uri(reverse('core:suscripcion_wompi_retorno'))
+    params = {
+        "public-key": wompi_cfg["public_key"],
+        "currency": currency,
+        "amount-in-cents": str(amount_in_cents),
+        "reference": reference,
+        "signature:integrity": sig,
+        "redirect-url": redirect_url,
+        "customer-data:email": email,
+        "customer-data:full-name": razon_social,
+    }
+    return redirect(f"https://checkout.wompi.co/p/?{urlencode(params)}")
+
+
+def suscripcion_wompi_retorno(request):
+    """Retorno público tras pagar un Plan SaaS en la pasarela Wompi de la Plataforma."""
+    wompi_tx_id = request.GET.get('id', '').strip()
+    tx = None
+    error_msg = None
+
+    if wompi_tx_id:
+        wompi_cfg = get_platform_wompi_config()
+        if wompi_cfg['has_required_keys']:
+            try:
+                tx = sync_wompi_transaction_by_id(wompi_tx_id, wompi_cfg, platform_only=True)
+                if tx and tx.status == 'AMOUNT_MISMATCH':
+                    error_msg = "El monto pagado en Wompi no coincide con el valor del plan."
+            except Exception:
+                error_msg = "Estamos verificando tu pago con Wompi."
+
+    return render(request, 'core/suscripcion_retorno.html', {
+        'tx': tx,
+        'wompi_tx_id': wompi_tx_id,
+        'error_msg': error_msg,
+    })
+
+
+@login_required
+@requiere_admin
+def configuracion_empresa(request):
+    """
+    Autogestión de credenciales propias por cada empresa inquilina:
+    - Su propia pasarela Wompi (para recibir pagos directamente en su cuenta).
+    - Sus credenciales DIAN y perfil operativo (Tienda de Barrio vs Estándar).
+    - Su propio SMTP opcional (si lo deja vacío usa el servicio SES de la plataforma).
+    """
+    if request.user.es_superadmin_user():
+        return redirect('backoffice:configuracion_plataforma')
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+
+    if request.method == 'POST':
+        seccion = request.POST.get('seccion', 'wompi')
+
+        if seccion == 'wompi':
+            empresa.wompi_public_key = request.POST.get('wompi_public_key', '').strip()
+            for attr, clear_field in (
+                ('wompi_private_key', 'clear_wompi_private_key'),
+                ('wompi_integrity_secret', 'clear_wompi_integrity_secret'),
+                ('wompi_events_secret', 'clear_wompi_events_secret'),
+            ):
+                if clear_field in request.POST:
+                    setattr(empresa, attr, '')
+                else:
+                    val = request.POST.get(attr, '').strip()
+                    if val:
+                        setattr(empresa, attr, encrypt_secret(val))
+            empresa.save()
+            messages.success(request, "Pasarela Wompi propia guardada y cifrada para tu empresa.")
+
+        elif seccion == 'dian':
+            empresa.perfil_operativo = request.POST.get('perfil_operativo', empresa.perfil_operativo)
+            empresa.regimen_tributario = request.POST.get('regimen_tributario', empresa.regimen_tributario)
+            empresa.prefijo_factura = (request.POST.get('prefijo_factura', empresa.prefijo_factura) or 'FE').strip().upper()
+            empresa.prefijo_pos_electronico = (request.POST.get('prefijo_pos_electronico', empresa.prefijo_pos_electronico) or 'POS').strip().upper()
+            empresa.resolucion_dian = request.POST.get('resolucion_dian', '').strip()
+            empresa.modo_dian = request.POST.get('modo_dian', empresa.modo_dian)
+            empresa.dian_software_id = request.POST.get('dian_software_id', '').strip()
+            empresa.dian_pin = request.POST.get('dian_pin', '').strip()
+            empresa.dian_test_set_id = request.POST.get('dian_test_set_id', '').strip()
+            empresa.save()
+            messages.success(request, "Configuración DIAN y perfil de negocio actualizados.")
+
+        elif seccion == 'smtp':
+            empresa.smtp_host = request.POST.get('smtp_host', '').strip()
+            empresa.smtp_port = int(request.POST.get('smtp_port', 587) or 587)
+            empresa.smtp_encryption = request.POST.get('smtp_encryption', 'tls').strip()
+            empresa.smtp_user = request.POST.get('smtp_user', '').strip()
+            empresa.smtp_from_address = request.POST.get('smtp_from_address', '').strip()
+            if 'clear_smtp_password' in request.POST:
+                empresa.smtp_password = ''
+            else:
+                new_pwd = request.POST.get('smtp_password', '').strip()
+                if new_pwd:
+                    empresa.smtp_password = encrypt_secret(new_pwd)
+            empresa.save()
+            messages.success(request, "Configuración de correo de tu empresa actualizada.")
+
+        return redirect('core:configuracion_empresa')
+
+    wompi_cfg = get_wompi_runtime_config(empresa)
+    mail_cfg = get_mail_runtime_config(empresa)
+    webhook_url = request.build_absolute_uri(reverse('facturacion:wompi_webhook'))
+    return render(request, 'core/configuracion_empresa.html', {
+        'empresa': empresa,
+        'wompi_cfg': wompi_cfg,
+        'mail_cfg': mail_cfg,
+        'webhook_url': webhook_url,
+    })
 
 
 @login_required

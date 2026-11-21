@@ -4,7 +4,12 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.db import transaction
+from django.http import HttpResponse
+from django.views.decorators.http import require_POST
 
+from apps.contabilidad.services import registrar_asiento_nomina
+from apps.core.mail_service import enviar_correo_sistema
+from apps.nomina.dian_nomina_service import calcular_cune_nomina, generar_xml_nomina_individual
 from apps.nomina.models import Empleado, Nomina, NominaEmpleado
 from apps.usuarios.decorators import requiere_nomina
 
@@ -179,6 +184,7 @@ def nomina_liquidar(request):
             nomina.total_deducciones = total_ded
             nomina.total_neto = total_net
             nomina.save()
+            registrar_asiento_nomina(nomina)
 
         messages.success(request, f"Nómina de {mes}/{ano} liquidada exitosamente para {empleados.count()} empleados. Total neto: ${total_net:,.0f} COP.")
         return redirect('nomina:nomina_detalle', nomina_id=nomina.id)
@@ -196,3 +202,89 @@ def nomina_detalle(request, nomina_id):
         empresa=empresa
     )
     return render(request, 'nomina/nomina_detalle.html', {'nomina': nomina})
+
+
+@login_required
+@requiere_nomina
+def nomina_xml_empleado(request, detalle_id):
+    """Descarga el XML de Nómina Electrónica Individual (DIAN Resolución 000013 / CUNE)."""
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+    detalle = get_object_or_404(
+        NominaEmpleado.objects.select_related('nomina', 'empleado'),
+        id=detalle_id,
+        nomina__empresa=empresa,
+    )
+    xml_str = generar_xml_nomina_individual(detalle)
+    num_ne, _, _ = calcular_cune_nomina(detalle)
+    resp = HttpResponse(xml_str, content_type='application/xml; charset=utf-8')
+    resp['Content-Disposition'] = f'attachment; filename="{num_ne}_{detalle.empleado.numero_documento}.xml"'
+    return resp
+
+
+@login_required
+@requiere_nomina
+def nomina_desprendible(request, detalle_id):
+    """Desprendible de pago imprimible con CUNE de Nómina Electrónica."""
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+    detalle = get_object_or_404(
+        NominaEmpleado.objects.select_related('nomina__empresa', 'empleado'),
+        id=detalle_id,
+        nomina__empresa=empresa,
+    )
+    num_ne, cune, qr_url = calcular_cune_nomina(detalle)
+    return render(request, 'nomina/desprendible.html', {
+        'detalle': detalle,
+        'nomina': detalle.nomina,
+        'num_ne': num_ne,
+        'cune': cune,
+        'qr_url': qr_url,
+    })
+
+
+@login_required
+@requiere_nomina
+@require_POST
+def nomina_enviar_colilla(request, detalle_id):
+    """Envía el desprendible de nómina electrónica por email al trabajador."""
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+    detalle = get_object_or_404(
+        NominaEmpleado.objects.select_related('nomina', 'empleado'),
+        id=detalle_id,
+        nomina__empresa=empresa,
+    )
+    correo = (detalle.empleado.email or '').strip()
+    if not correo:
+        messages.error(request, f"El empleado {detalle.empleado.nombre_completo} no tiene correo registrado.")
+        return redirect('nomina:nomina_detalle', nomina_id=detalle.nomina_id)
+
+    num_ne, cune, _ = calcular_cune_nomina(detalle)
+    xml_str = generar_xml_nomina_individual(detalle)
+    html = (
+        f"<h2>Desprendible de Nómina Electrónica {num_ne}</h2>"
+        f"<p><b>Empresa:</b> {empresa.razon_social} (NIT {empresa.nit_completo})</p>"
+        f"<p><b>Empleado:</b> {detalle.empleado.nombre_completo} ({detalle.empleado.numero_documento})</p>"
+        f"<p><b>Total Devengado:</b> ${detalle.total_devengado:,.0f} COP<br>"
+        f"<b>Deducciones:</b> -${detalle.total_deducciones:,.0f} COP<br>"
+        f"<b>Neto Pagado:</b> <b>${detalle.neto_a_pagar:,.0f} COP</b></p>"
+        f"<p style='font-size:11px;color:#64748b'>CUNE DIAN: {cune}</p>"
+    )
+    try:
+        enviar_correo_sistema(
+            correo,
+            f"Desprendible Nómina {detalle.nomina.periodo_mes}/{detalle.nomina.periodo_ano} - {empresa.display_name}",
+            html,
+            attachments=[(f"{num_ne}.xml", xml_str.encode('utf-8'), 'application/xml')],
+            empresa=empresa,
+            fail_silently=False,
+        )
+        messages.success(request, f"Colilla {num_ne} enviada a {correo}.")
+    except Exception as exc:
+        messages.error(request, f"No se pudo enviar la colilla: {exc}")
+
+    return redirect('nomina:nomina_detalle', nomina_id=detalle.nomina_id)

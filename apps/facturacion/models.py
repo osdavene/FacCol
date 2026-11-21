@@ -1,7 +1,7 @@
 import hashlib
 from decimal import Decimal
 from django.db import models
-from apps.core.models import EmpresaTenantModel
+from apps.core.models import EmpresaTenantModel, TenantManager, TimestampedModel
 
 
 class Factura(EmpresaTenantModel):
@@ -181,7 +181,7 @@ class ReciboCaja(EmpresaTenantModel):
         return f"RC-{self.consecutivo} - ${self.valor} ({self.tercero.razon_social})"
 
 
-class TransaccionWompi(EmpresaTenantModel):
+class TransaccionWompi(TimestampedModel):
     ESTADO_CHOICES = [
         ('PENDING', 'Pendiente'),
         ('APPROVED', 'Aprobada'),
@@ -191,18 +191,33 @@ class TransaccionWompi(EmpresaTenantModel):
         ('AMOUNT_MISMATCH', 'Monto no coincide'),
     ]
 
+    empresa = models.ForeignKey(
+        'empresas.Empresa',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='facturacion_transaccionwompi_set',
+        verbose_name="Empresa Inquilina (vacío = Pago a Plataforma)",
+    )
     reference = models.CharField(max_length=80, unique=True)
     factura = models.ForeignKey(Factura, on_delete=models.SET_NULL, null=True, blank=True, related_name='transacciones_wompi')
     plan = models.ForeignKey('empresas.Plan', on_delete=models.SET_NULL, null=True, blank=True)
     usuario = models.ForeignKey('usuarios.User', on_delete=models.SET_NULL, null=True, blank=True)
+    empresa_creada = models.ForeignKey(
+        'empresas.Empresa', on_delete=models.SET_NULL, null=True, blank=True, related_name='transacciones_alta_plan'
+    )
     amount_in_cents = models.BigIntegerField()
     currency = models.CharField(max_length=10, default='COP')
     status = models.CharField(max_length=25, choices=ESTADO_CHOICES, default='PENDING')
     wompi_transaction_id = models.CharField(max_length=120, blank=True, db_index=True)
     payment_method_type = models.CharField(max_length=60, blank=True)
+    customer_name = models.CharField(max_length=180, blank=True)
+    customer_nit = models.CharField(max_length=40, blank=True)
     customer_email = models.EmailField(blank=True)
     raw_payload = models.JSONField(default=dict, blank=True)
     activated_at = models.DateTimeField(null=True, blank=True)
+
+    objects = TenantManager()
 
     class Meta:
         verbose_name = "Transacción Wompi"

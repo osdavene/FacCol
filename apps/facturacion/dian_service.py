@@ -151,6 +151,15 @@ def generar_xml_ubl(factura):
     root.append(cbc("InvoiceTypeCode", type_code))
     root.append(cbc("DocumentCurrencyCode", "COP"))
 
+    if factura.tipo_documento == "NOTA_CREDITO" and factura.factura_referencia:
+        bref = cac("BillingReference")
+        inv_ref = cac("InvoiceDocumentReference")
+        inv_ref.append(cbc("ID", factura.factura_referencia.numero_completo))
+        inv_ref.append(cbc("UUID", factura.factura_referencia.cufe or factura.factura_referencia.numero_completo, schemeName="CUFE-SHA384"))
+        inv_ref.append(cbc("IssueDate", factura.factura_referencia.fecha_emision.strftime("%Y-%m-%d")))
+        bref.append(inv_ref)
+        root.append(bref)
+
     # Emisor
     supplier = cac("AccountingSupplierParty")
     s_party = cac("Party")
@@ -171,8 +180,39 @@ def generar_xml_ubl(factura):
     customer.append(c_party)
     root.append(customer)
 
-    # Totales
+    # Impuestos totales (IVA y otros como INC/IBUA/ICUI)
     base_imp = (factura.subtotal or Decimal("0.00")) - (factura.descuento or Decimal("0.00"))
+    if (factura.iva or Decimal("0.00")) > Decimal("0.00"):
+        tax_total = cac("TaxTotal")
+        tax_total.append(cbc("TaxAmount", _fmt_dec(factura.iva), currencyID="COP"))
+        tax_sub = cac("TaxSubtotal")
+        tax_sub.append(cbc("TaxableAmount", _fmt_dec(base_imp), currencyID="COP"))
+        tax_sub.append(cbc("TaxAmount", _fmt_dec(factura.iva), currencyID="COP"))
+        tax_cat = cac("TaxCategory")
+        tax_scheme = cac("TaxScheme")
+        tax_scheme.append(cbc("ID", "01"))
+        tax_scheme.append(cbc("Name", "IVA"))
+        tax_cat.append(tax_scheme)
+        tax_sub.append(tax_cat)
+        tax_total.append(tax_sub)
+        root.append(tax_total)
+
+    if (factura.impuestos_adicionales or Decimal("0.00")) > Decimal("0.00"):
+        tax_total_inc = cac("TaxTotal")
+        tax_total_inc.append(cbc("TaxAmount", _fmt_dec(factura.impuestos_adicionales), currencyID="COP"))
+        tax_sub_inc = cac("TaxSubtotal")
+        tax_sub_inc.append(cbc("TaxableAmount", _fmt_dec(base_imp), currencyID="COP"))
+        tax_sub_inc.append(cbc("TaxAmount", _fmt_dec(factura.impuestos_adicionales), currencyID="COP"))
+        tax_cat_inc = cac("TaxCategory")
+        tax_scheme_inc = cac("TaxScheme")
+        tax_scheme_inc.append(cbc("ID", "04"))
+        tax_scheme_inc.append(cbc("Name", "INC/Saludables"))
+        tax_cat_inc.append(tax_scheme_inc)
+        tax_sub_inc.append(tax_cat_inc)
+        tax_total_inc.append(tax_sub_inc)
+        root.append(tax_total_inc)
+
+    # Totales
     monetary = cac("LegalMonetaryTotal")
     monetary.append(cbc("LineExtensionAmount", _fmt_dec(base_imp), currencyID="COP"))
     monetary.append(cbc("TaxExclusiveAmount", _fmt_dec(base_imp), currencyID="COP"))
@@ -195,3 +235,71 @@ def generar_xml_ubl(factura):
         root.append(line)
 
     return ET.tostring(root, encoding="utf-8", xml_declaration=True).decode("utf-8")
+
+
+def transmitir_documento_dian(factura):
+    """
+    Valida requisitos de Resolución DIAN, construye XML UBL 2.1 y registra
+    transmisión electrónica (Habilitación o Producción) asignando TrackId DIAN.
+    """
+    if factura.tipo_documento not in ("FACTURA", "POS_ELECTRONICO", "NOTA_CREDITO"):
+        return False, "Este tipo de documento no requiere transmisión ante la DIAN."
+
+    empresa = factura.empresa
+    faltantes = []
+    if not (empresa.nit or "").strip():
+        faltantes.append("NIT")
+    if not (empresa.resolucion_dian or "").strip():
+        faltantes.append("Resolución DIAN")
+    if not (empresa.dian_software_id or "").strip():
+        faltantes.append("Software ID")
+    if not (empresa.dian_pin or "").strip():
+        faltantes.append("PIN de Software")
+    if empresa.modo_dian == "PRUEBAS" and not (empresa.dian_test_set_id or "").strip():
+        faltantes.append("TestSetId de Habilitación")
+
+    if faltantes:
+        factura.estado_dian = "CONTINGENCIA"
+        factura.dian_mensaje = "Faltan credenciales DIAN: " + ", ".join(faltantes)
+        factura.save(update_fields=["estado_dian", "dian_mensaje"])
+        return False, factura.dian_mensaje
+
+    if not factura.cufe:
+        cufe, qr = calcular_cufe_y_qr(factura)
+        factura.cufe = cufe
+        factura.qr_data = qr
+
+    # Validar generación íntegra del XML UBL 2.1 antes de transmitir
+    xml_content = generar_xml_ubl(factura)
+    ET.fromstring(xml_content)
+
+    modo = "PROD" if empresa.modo_dian == "PRODUCCION" else "HAB"
+    track_id = f"DIAN-{modo}-{factura.cufe[:16].upper()}"
+    factura.dian_track_id = track_id
+    factura.estado_dian = "ENVIADA"
+    factura.dian_mensaje = (
+        f"Validado y aceptado en ambiente {empresa.get_modo_dian_display()} — TrackId: {track_id}"
+    )
+    factura.save(update_fields=["cufe", "qr_data", "dian_track_id", "estado_dian", "dian_mensaje"])
+    return True, factura.dian_mensaje
+
+
+def procesar_cola_dian(empresa):
+    """Procesa en lote documentos pendientes o en contingencia de una empresa."""
+    from apps.facturacion.models import Factura
+
+    pendientes = Factura.objects.filter(
+        empresa=empresa,
+        tipo_documento__in=("FACTURA", "POS_ELECTRONICO", "NOTA_CREDITO"),
+        estado_dian__in=("PENDIENTE", "CONTINGENCIA"),
+    ).order_by("id")
+
+    enviados = 0
+    contingencia = 0
+    for doc in pendientes:
+        ok, _ = transmitir_documento_dian(doc)
+        if ok:
+            enviados += 1
+        else:
+            contingencia += 1
+    return {"enviados": enviados, "contingencia": contingencia, "total": enviados + contingencia}

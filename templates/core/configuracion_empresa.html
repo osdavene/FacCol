@@ -1,0 +1,195 @@
+{% extends 'base.html' %}
+
+{% block title %}Configuración de Empresa — {{ empresa.display_name }}{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto space-y-6">
+    <div>
+        <h1 class="font-display font-extrabold text-2xl text-white">Configuración Propia de {{ empresa.display_name }}</h1>
+        <p class="text-xs text-slate-400">Cada empresa inquilina gestiona sus propias credenciales fiscales DIAN, correo opcional y su propia pasarela Wompi.</p>
+    </div>
+
+    <!-- 1. Pasarela Wompi Propia del Inquilino -->
+    <div class="bg-[#111827] border border-purple-500/30 rounded-3xl p-6 sm:p-8 shadow-xl space-y-5 text-xs">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#1e2d47] pb-4">
+            <div>
+                <h2 class="text-sm font-bold text-purple-400 uppercase tracking-wider flex items-center gap-2">
+                    <i class="fas fa-credit-card"></i>
+                    <span>1. Tu Propia Pasarela Wompi (Recaudo Directo a tu Cuenta)</span>
+                </h2>
+                <p class="text-[11px] text-slate-400 mt-1">
+                    Los pagos en línea de tus facturas llegan directamente a <b>tu cuenta Wompi</b>. Webhook a registrar en tu comercio Wompi:
+                    <code class="text-amber-400 font-mono">{{ webhook_url }}</code>
+                </p>
+            </div>
+            <span class="px-3 py-1 rounded-full text-[10px] font-black uppercase {% if wompi_cfg.enabled %}bg-emerald-500/15 text-emerald-400 border border-emerald-500/30{% else %}bg-slate-700 text-slate-300{% endif %}">
+                {% if wompi_cfg.enabled %}{% if wompi_cfg.is_production %}Producción Propia{% else %}Sandbox Propio{% endif %}{% else %}Sin Configurar{% endif %}
+            </span>
+        </div>
+
+        <form method="POST" class="space-y-4">
+            {% csrf_token %}
+            <input type="hidden" name="seccion" value="wompi">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Public Key Propia</label>
+                    <input type="text" name="wompi_public_key" value="{{ wompi_cfg.public_key|default:'' }}" placeholder="pub_prod_... o pub_test_..."
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">
+                        Private Key {% if wompi_cfg.masked_private_key %}<span class="text-emerald-400 font-mono">({{ wompi_cfg.masked_private_key }})</span>{% endif %}
+                    </label>
+                    <input type="password" name="wompi_private_key" value="" placeholder="Dejar vacío para conservar"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                    <label class="inline-flex items-center gap-1.5 text-[10px] text-rose-400 mt-1 cursor-pointer">
+                        <input type="checkbox" name="clear_wompi_private_key" class="rounded"> Limpiar
+                    </label>
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">
+                        Integrity Secret {% if wompi_cfg.masked_integrity_secret %}<span class="text-emerald-400 font-mono">({{ wompi_cfg.masked_integrity_secret }})</span>{% endif %}
+                    </label>
+                    <input type="password" name="wompi_integrity_secret" value="" placeholder="Dejar vacío para conservar"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                    <label class="inline-flex items-center gap-1.5 text-[10px] text-rose-400 mt-1 cursor-pointer">
+                        <input type="checkbox" name="clear_wompi_integrity_secret" class="rounded"> Limpiar
+                    </label>
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">
+                        Events Secret (Webhook) {% if wompi_cfg.masked_events_secret %}<span class="text-emerald-400 font-mono">({{ wompi_cfg.masked_events_secret }})</span>{% endif %}
+                    </label>
+                    <input type="password" name="wompi_events_secret" value="" placeholder="Dejar vacío para conservar"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                    <label class="inline-flex items-center gap-1.5 text-[10px] text-rose-400 mt-1 cursor-pointer">
+                        <input type="checkbox" name="clear_wompi_events_secret" class="rounded"> Limpiar
+                    </label>
+                </div>
+            </div>
+            <div class="flex justify-end">
+                <button type="submit" class="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-black uppercase tracking-wider transition">
+                    Guardar Mi Wompi Cifrado
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- 2. Configuración DIAN y Perfil de Negocio -->
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 sm:p-8 shadow-xl space-y-5 text-xs">
+        <h2 class="text-sm font-bold text-amber-400 uppercase tracking-wider border-b border-[#1e2d47] pb-3 flex items-center gap-2">
+            <i class="fas fa-file-shield"></i>
+            <span>2. Credenciales DIAN & Perfil Operativo</span>
+        </h2>
+        <form method="POST" class="space-y-4">
+            {% csrf_token %}
+            <input type="hidden" name="seccion" value="dian">
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Perfil Operativo</label>
+                    <select name="perfil_operativo" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                        <option value="GENERAL" {% if empresa.perfil_operativo == 'GENERAL' %}selected{% endif %}>Empresa Estándar (Completa)</option>
+                        <option value="TIENDA" {% if empresa.perfil_operativo == 'TIENDA' %}selected{% endif %}>Tienda de Barrio / Caja Express</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Régimen Tributario</label>
+                    <select name="regimen_tributario" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                        <option value="RESPONSABLE_IVA" {% if empresa.regimen_tributario == 'RESPONSABLE_IVA' %}selected{% endif %}>Responsable de IVA</option>
+                        <option value="NO_RESPONSABLE_IVA" {% if empresa.regimen_tributario == 'NO_RESPONSABLE_IVA' %}selected{% endif %}>No Responsable de IVA</option>
+                        <option value="REGIMEN_SIMPLE" {% if empresa.regimen_tributario == 'REGIMEN_SIMPLE' %}selected{% endif %}>Régimen Simple (RST)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Ambiente DIAN</label>
+                    <select name="modo_dian" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                        <option value="PRUEBAS" {% if empresa.modo_dian == 'PRUEBAS' %}selected{% endif %}>Habilitación / Pruebas</option>
+                        <option value="PRODUCCION" {% if empresa.modo_dian == 'PRODUCCION' %}selected{% endif %}>Producción DIAN</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Prefijo Factura / DEE POS</label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <input type="text" name="prefijo_factura" value="{{ empresa.prefijo_factura }}" class="bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                        <input type="text" name="prefijo_pos_electronico" value="{{ empresa.prefijo_pos_electronico }}" class="bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                    </div>
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Resolución DIAN</label>
+                    <input type="text" name="resolucion_dian" value="{{ empresa.resolucion_dian }}" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Software ID DIAN</label>
+                    <input type="text" name="dian_software_id" value="{{ empresa.dian_software_id }}" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">PIN Software DIAN</label>
+                    <input type="text" name="dian_pin" value="{{ empresa.dian_pin }}" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                </div>
+                <div class="sm:col-span-2">
+                    <label class="block font-semibold text-slate-300 mb-1">TestSetId (Habilitación DIAN)</label>
+                    <input type="text" name="dian_test_set_id" value="{{ empresa.dian_test_set_id }}" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                </div>
+            </div>
+            <div class="flex justify-end">
+                <button type="submit" class="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black uppercase tracking-wider transition">
+                    Guardar Configuración DIAN
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- 3. SMTP Propio Opcional -->
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 sm:p-8 shadow-xl space-y-5 text-xs">
+        <div class="flex items-center justify-between border-b border-[#1e2d47] pb-3">
+            <h2 class="text-sm font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-2">
+                <i class="fas fa-envelope"></i>
+                <span>3. Correo Propio Opcional (SMTP)</span>
+            </h2>
+            <span class="text-[11px] text-slate-400">Origen actual: <b class="text-white">{{ mail_cfg.source|upper }}</b></span>
+        </div>
+        <form method="POST" class="space-y-4">
+            {% csrf_token %}
+            <input type="hidden" name="seccion" value="smtp">
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Host SMTP</label>
+                    <input type="text" name="smtp_host" value="{{ empresa.smtp_host }}" placeholder="Dejar vacío para usar FacCol SES"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Puerto / Cifrado</label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <input type="number" name="smtp_port" value="{{ empresa.smtp_port|default:587 }}" class="bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                        <select name="smtp_encryption" class="bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                            <option value="tls" {% if empresa.smtp_encryption == 'tls' %}selected{% endif %}>TLS</option>
+                            <option value="ssl" {% if empresa.smtp_encryption == 'ssl' %}selected{% endif %}>SSL</option>
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Usuario SMTP</label>
+                    <input type="text" name="smtp_user" value="{{ empresa.smtp_user }}" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Remitente (From)</label>
+                    <input type="email" name="smtp_from_address" value="{{ empresa.smtp_from_address }}" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                </div>
+                <div class="sm:col-span-2">
+                    <label class="block font-semibold text-slate-300 mb-1">Contraseña SMTP {% if empresa.smtp_password %}<span class="text-emerald-400">(Configurada)</span>{% endif %}</label>
+                    <input type="password" name="smtp_password" value="" placeholder="Dejar vacío para conservar"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                    <label class="inline-flex items-center gap-1.5 text-[10px] text-rose-400 mt-1 cursor-pointer">
+                        <input type="checkbox" name="clear_smtp_password" class="rounded"> Usar correo compartido de plataforma
+                    </label>
+                </div>
+            </div>
+            <div class="flex justify-end">
+                <button type="submit" class="px-5 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-black uppercase tracking-wider transition">
+                    Guardar SMTP de Empresa
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

@@ -15,7 +15,7 @@ class ServiciosYPermisosModulosTests(TestCase):
         self.user = User.objects.create_user(
             username="tec@faccol.test", email="tec@faccol.test", password="SafePass!2026"
         )
-        EmpresaUsuario.objects.create(user=self.user, empresa=self.empresa, rol="admin_empresa", activo=True)
+        EmpresaUsuario.objects.create(user=self.user, empresa=self.empresa, rol="admin", activo=True)
         self.cliente = Tercero.objects.create(
             empresa=self.empresa, numero_documento="80123456", razon_social="Carlos Gómez", es_cliente=True
         )

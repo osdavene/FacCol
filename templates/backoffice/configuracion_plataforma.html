@@ -120,11 +120,11 @@
             <div>
                 <h2 class="text-sm font-bold text-purple-400 uppercase tracking-wider flex items-center gap-2">
                     <i class="fas fa-credit-card"></i>
-                    <span>2. Pasarela Wompi Global (Bancolombia / PSE / Nequi)</span>
+                    <span>2. Pasarela Wompi de Plataforma (Página Principal y Venta de Planes SaaS)</span>
                 </h2>
                 <p class="text-[11px] text-slate-400 mt-0.5">
-                    URL de Webhook para configurar en el panel de Wompi:
-                    <code class="text-amber-400 font-mono">{{ webhook_url }}</code>
+                    Exclusiva para cobrar suscripciones y planes de FacCol desde la página principal. Las empresas inquilinas configuran su propio Wompi aparte para que sus recaudos no entren a esta cuenta.
+                    Webhook: <code class="text-amber-400 font-mono">{{ webhook_url }}</code>
                 </p>
             </div>
             <span class="px-3 py-1 rounded-full text-[10px] font-black uppercase {% if wompi_cfg.enabled %}bg-emerald-500/15 text-emerald-400 border border-emerald-500/30{% else %}bg-slate-700 text-slate-300{% endif %}">

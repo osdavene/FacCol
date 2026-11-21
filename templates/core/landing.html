@@ -1,0 +1,158 @@
+{% load static humanize %}
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>FacCol — Facturación Electrónica DIAN, Caja Express POS y ERP Colombia</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <style>
+        body { background: #0b0f1a; color: #e2e8f0; font-family: 'DM Sans', system-ui, sans-serif; }
+        .font-display { font-family: 'Syne', system-ui, sans-serif; }
+    </style>
+</head>
+<body class="bg-[#0b0f1a] text-slate-200 min-h-screen" x-data="{ modalPlan: false, planSelId: '', planSelNombre: '', planSelPrecio: '' }">
+
+    <!-- Header -->
+    <header class="border-b border-[#1e2d47] bg-[#111827]/90 backdrop-blur sticky top-0 z-40">
+        <div class="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-amber-500 rounded-xl flex items-center justify-center font-display font-black text-black text-lg">FC</div>
+                <div>
+                    <div class="font-display font-black text-xl text-white">Fac<span class="text-amber-500">Col</span></div>
+                    <div class="text-[11px] text-slate-400">ERP & Facturación Electrónica Colombia</div>
+                </div>
+            </div>
+            <div class="flex items-center gap-3">
+                <a href="#planes" class="text-xs font-bold text-slate-300 hover:text-amber-400 px-3 py-2 transition">Planes y Precios</a>
+                <a href="{% url 'usuarios:login' %}"
+                   class="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs uppercase tracking-wider transition">
+                    Iniciar Sesión
+                </a>
+            </div>
+        </div>
+    </header>
+
+    {% if messages %}
+    <div class="max-w-4xl mx-auto px-4 pt-6 space-y-2">
+        {% for message in messages %}
+        <div class="p-3.5 rounded-2xl text-xs font-semibold border bg-[#162034] border-amber-500/30 text-amber-300">
+            {{ message }}
+        </div>
+        {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Hero -->
+    <section class="max-w-6xl mx-auto px-4 py-16 text-center space-y-6">
+        <span class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-bold uppercase tracking-wider">
+            Resolución DIAN 000165 • Factura Electrónica y DEE POS
+        </span>
+        <h1 class="font-display font-black text-4xl sm:text-5xl text-white max-w-3xl mx-auto leading-tight">
+            Facturación Electrónica DIAN, Caja Express para Tiendas de Barrio y Nómina en la Nube
+        </h1>
+        <p class="text-slate-400 text-sm sm:text-base max-w-2xl mx-auto">
+            Cobra al menudeo sin trabas, controla fiados, imprime tirillas de 58/80mm, automatiza tu contabilidad PUC y recibe pagos directo en tu propio Wompi.
+        </p>
+        <div class="flex flex-wrap justify-center gap-4 pt-2">
+            <a href="#planes" class="px-6 py-3 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 text-black font-black text-sm uppercase tracking-wider shadow-lg shadow-amber-500/20">
+                Adquirir Plan Ahora
+            </a>
+            <a href="{% url 'usuarios:login' %}" class="px-6 py-3 rounded-2xl bg-[#162034] border border-[#1e2d47] hover:border-amber-500/40 text-white font-bold text-sm">
+                Ya tengo cuenta
+            </a>
+        </div>
+    </section>
+
+    <!-- Catálogo de Planes -->
+    <section id="planes" class="max-w-6xl mx-auto px-4 pb-20 space-y-8">
+        <div class="text-center">
+            <h2 class="font-display font-extrabold text-3xl text-white">Planes SaaS para cada tipo de negocio</h2>
+            <p class="text-xs text-slate-400 mt-1">Activación automática e inmediata mediante la pasarela segura Wompi.</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {% for p in planes %}
+            <div class="bg-[#111827] border {% if p.destacado %}border-amber-500/60 shadow-2xl shadow-amber-500/10{% else %}border-[#1e2d47]{% endif %} rounded-3xl p-6 flex flex-col justify-between space-y-6">
+                <div class="space-y-3">
+                    <div class="flex items-center justify-between">
+                        <h3 class="font-display font-extrabold text-xl text-white">{{ p.nombre }}</h3>
+                        {% if p.destacado %}
+                        <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-500 text-black">Recomendado</span>
+                        {% endif %}
+                    </div>
+                    <p class="text-xs text-slate-400">{{ p.descripcion }}</p>
+                    <div class="pt-2">
+                        <span class="font-display font-black text-3xl text-amber-400">${{ p.precio_mensual|floatformat:0|intcomma }}</span>
+                        <span class="text-xs text-slate-400">COP / mes</span>
+                    </div>
+                    <div class="text-xs text-slate-300 space-y-1 pt-2 border-t border-[#1e2d47]">
+                        <div><i class="fas fa-check text-emerald-400 mr-1.5"></i>{% if p.limite_facturas_mes == 0 %}Documentos ilimitados{% else %}Hasta {{ p.limite_facturas_mes }} docs/mes{% endif %}</div>
+                        <div><i class="fas fa-check text-emerald-400 mr-1.5"></i>{% if p.limite_usuarios == 0 %}Usuarios ilimitados{% else %}Hasta {{ p.limite_usuarios }} usuarios{% endif %}</div>
+                        {% for item in p.lista_caracteristicas %}
+                        <div><i class="fas fa-check text-emerald-400 mr-1.5"></i>{{ item }}</div>
+                        {% endfor %}
+                    </div>
+                </div>
+
+                {% if p.precio_mensual > 0 and wompi_platform.enabled %}
+                <button type="button"
+                        @click="planSelId='{{ p.id }}'; planSelNombre='{{ p.nombre|escapejs }}'; planSelPrecio='{{ p.precio_mensual|floatformat:0|intcomma }}'; modalPlan=true"
+                        class="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-black text-xs uppercase tracking-wider transition flex items-center justify-center gap-2">
+                    <i class="fas fa-credit-card"></i> Comprar con Wompi
+                </button>
+                {% else %}
+                <a href="{% url 'usuarios:login' %}"
+                   class="w-full py-3 rounded-xl bg-[#162034] hover:bg-[#1f2c47] border border-[#1e2d47] text-center text-white font-bold text-xs uppercase tracking-wider">
+                    Ingresar / Solicitar
+                </a>
+                {% endif %}
+            </div>
+            {% empty %}
+            <div class="col-span-3 text-center text-slate-500 py-10">No hay planes publicados aún.</div>
+            {% endfor %}
+        </div>
+    </section>
+
+    <!-- Modal Checkout Wompi Plataforma -->
+    <div x-show="modalPlan" x-cloak class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+        <div @click.away="modalPlan = false" class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 max-w-md w-full space-y-5 shadow-2xl">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h3 class="font-display font-extrabold text-lg text-white">Suscripción: <span class="text-amber-400" x-text="planSelNombre"></span></h3>
+                    <p class="text-xs text-slate-400">Valor mensual: <b class="text-white">$<span x-text="planSelPrecio"></span> COP</b></p>
+                </div>
+                <button type="button" @click="modalPlan = false" class="text-slate-400 hover:text-white"><i class="fas fa-times"></i></button>
+            </div>
+
+            <form method="POST" action="{% url 'core:suscripcion_wompi_iniciar' %}" class="space-y-4 text-xs">
+                {% csrf_token %}
+                <input type="hidden" name="plan_id" :value="planSelId">
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Nombre del Negocio o Razón Social *</label>
+                    <input type="text" name="razon_social" required placeholder="Ej: Tienda La Esquina SAS"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">NIT o Cédula *</label>
+                    <input type="text" name="nit" required placeholder="Ej: 900123456"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Correo Administrador (para enviar acceso) *</label>
+                    <input type="email" name="email" required placeholder="admin@tunegocio.co"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                </div>
+                <button type="submit" class="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-black uppercase tracking-wider transition">
+                    Continuar a Pago Seguro Wompi
+                </button>
+            </form>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,0 +1,96 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Cola y Transmisión DIAN{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+            <h1 class="font-display font-extrabold text-2xl text-white">Cola & Transmisión Electrónica DIAN</h1>
+            <p class="text-xs text-slate-400">Ambiente actual: <b class="text-amber-400">{{ empresa_activa.get_modo_dian_display }}</b> — Resolución: <code class="text-slate-300">{{ empresa_activa.resolucion_dian|default:"Sin configurar" }}</code></p>
+        </div>
+        <div class="flex items-center gap-2">
+            {% if user.es_admin %}
+            <a href="{% url 'core:configuracion_empresa' %}" class="px-4 py-2.5 rounded-xl bg-[#162034] border border-[#1e2d47] text-slate-300 hover:text-white font-bold text-xs">
+                <i class="fas fa-sliders mr-1"></i> Configurar DIAN
+            </a>
+            {% endif %}
+            <form method="POST" action="{% url 'facturacion:dian_procesar_lote' %}">
+                {% csrf_token %}
+                <button type="submit" class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-black text-xs uppercase tracking-wider shadow-lg shadow-amber-500/20">
+                    <i class="fas fa-paper-plane mr-1"></i> Transmitir Cola DIAN
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <div class="bg-[#111827] border border-amber-500/20 rounded-2xl p-4">
+            <div class="text-[10px] font-bold uppercase text-slate-400">En Cola DIAN</div>
+            <div class="text-2xl font-black text-amber-400 mt-1">{{ resumen.pendientes }}</div>
+        </div>
+        <div class="bg-[#111827] border border-orange-500/20 rounded-2xl p-4">
+            <div class="text-[10px] font-bold uppercase text-slate-400">Contingencia</div>
+            <div class="text-2xl font-black text-orange-400 mt-1">{{ resumen.contingencia }}</div>
+        </div>
+        <div class="bg-[#111827] border border-emerald-500/20 rounded-2xl p-4">
+            <div class="text-[10px] font-bold uppercase text-slate-400">Aceptados DIAN</div>
+            <div class="text-2xl font-black text-emerald-400 mt-1">{{ resumen.enviadas }}</div>
+        </div>
+        <div class="bg-[#111827] border border-rose-500/20 rounded-2xl p-4">
+            <div class="text-[10px] font-bold uppercase text-slate-400">Rechazados</div>
+            <div class="text-2xl font-black text-rose-400 mt-1">{{ resumen.rechazadas }}</div>
+        </div>
+    </div>
+
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl overflow-hidden shadow-xl">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+                <thead>
+                    <tr class="bg-[#141c2e] text-slate-400 font-bold uppercase tracking-wider text-[10px] border-b border-[#1e2d47]">
+                        <th class="p-4">Documento</th>
+                        <th class="p-4">Cliente</th>
+                        <th class="p-4">Estado DIAN</th>
+                        <th class="p-4">TrackId / Bitácora</th>
+                        <th class="p-4 text-right">Acciones</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-[#1e2d47]/50">
+                    {% for doc in documentos %}
+                    <tr class="hover:bg-[#162034] transition">
+                        <td class="p-4">
+                            <a href="{% url 'facturacion:factura_detalle' doc.id %}" class="font-bold text-amber-400 hover:underline">{{ doc.numero_completo }}</a>
+                            <div class="text-[10px] text-slate-500">{{ doc.get_tipo_documento_display }} — ${{ doc.total|floatformat:0|intcomma }}</div>
+                        </td>
+                        <td class="p-4 text-white font-medium">{{ doc.tercero.razon_social }}</td>
+                        <td class="p-4">
+                            <span class="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase {% if doc.estado_dian == 'ENVIADA' %}bg-emerald-500/15 text-emerald-400{% elif doc.estado_dian == 'CONTINGENCIA' %}bg-orange-500/15 text-orange-400{% else %}bg-amber-500/15 text-amber-400{% endif %}">
+                                {{ doc.get_estado_dian_display }}
+                            </span>
+                        </td>
+                        <td class="p-4 text-[11px] text-slate-400">
+                            {% if doc.dian_track_id %}<div class="font-mono text-emerald-400">{{ doc.dian_track_id }}</div>{% endif %}
+                            <div class="truncate max-w-xs">{{ doc.dian_mensaje|default:"-" }}</div>
+                        </td>
+                        <td class="p-4 text-right space-x-1 whitespace-nowrap">
+                            <a href="{% url 'facturacion:factura_xml' doc.id %}" class="px-2.5 py-1.5 rounded-xl bg-[#162034] text-cyan-400 font-bold text-[11px]">XML</a>
+                            {% if doc.estado_dian != 'ENVIADA' %}
+                            <form method="POST" action="{% url 'facturacion:dian_transmitir_documento' doc.id %}" class="inline">
+                                {% csrf_token %}
+                                <button type="submit" class="px-2.5 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold text-[11px]">
+                                    Transmitir
+                                </button>
+                            </form>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="5" class="p-8 text-center text-slate-500">No hay documentos fiscales emitidos.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

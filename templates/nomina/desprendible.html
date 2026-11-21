@@ -1,0 +1,71 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Desprendible {{ num_ne }}{% endblock %}
+
+{% block content %}
+<div class="max-w-3xl mx-auto space-y-6">
+    <div class="flex items-center justify-between print:hidden">
+        <a href="{% url 'nomina:nomina_detalle' nomina.id %}" class="px-4 py-2 rounded-xl bg-[#162034] text-slate-300 hover:text-white text-xs font-bold">
+            <i class="fas fa-arrow-left mr-1"></i> Volver
+        </a>
+        <div class="flex gap-2">
+            <a href="{% url 'nomina:nomina_xml_empleado' detalle.id %}" class="px-4 py-2 rounded-xl bg-[#162034] border border-[#1e2d47] text-cyan-400 font-bold text-xs">
+                Descargar XML DIAN
+            </a>
+            <button type="button" onclick="window.print()" class="px-4 py-2 rounded-xl bg-amber-500 text-black font-black text-xs uppercase">
+                Imprimir Colilla
+            </button>
+        </div>
+    </div>
+
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 sm:p-8 space-y-6 text-xs">
+        <div class="flex justify-between items-start border-b border-[#1e2d47] pb-4">
+            <div>
+                <div class="text-[10px] font-bold uppercase text-amber-400">Comprobante de Nómina Electrónica</div>
+                <h1 class="font-display font-black text-2xl text-white">{{ num_ne }}</h1>
+                <div class="text-slate-400 mt-1">{{ nomina.empresa.razon_social }} — NIT {{ nomina.empresa.nit_completo }}</div>
+            </div>
+            <div class="text-right">
+                <div class="text-slate-400">Período</div>
+                <div class="font-bold text-white text-sm">{{ nomina.periodo_mes }}/{{ nomina.periodo_ano }}</div>
+            </div>
+        </div>
+
+        <div class="bg-[#162034] rounded-2xl p-4 grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div><span class="text-slate-400">Trabajador:</span> <b class="text-white">{{ detalle.empleado.nombre_completo }}</b></div>
+            <div><span class="text-slate-400">Documento:</span> <b class="text-white">{{ detalle.empleado.tipo_documento }} {{ detalle.empleado.numero_documento }}</b></div>
+            <div><span class="text-slate-400">Cargo:</span> <b class="text-white">{{ detalle.empleado.cargo }}</b></div>
+            <div><span class="text-slate-400">Días Laborados:</span> <b class="text-white">{{ detalle.dias_trabajados }}</b></div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div class="bg-[#141c2e] rounded-2xl p-4 space-y-2">
+                <div class="font-bold text-emerald-400 uppercase text-[10px]">Devengados</div>
+                <div class="flex justify-between"><span>Sueldo Básico</span><b>${{ detalle.sueldo_basico_devengado|floatformat:0|intcomma }}</b></div>
+                <div class="flex justify-between"><span>Auxilio de Transporte</span><b>${{ detalle.auxilio_transporte|floatformat:0|intcomma }}</b></div>
+                <div class="flex justify-between border-t border-[#1e2d47] pt-2 text-white font-black">
+                    <span>Total Devengado</span><span>${{ detalle.total_devengado|floatformat:0|intcomma }}</span>
+                </div>
+            </div>
+            <div class="bg-[#141c2e] rounded-2xl p-4 space-y-2">
+                <div class="font-bold text-rose-400 uppercase text-[10px]">Deducciones</div>
+                <div class="flex justify-between"><span>Salud (4%)</span><b>-${{ detalle.salud_empleado_4|floatformat:0|intcomma }}</b></div>
+                <div class="flex justify-between"><span>Pensión (4%)</span><b>-${{ detalle.pension_empleado_4|floatformat:0|intcomma }}</b></div>
+                <div class="flex justify-between border-t border-[#1e2d47] pt-2 text-rose-300 font-black">
+                    <span>Total Deducciones</span><span>-${{ detalle.total_deducciones|floatformat:0|intcomma }}</span>
+                </div>
+            </div>
+        </div>
+
+        <div class="bg-emerald-500/10 border border-emerald-500/30 rounded-2xl p-4 flex items-center justify-between">
+            <span class="font-bold text-emerald-300 uppercase">Neto a Pagar al Trabajador</span>
+            <span class="font-display font-black text-2xl text-emerald-400">${{ detalle.neto_a_pagar|floatformat:0|intcomma }} COP</span>
+        </div>
+
+        <div class="text-[10px] text-slate-500 break-all border-t border-[#1e2d47] pt-3">
+            <b>CUNE DIAN (SHA-384):</b> <span class="font-mono text-amber-400">{{ cune }}</span>
+        </div>
+    </div>
+</div>
+{% endblock %}

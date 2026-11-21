@@ -4,13 +4,14 @@ from decimal import Decimal
 from django.test import TestCase, Client
 from django.urls import reverse
 from apps.usuarios.models import User, EmpresaUsuario
-from apps.empresas.models import Empresa
+from apps.empresas.models import Empresa, Plan, Modulo
 from apps.terceros.models import Tercero
 from apps.inventario.models import Producto, MovimientoInventario
 from apps.facturacion.models import Factura, FacturaItem, ReciboCaja, TransaccionWompi
+from apps.facturacion.wompi_service import get_wompi_runtime_config, get_platform_wompi_config
 from apps.contabilidad.models import AsientoContable
 from apps.pos.models import Caja, CajaTurno
-from apps.core.platform_settings import set_platform_setting
+from apps.core.platform_settings import encrypt_secret, set_platform_setting
 
 
 class FacturacionEmisionTests(TestCase):
@@ -56,10 +57,11 @@ class FacturacionEmisionTests(TestCase):
         self.assertEqual(pdf_resp["Content-Type"], "application/pdf")
 
     def test_wompi_checkout_y_webhook_idempotente(self):
-        set_platform_setting("wompi_active_flag", "1")
-        set_platform_setting("wompi_public_key", "pub_test_12345")
-        set_platform_setting("wompi_integrity_secret", "test_integ_secret", is_secret=True)
-        set_platform_setting("wompi_events_secret", "test_events_secret", is_secret=True)
+        # Cada empresa inquilina configura SUS PROPIAS llaves Wompi
+        self.empresa.wompi_public_key = "pub_test_empresa_12345"
+        self.empresa.wompi_integrity_secret = encrypt_secret("emp_integ_secret")
+        self.empresa.wompi_events_secret = encrypt_secret("emp_events_secret")
+        self.empresa.save()
 
         factura = Factura.objects.create(
             empresa=self.empresa, tipo_documento="FACTURA", prefijo="FE", consecutivo=99,
@@ -103,8 +105,8 @@ class FacturacionEmisionTests(TestCase):
         r_bad = client.post(reverse("facturacion:wompi_webhook"), data=json.dumps(payload), content_type="application/json")
         self.assertEqual(r_bad.status_code, 401)
 
-        # Firma válida SHA-256 debe aprobar, crear ReciboCaja y marcar factura PAGADA (idempotente)
-        raw = f"wompi-tx-1001APPROVED50000001732140000test_events_secret"
+        # Firma válida SHA-256 usando el events_secret PROPIO de la empresa
+        raw = "wompi-tx-1001APPROVED50000001732140000emp_events_secret"
         payload["signature"]["checksum"] = hashlib.sha256(raw.encode("utf-8")).hexdigest()
         r_ok = client.post(reverse("facturacion:wompi_webhook"), data=json.dumps(payload), content_type="application/json")
         self.assertEqual(r_ok.status_code, 200)
@@ -222,5 +224,124 @@ class FacturacionEmisionTests(TestCase):
         self.assertEqual(r_rc.status_code, 200)
         asiento_ing = AsientoContable.objects.get(empresa=self.empresa, tipo="INGRESO")
         self.assertTrue(asiento_ing.esta_cuadrado)
+
+    def test_wompi_empresa_aislado_y_suscripcion_landing_plataforma(self):
+        # Plataforma SI tiene Wompi activo, pero self.empresa NO tiene Wompi propio configurado
+        set_platform_setting("wompi_active_flag", "1")
+        set_platform_setting("wompi_public_key", "pub_test_plataforma")
+        set_platform_setting("wompi_integrity_secret", "plat_integ_secret", is_secret=True)
+        set_platform_setting("wompi_events_secret", "plat_events_secret", is_secret=True)
+
+        self.assertTrue(get_platform_wompi_config()["enabled"])
+        self.assertFalse(get_wompi_runtime_config(self.empresa)["enabled"])
+
+        # Una factura de self.empresa NO debe poder iniciar Wompi usando el Wompi de la plataforma
+        fac = Factura.objects.create(
+            empresa=self.empresa, tipo_documento="FACTURA", prefijo="FE", consecutivo=88,
+            tercero=self.cliente, fecha_emision="2026-11-21", fecha_vencimiento="2026-11-21",
+            estado="EMITIDA", metodo_pago="CREDITO",
+        )
+        FacturaItem.objects.create(
+            factura=fac, producto=self.prod, descripcion="Arroz",
+            cantidad=Decimal("1"), precio_unitario=Decimal("2500.00"), porcentaje_iva=Decimal("0.00"),
+        )
+        fac.recalcular_totales()
+
+        client = Client()
+        client.force_login(self.vendedor)
+        r_block = client.post(reverse("facturacion:wompi_iniciar", args=[fac.id]))
+        self.assertEqual(r_block.status_code, 302)
+        self.assertNotIn("checkout.wompi.co", r_block["Location"])
+        self.assertEqual(TransaccionWompi.objects.filter(factura=fac).count(), 0)
+
+        # Visitante anónimo en página principal ve planes y paga suscripción al Wompi de la Plataforma
+        mod_fac = Modulo.objects.create(codigo="facturacion", nombre="Facturación")
+        plan = Plan.objects.create(nombre="Plan Tienda Test", precio_mensual=Decimal("59900.00"), activo=True)
+        plan.modulos.add(mod_fac)
+
+        anon = Client()
+        r_land = anon.get(reverse("core:dashboard"))
+        self.assertEqual(r_land.status_code, 200)
+        self.assertContains(r_land, "Plan Tienda Test")
+
+        r_sub = anon.post(reverse("core:suscripcion_wompi_iniciar"), {
+            "plan_id": str(plan.id),
+            "razon_social": "Minimercado Nuevo SAS",
+            "nit": "901888777",
+            "email": "dueno@minimercado.co",
+        })
+        self.assertEqual(r_sub.status_code, 302)
+        self.assertIn("https://checkout.wompi.co/p/", r_sub["Location"])
+
+        tx_plan = TransaccionWompi.objects.get(plan=plan, empresa__isnull=True)
+        payload = {
+            "event": "transaction.updated",
+            "environment": "test",
+            "timestamp": 1732150000,
+            "data": {
+                "transaction": {
+                    "id": "wompi-plan-777",
+                    "reference": tx_plan.reference,
+                    "status": "APPROVED",
+                    "amount_in_cents": 5990000,
+                    "currency": "COP",
+                    "payment_method_type": "PSE",
+                }
+            },
+            "signature": {
+                "properties": ["transaction.id", "transaction.status", "transaction.amount_in_cents"],
+                "checksum": hashlib.sha256(b"wompi-plan-777APPROVED59900001732150000plat_events_secret").hexdigest(),
+            },
+        }
+        r_wh = anon.post(reverse("facturacion:wompi_webhook"), data=json.dumps(payload), content_type="application/json")
+        self.assertEqual(r_wh.status_code, 200)
+        tx_plan.refresh_from_db()
+        self.assertEqual(tx_plan.status, "APPROVED")
+        self.assertIsNotNone(tx_plan.empresa_creada)
+        self.assertEqual(tx_plan.empresa_creada.plan_id, plan.id)
+        self.assertTrue(User.objects.filter(email="dueno@minimercado.co").exists())
+
+    def test_cola_dian_y_configuracion_empresa(self):
+        admin_emp = User.objects.create_user(
+            username="admin_cfg@faccol.test", email="admin_cfg@faccol.test", password="SafePass!2026"
+        )
+        EmpresaUsuario.objects.create(user=admin_emp, empresa=self.empresa, rol="admin", activo=True)
+
+        client = Client()
+        client.force_login(admin_emp)
+
+        # Emite factura sin credenciales DIAN -> queda en CONTINGENCIA
+        client.post(reverse("facturacion:factura_crear"), {
+            "tercero": str(self.cliente.id),
+            "tipo_documento": "FACTURA",
+            "metodo_pago": "CONTADO",
+            "item_producto[]": [str(self.prod.id)],
+            "item_cantidad[]": ["1"],
+            "item_precio[]": ["2500"],
+        }, follow=True)
+        fac = Factura.objects.get(empresa=self.empresa, tipo_documento="FACTURA")
+        self.assertEqual(fac.estado_dian, "CONTINGENCIA")
+
+        # El propio admin de empresa configura sus credenciales DIAN y su propio Wompi
+        r_cfg = client.post(reverse("core:configuracion_empresa"), {
+            "seccion": "dian",
+            "perfil_operativo": "TIENDA",
+            "regimen_tributario": "NO_RESPONSABLE_IVA",
+            "prefijo_factura": "FE",
+            "prefijo_pos_electronico": "POS",
+            "resolucion_dian": "18764000112233",
+            "modo_dian": "PRUEBAS",
+            "dian_software_id": "SW-UUID-1234",
+            "dian_pin": "12345",
+            "dian_test_set_id": "TEST-SET-999",
+        }, follow=True)
+        self.assertEqual(r_cfg.status_code, 200)
+
+        r_lote = client.post(reverse("facturacion:dian_procesar_lote"), follow=True)
+        self.assertEqual(r_lote.status_code, 200)
+        fac.refresh_from_db()
+        self.assertEqual(fac.estado_dian, "ENVIADA")
+        self.assertTrue(fac.dian_track_id.startswith("DIAN-HAB-"))
+
 
 
