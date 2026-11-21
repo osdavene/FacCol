@@ -9,37 +9,150 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Syne:wght@600;700;800&family=DM+Sans:wght@400;500;700&display=swap" rel="stylesheet">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css" rel="stylesheet">
+
+    <!-- Estilos Compilados Locales FacCol (inmune a bloqueadores CDN / Brave Shields) -->
+    <link rel="stylesheet" href="{% static 'css/app.css' %}">
+
+    <!-- Tailwind CDN como refuerzo -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <script defer src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js"></script>
+    <script>
+        if (window.tailwind) {
+            tailwind.config = {
+                darkMode: 'class',
+                theme: {
+                    extend: {
+                        colors: { amber: { 400: '#fbbf24', 500: '#f59e0b', 600: '#d97706' } },
+                        fontFamily: { sans: ['DM Sans', 'sans-serif'], display: ['Syne', 'sans-serif'] }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Estilos Críticos Resilientes (garantizan diseño completo aun con bloqueadores estrictos) -->
     <style>
-        body { background: #0b0f1a; color: #e2e8f0; font-family: 'DM Sans', system-ui, sans-serif; }
+        *, *::before, *::after { box-sizing: border-box; }
+        body {
+            margin: 0;
+            background: radial-gradient(circle at top center, #141c2e 0%, #0b0f1a 55%);
+            color: #e2e8f0;
+            font-family: 'DM Sans', system-ui, -apple-system, sans-serif;
+            min-height: 100vh;
+        }
         .font-display { font-family: 'Syne', system-ui, sans-serif; }
+        a { text-decoration: none; color: inherit; }
+        .fc-header {
+            position: sticky;
+            top: 0;
+            z-index: 40;
+            background: rgba(17, 24, 39, 0.92);
+            backdrop-filter: blur(12px);
+            border-bottom: 1px solid #1e2d47;
+        }
+        .fc-container { max-width: 72rem; margin: 0 auto; padding: 0 1.25rem; }
+        .fc-header-inner { display: flex; align-items: center; justify-content: space-between; padding: 1rem 0; gap: 1rem; }
+        .fc-brand { display: flex; align-items: center; gap: 0.75rem; }
+        .fc-logo {
+            width: 2.5rem; height: 2.5rem; border-radius: 0.75rem;
+            background: linear-gradient(135deg, #f59e0b, #d97706);
+            color: #0b0f1a; font-weight: 900; font-size: 1.05rem;
+            display: flex; align-items: center; justify-content: center;
+            box-shadow: 0 8px 20px rgba(245, 158, 11, 0.25);
+        }
+        .fc-nav { display: flex; align-items: center; gap: 0.85rem; }
+        .fc-btn-amber {
+            display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+            background: linear-gradient(90deg, #f59e0b, #d97706);
+            color: #0b0f1a !important; font-weight: 800; font-size: 0.75rem;
+            text-transform: uppercase; letter-spacing: 0.05em;
+            padding: 0.7rem 1.25rem; border-radius: 0.85rem; border: none; cursor: pointer;
+            box-shadow: 0 10px 25px rgba(245, 158, 11, 0.2);
+            transition: transform 0.15s ease, filter 0.15s ease;
+        }
+        .fc-btn-amber:hover { filter: brightness(1.08); transform: translateY(-1px); }
+        .fc-btn-purple {
+            display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; width: 100%;
+            background: linear-gradient(90deg, #9333ea, #7e22ce);
+            color: #ffffff !important; font-weight: 800; font-size: 0.75rem;
+            text-transform: uppercase; letter-spacing: 0.05em;
+            padding: 0.85rem 1.25rem; border-radius: 0.85rem; border: none; cursor: pointer;
+            box-shadow: 0 10px 25px rgba(147, 51, 234, 0.25);
+            transition: filter 0.15s ease;
+        }
+        .fc-btn-purple:hover { filter: brightness(1.1); }
+        .fc-btn-dark {
+            display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem;
+            background: #162034; color: #f8fafc !important; font-weight: 700; font-size: 0.8rem;
+            padding: 0.75rem 1.4rem; border-radius: 0.85rem; border: 1px solid #263859;
+            transition: border-color 0.15s ease, background 0.15s ease;
+        }
+        .fc-btn-dark:hover { border-color: #f59e0b; background: #1c2942; }
+        .fc-hero { padding: 4rem 0 3rem; text-align: center; }
+        .fc-pill {
+            display: inline-flex; align-items: center; gap: 0.5rem;
+            padding: 0.4rem 0.95rem; border-radius: 9999px;
+            background: rgba(245, 158, 11, 0.12); border: 1px solid rgba(245, 158, 11, 0.28);
+            color: #fbbf24; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+        }
+        .fc-hero-title {
+            font-size: clamp(2rem, 4vw, 3.1rem); font-weight: 900; color: #ffffff;
+            line-height: 1.15; max-width: 52rem; margin: 1.25rem auto 1rem;
+        }
+        .fc-hero-sub { color: #94a3b8; font-size: 1rem; max-width: 42rem; margin: 0 auto 2rem; line-height: 1.6; }
+        .fc-plans-grid {
+            display: grid; grid-template-columns: repeat(1, minmax(0, 1fr)); gap: 1.5rem;
+        }
+        @media (min-width: 768px) {
+            .fc-plans-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        }
+        .fc-card {
+            background: #111827; border: 1px solid #1e2d47; border-radius: 1.5rem;
+            padding: 1.75rem; display: flex; flex-direction: column; justify-content: space-between; gap: 1.5rem;
+            box-shadow: 0 20px 45px rgba(0, 0, 0, 0.35);
+        }
+        .fc-card-featured { border-color: rgba(245, 158, 11, 0.65); box-shadow: 0 20px 50px rgba(245, 158, 11, 0.12); }
+        .fc-price { font-size: 2rem; font-weight: 900; color: #fbbf24; }
+        .fc-features { border-top: 1px solid #1e2d47; padding-top: 1rem; margin-top: 0.75rem; display: flex; flex-direction: column; gap: 0.5rem; font-size: 0.82rem; color: #cbd5e1; }
+        .fc-modal-backdrop {
+            display: none; position: fixed; inset: 0; z-index: 60;
+            background: rgba(5, 8, 15, 0.8); backdrop-filter: blur(6px);
+            align-items: center; justify-content: center; padding: 1rem;
+        }
+        .fc-modal-backdrop.is-open { display: flex; }
+        .fc-modal-box {
+            background: #111827; border: 1px solid #263859; border-radius: 1.5rem;
+            padding: 1.75rem; width: 100%; max-width: 28rem; box-shadow: 0 25px 60px rgba(0,0,0,0.6);
+        }
+        .fc-input {
+            width: 100%; background: #162034; border: 1px solid #263859; border-radius: 0.75rem;
+            padding: 0.65rem 0.85rem; color: #ffffff; font-size: 0.85rem; margin-top: 0.35rem;
+        }
+        .fc-input:focus { outline: none; border-color: #f59e0b; }
     </style>
 </head>
-<body class="bg-[#0b0f1a] text-slate-200 min-h-screen" x-data="{ modalPlan: false, planSelId: '', planSelNombre: '', planSelPrecio: '' }">
+<body>
 
     <!-- Header -->
-    <header class="border-b border-[#1e2d47] bg-[#111827]/90 backdrop-blur sticky top-0 z-40">
-        <div class="max-w-6xl mx-auto px-4 py-4 flex items-center justify-between">
-            <div class="flex items-center gap-3">
-                <div class="w-10 h-10 bg-amber-500 rounded-xl flex items-center justify-center font-display font-black text-black text-lg">FC</div>
+    <header class="fc-header">
+        <div class="fc-container fc-header-inner">
+            <div class="fc-brand">
+                <div class="fc-logo font-display">FC</div>
                 <div>
-                    <div class="font-display font-black text-xl text-white">Fac<span class="text-amber-500">Col</span></div>
-                    <div class="text-[11px] text-slate-400">ERP & Facturación Electrónica Colombia</div>
+                    <div class="font-display font-black text-xl text-white leading-none">
+                        Fac<span style="color:#f59e0b;">Col</span>
+                    </div>
+                    <div class="text-[11px] text-slate-400">ERP &amp; Facturación Electrónica Colombia</div>
                 </div>
             </div>
-            <div class="flex items-center gap-3">
-                <a href="#planes" class="text-xs font-bold text-slate-300 hover:text-amber-400 px-3 py-2 transition">Planes y Precios</a>
-                <a href="{% url 'usuarios:login' %}"
-                   class="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs uppercase tracking-wider transition">
-                    Iniciar Sesión
-                </a>
+            <div class="fc-nav">
+                <a href="#planes" class="text-xs font-bold text-slate-300 hover:text-amber-400 px-3 py-2">Planes y Precios</a>
+                <a href="{% url 'usuarios:login' %}" class="fc-btn-amber">Iniciar Sesión</a>
             </div>
         </div>
     </header>
 
     {% if messages %}
-    <div class="max-w-4xl mx-auto px-4 pt-6 space-y-2">
+    <div class="fc-container pt-6 space-y-2">
         {% for message in messages %}
         <div class="p-3.5 rounded-2xl text-xs font-semibold border bg-[#162034] border-amber-500/30 text-amber-300">
             {{ message }}
@@ -49,110 +162,122 @@
     {% endif %}
 
     <!-- Hero -->
-    <section class="max-w-6xl mx-auto px-4 py-16 text-center space-y-6">
-        <span class="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-500/10 border border-amber-500/20 text-amber-400 text-xs font-bold uppercase tracking-wider">
+    <section class="fc-container fc-hero">
+        <span class="fc-pill">
             Resolución DIAN 000165 • Factura Electrónica y DEE POS
         </span>
-        <h1 class="font-display font-black text-4xl sm:text-5xl text-white max-w-3xl mx-auto leading-tight">
+        <h1 class="font-display fc-hero-title">
             Facturación Electrónica DIAN, Caja Express para Tiendas de Barrio y Nómina en la Nube
         </h1>
-        <p class="text-slate-400 text-sm sm:text-base max-w-2xl mx-auto">
+        <p class="fc-hero-sub">
             Cobra al menudeo sin trabas, controla fiados, imprime tirillas de 58/80mm, automatiza tu contabilidad PUC y recibe pagos directo en tu propio Wompi.
         </p>
-        <div class="flex flex-wrap justify-center gap-4 pt-2">
-            <a href="#planes" class="px-6 py-3 rounded-2xl bg-gradient-to-r from-amber-500 to-amber-600 text-black font-black text-sm uppercase tracking-wider shadow-lg shadow-amber-500/20">
+        <div style="display:flex; flex-wrap:wrap; justify-content:center; gap:0.85rem;">
+            <a href="#planes" class="fc-btn-amber" style="padding:0.9rem 1.75rem; font-size:0.85rem;">
                 Adquirir Plan Ahora
             </a>
-            <a href="{% url 'usuarios:login' %}" class="px-6 py-3 rounded-2xl bg-[#162034] border border-[#1e2d47] hover:border-amber-500/40 text-white font-bold text-sm">
+            <a href="{% url 'usuarios:login' %}" class="fc-btn-dark">
                 Ya tengo cuenta
             </a>
         </div>
     </section>
 
     <!-- Catálogo de Planes -->
-    <section id="planes" class="max-w-6xl mx-auto px-4 pb-20 space-y-8">
+    <section id="planes" class="fc-container pb-20 space-y-8">
         <div class="text-center">
             <h2 class="font-display font-extrabold text-3xl text-white">Planes SaaS para cada tipo de negocio</h2>
             <p class="text-xs text-slate-400 mt-1">Activación automática e inmediata mediante la pasarela segura Wompi.</p>
         </div>
 
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+        <div class="fc-plans-grid">
             {% for p in planes %}
-            <div class="bg-[#111827] border {% if p.destacado %}border-amber-500/60 shadow-2xl shadow-amber-500/10{% else %}border-[#1e2d47]{% endif %} rounded-3xl p-6 flex flex-col justify-between space-y-6">
-                <div class="space-y-3">
-                    <div class="flex items-center justify-between">
-                        <h3 class="font-display font-extrabold text-xl text-white">{{ p.nombre }}</h3>
+            <div class="fc-card {% if p.destacado %}fc-card-featured{% endif %}">
+                <div>
+                    <div style="display:flex; align-items:center; justify-content:space-between; gap:0.5rem;">
+                        <h3 class="font-display font-extrabold text-xl text-white" style="margin:0;">{{ p.nombre }}</h3>
                         {% if p.destacado %}
-                        <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-500 text-black">Recomendado</span>
+                        <span style="padding:0.2rem 0.65rem; border-radius:9999px; font-size:10px; font-weight:900; text-transform:uppercase; background:#f59e0b; color:#0b0f1a;">Recomendado</span>
                         {% endif %}
                     </div>
-                    <p class="text-xs text-slate-400">{{ p.descripcion }}</p>
-                    <div class="pt-2">
-                        <span class="font-display font-black text-3xl text-amber-400">${{ p.precio_mensual|floatformat:0|intcomma }}</span>
+                    <p class="text-xs text-slate-400 mt-2">{{ p.descripcion }}</p>
+                    <div class="pt-4">
+                        <span class="font-display fc-price">${{ p.precio_mensual|floatformat:0|intcomma }}</span>
                         <span class="text-xs text-slate-400">COP / mes</span>
                     </div>
-                    <div class="text-xs text-slate-300 space-y-1 pt-2 border-t border-[#1e2d47]">
-                        <div><i class="fas fa-check text-emerald-400 mr-1.5"></i>{% if p.limite_facturas_mes == 0 %}Documentos ilimitados{% else %}Hasta {{ p.limite_facturas_mes }} docs/mes{% endif %}</div>
-                        <div><i class="fas fa-check text-emerald-400 mr-1.5"></i>{% if p.limite_usuarios == 0 %}Usuarios ilimitados{% else %}Hasta {{ p.limite_usuarios }} usuarios{% endif %}</div>
+                    <div class="fc-features">
+                        <div><span style="color:#34d399; font-weight:bold;">✓</span> {% if p.limite_facturas_mes == 0 %}Documentos ilimitados{% else %}Hasta {{ p.limite_facturas_mes }} docs/mes{% endif %}</div>
+                        <div><span style="color:#34d399; font-weight:bold;">✓</span> {% if p.limite_usuarios == 0 %}Usuarios ilimitados{% else %}Hasta {{ p.limite_usuarios }} usuarios{% endif %}</div>
                         {% for item in p.lista_caracteristicas %}
-                        <div><i class="fas fa-check text-emerald-400 mr-1.5"></i>{{ item }}</div>
+                        <div><span style="color:#34d399; font-weight:bold;">✓</span> {{ item }}</div>
                         {% endfor %}
                     </div>
                 </div>
 
                 {% if p.precio_mensual > 0 and wompi_platform.enabled %}
                 <button type="button"
-                        @click="planSelId='{{ p.id }}'; planSelNombre='{{ p.nombre|escapejs }}'; planSelPrecio='{{ p.precio_mensual|floatformat:0|intcomma }}'; modalPlan=true"
-                        class="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-black text-xs uppercase tracking-wider transition flex items-center justify-center gap-2">
+                        onclick="abrirModalWompi('{{ p.id }}', '{{ p.nombre|escapejs }}', '{{ p.precio_mensual|floatformat:0|intcomma }}')"
+                        class="fc-btn-purple">
                     <i class="fas fa-credit-card"></i> Comprar con Wompi
                 </button>
                 {% else %}
-                <a href="{% url 'usuarios:login' %}"
-                   class="w-full py-3 rounded-xl bg-[#162034] hover:bg-[#1f2c47] border border-[#1e2d47] text-center text-white font-bold text-xs uppercase tracking-wider">
+                <a href="{% url 'usuarios:login' %}" class="fc-btn-dark" style="width:100%;">
                     Ingresar / Solicitar
                 </a>
                 {% endif %}
             </div>
             {% empty %}
-            <div class="col-span-3 text-center text-slate-500 py-10">No hay planes publicados aún.</div>
+            <div style="grid-column:1 / -1; text-align:center; color:#64748b; padding:2.5rem 0;">No hay planes publicados aún.</div>
             {% endfor %}
         </div>
     </section>
 
     <!-- Modal Checkout Wompi Plataforma -->
-    <div x-show="modalPlan" x-cloak class="fixed inset-0 bg-black/75 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-        <div @click.away="modalPlan = false" class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 max-w-md w-full space-y-5 shadow-2xl">
-            <div class="flex items-center justify-between">
+    <div id="modalWompi" class="fc-modal-backdrop" onclick="if(event.target===this) cerrarModalWompi()">
+        <div class="fc-modal-box">
+            <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:1rem;">
                 <div>
-                    <h3 class="font-display font-extrabold text-lg text-white">Suscripción: <span class="text-amber-400" x-text="planSelNombre"></span></h3>
-                    <p class="text-xs text-slate-400">Valor mensual: <b class="text-white">$<span x-text="planSelPrecio"></span> COP</b></p>
+                    <h3 class="font-display font-extrabold text-lg text-white" style="margin:0;">
+                        Suscripción: <span id="planNombreLbl" style="color:#fbbf24;"></span>
+                    </h3>
+                    <p class="text-xs text-slate-400" style="margin:0.25rem 0 0;">
+                        Valor mensual: <b class="text-white">$<span id="planPrecioLbl"></span> COP</b>
+                    </p>
                 </div>
-                <button type="button" @click="modalPlan = false" class="text-slate-400 hover:text-white"><i class="fas fa-times"></i></button>
+                <button type="button" onclick="cerrarModalWompi()" style="background:none; border:none; color:#94a3b8; font-size:1.1rem; cursor:pointer;">✕</button>
             </div>
 
-            <form method="POST" action="{% url 'core:suscripcion_wompi_iniciar' %}" class="space-y-4 text-xs">
+            <form method="POST" action="{% url 'core:suscripcion_wompi_iniciar' %}" style="display:flex; flex-direction:column; gap:0.9rem; font-size:0.78rem;">
                 {% csrf_token %}
-                <input type="hidden" name="plan_id" :value="planSelId">
+                <input type="hidden" name="plan_id" id="planIdInput">
                 <div>
-                    <label class="block font-semibold text-slate-300 mb-1">Nombre del Negocio o Razón Social *</label>
-                    <input type="text" name="razon_social" required placeholder="Ej: Tienda La Esquina SAS"
-                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                    <label class="font-semibold text-slate-300">Nombre del Negocio o Razón Social *</label>
+                    <input type="text" name="razon_social" required placeholder="Ej: Tienda La Esquina SAS" class="fc-input">
                 </div>
                 <div>
-                    <label class="block font-semibold text-slate-300 mb-1">NIT o Cédula *</label>
-                    <input type="text" name="nit" required placeholder="Ej: 900123456"
-                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                    <label class="font-semibold text-slate-300">NIT o Cédula *</label>
+                    <input type="text" name="nit" required placeholder="Ej: 900123456" class="fc-input">
                 </div>
                 <div>
-                    <label class="block font-semibold text-slate-300 mb-1">Correo Administrador (para enviar acceso) *</label>
-                    <input type="email" name="email" required placeholder="admin@tunegocio.co"
-                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                    <label class="font-semibold text-slate-300">Correo Administrador (para enviar acceso) *</label>
+                    <input type="email" name="email" required placeholder="admin@tunegocio.co" class="fc-input">
                 </div>
-                <button type="submit" class="w-full py-3 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-black uppercase tracking-wider transition">
+                <button type="submit" class="fc-btn-purple" style="margin-top:0.4rem;">
                     Continuar a Pago Seguro Wompi
                 </button>
             </form>
         </div>
     </div>
+
+    <script>
+        function abrirModalWompi(id, nombre, precio) {
+            document.getElementById('planIdInput').value = id;
+            document.getElementById('planNombreLbl').textContent = nombre;
+            document.getElementById('planPrecioLbl').textContent = precio;
+            document.getElementById('modalWompi').classList.add('is-open');
+        }
+        function cerrarModalWompi() {
+            document.getElementById('modalWompi').classList.remove('is-open');
+        }
+    </script>
 </body>
 </html>
