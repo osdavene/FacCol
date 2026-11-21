@@ -218,12 +218,20 @@ def factura_crear(request):
                     )
 
             factura.recalcular_totales()
-            if not es_fiscal:
-                factura.saldo_pendiente = Decimal('0.00')
-                factura.save(update_fields=['saldo_pendiente'])
-            else:
+            if es_fiscal:
+                ter = factura.tercero
+                if ter.aplica_retefuente or ter.aplica_reteica:
+                    base_ret = (factura.subtotal or Decimal('0.00')) - (factura.descuento or Decimal('0.00'))
+                    retef = (base_ret * (ter.tarifa_retefuente / Decimal('100.00'))).quantize(Decimal('0.01')) if ter.aplica_retefuente else Decimal('0.00')
+                    retei = (base_ret * (ter.tarifa_reteica / Decimal('1000.00'))).quantize(Decimal('0.01')) if ter.aplica_reteica else Decimal('0.00')
+                    factura.retenciones = retef + retei
+                    factura.save(update_fields=['retenciones'])
+                    factura.recalcular_totales()
                 factura.generar_cufe()
                 registrar_asiento_venta(factura)
+            else:
+                factura.saldo_pendiente = Decimal('0.00')
+                factura.save(update_fields=['saldo_pendiente'])
 
         messages.success(
             request,
@@ -753,6 +761,14 @@ def cotizacion_convertir_factura(request, factura_id):
             )
 
         factura.recalcular_totales()
+        ter = factura.tercero
+        if ter.aplica_retefuente or ter.aplica_reteica:
+            base_ret = (factura.subtotal or Decimal('0.00')) - (factura.descuento or Decimal('0.00'))
+            retef = (base_ret * (ter.tarifa_retefuente / Decimal('100.00'))).quantize(Decimal('0.01')) if ter.aplica_retefuente else Decimal('0.00')
+            retei = (base_ret * (ter.tarifa_reteica / Decimal('1000.00'))).quantize(Decimal('0.01')) if ter.aplica_reteica else Decimal('0.00')
+            factura.retenciones = retef + retei
+            factura.save(update_fields=['retenciones'])
+            factura.recalcular_totales()
         factura.generar_cufe()
         registrar_asiento_venta(factura)
 

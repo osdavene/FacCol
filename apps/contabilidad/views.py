@@ -1,9 +1,12 @@
+import csv
 from decimal import Decimal
 from datetime import date
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.db import transaction
+from django.db.models import Sum
+from django.http import HttpResponse
 
 from apps.contabilidad.models import PlanCuenta, AsientoContable, AsientoLinea
 from apps.terceros.models import Tercero
@@ -107,3 +110,102 @@ def plan_cuentas_lista(request):
         cuentas = cuentas.filter(codigo__icontains=busqueda) | cuentas.filter(nombre__icontains=busqueda)
 
     return render(request, 'contabilidad/plan_cuentas.html', {'cuentas': cuentas, 'busqueda': busqueda})
+
+
+@login_required
+@requiere_contador
+def estados_financieros_view(request):
+    """
+    Balance de Prueba, Estado de Resultados (P&G) y Balance General NIIF PyMEs,
+    con exportación directa a CSV para Excel.
+    """
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+
+    desde = request.GET.get('desde', '').strip()
+    hasta = request.GET.get('hasta', '').strip()
+
+    lineas = AsientoLinea.objects.filter(asiento__empresa=empresa)
+    if desde:
+        lineas = lineas.filter(asiento__fecha__gte=desde)
+    if hasta:
+        lineas = lineas.filter(asiento__fecha__lte=hasta)
+
+    agregados = (
+        lineas.values('cuenta__codigo', 'cuenta__nombre', 'cuenta__naturaleza')
+        .annotate(total_deb=Sum('debito'), total_cred=Sum('credito'))
+        .order_by('cuenta__codigo')
+    )
+
+    cuentas_balance = []
+    totales = {
+        'debito': Decimal('0.00'),
+        'credito': Decimal('0.00'),
+        'activos': Decimal('0.00'),
+        'pasivos': Decimal('0.00'),
+        'patrimonio': Decimal('0.00'),
+        'ingresos': Decimal('0.00'),
+        'gastos': Decimal('0.00'),
+        'costos': Decimal('0.00'),
+    }
+
+    for row in agregados:
+        cod = row['cuenta__codigo']
+        deb = row['total_deb'] or Decimal('0.00')
+        cred = row['total_cred'] or Decimal('0.00')
+        totales['debito'] += deb
+        totales['credito'] += cred
+
+        clase = cod[0] if cod else ''
+        if clase in ('1', '5', '6', '7'):
+            saldo = deb - cred
+        else:
+            saldo = cred - deb
+
+        if clase == '1':
+            totales['activos'] += saldo
+        elif clase == '2':
+            totales['pasivos'] += saldo
+        elif clase == '3':
+            totales['patrimonio'] += saldo
+        elif clase == '4':
+            totales['ingresos'] += saldo
+        elif clase == '5':
+            totales['gastos'] += saldo
+        elif clase in ('6', '7'):
+            totales['costos'] += saldo
+
+        cuentas_balance.append({
+            'codigo': cod,
+            'nombre': row['cuenta__nombre'],
+            'debito': deb,
+            'credito': cred,
+            'saldo': saldo,
+            'clase': clase,
+        })
+
+    utilidad = totales['ingresos'] - totales['gastos'] - totales['costos']
+    totales['utilidad'] = utilidad
+    totales['pasivo_mas_patrimonio'] = totales['pasivos'] + totales['patrimonio'] + utilidad
+
+    if request.GET.get('export') == 'csv':
+        resp = HttpResponse(content_type='text/csv; charset=utf-8')
+        resp['Content-Disposition'] = f'attachment; filename="Balance_FacCol_{empresa.nit}.csv"'
+        resp.write('\ufeff')
+        writer = csv.writer(resp)
+        writer.writerow(['Código PUC', 'Cuenta', 'Débitos', 'Créditos', 'Saldo'])
+        for c in cuentas_balance:
+            writer.writerow([c['codigo'], c['nombre'], f"{c['debito']:.2f}", f"{c['credito']:.2f}", f"{c['saldo']:.2f}"])
+        writer.writerow([])
+        writer.writerow(['RESUMEN', 'Activos', f"{totales['activos']:.2f}", 'Pasivos', f"{totales['pasivos']:.2f}"])
+        writer.writerow(['RESUMEN', 'Ingresos', f"{totales['ingresos']:.2f}", 'Gastos+Costos', f"{(totales['gastos'] + totales['costos']):.2f}"])
+        writer.writerow(['RESUMEN', 'Utilidad Neta', f"{utilidad:.2f}", '', ''])
+        return resp
+
+    return render(request, 'contabilidad/estados_financieros.html', {
+        'cuentas_balance': cuentas_balance,
+        'totales': totales,
+        'desde': desde,
+        'hasta': hasta,
+    })

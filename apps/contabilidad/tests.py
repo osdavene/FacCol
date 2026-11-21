@@ -59,3 +59,13 @@ class ContabilidadViewsTests(TestCase):
         asiento = AsientoContable.objects.first()
         self.assertTrue(asiento.esta_cuadrado)
         self.assertEqual(asiento.total_debito, Decimal("10000.00"))
+
+        r_est = client.get(reverse("contabilidad:estados_financieros"))
+        self.assertEqual(r_est.status_code, 200)
+        self.assertContains(r_est, "SUMAS IGUALES BALANCE DE PRUEBA")
+        self.assertContains(r_est, "10.000")
+
+        r_csv = client.get(reverse("contabilidad:estados_financieros") + "?export=csv")
+        self.assertEqual(r_csv.status_code, 200)
+        self.assertIn("text/csv", r_csv["Content-Type"])
+        self.assertIn(b"110505", r_csv.content)

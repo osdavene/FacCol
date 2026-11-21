@@ -6,6 +6,9 @@ from decimal import Decimal
 
 DIAN_QR_PROD = "https://catalogo-vpfe.dian.gov.co/document/searchqr?documentkey="
 DIAN_QR_HAB = "https://catalogo-vpfe-hab.dian.gov.co/document/searchqr?documentkey="
+UVT_VIGENTE_COP = Decimal("49799.00")
+TOPE_DEE_POS_UVT = Decimal("5")
+TOPE_DEE_POS_COP = UVT_VIGENTE_COP * TOPE_DEE_POS_UVT
 
 
 def _fmt_dec(val):
@@ -108,11 +111,16 @@ def generar_xml_ubl(factura):
     """
     empresa = factura.empresa
     tercero = factura.tercero
-    ns_invoice = "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+    es_nc = factura.tipo_documento == "NOTA_CREDITO"
+    ns_root = (
+        "urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2"
+        if es_nc
+        else "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+    )
     ns_cac = "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
     ns_cbc = "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
 
-    ET.register_namespace("", ns_invoice)
+    ET.register_namespace("", ns_root)
     ET.register_namespace("cac", ns_cac)
     ET.register_namespace("cbc", ns_cbc)
 
@@ -124,13 +132,13 @@ def generar_xml_ubl(factura):
     def cac(tag):
         return ET.Element(f"{{{ns_cac}}}{tag}")
 
-    root = ET.Element(f"{{{ns_invoice}}}Invoice")
+    root = ET.Element(f"{{{ns_root}}}{'CreditNote' if es_nc else 'Invoice'}")
     tipo_amb = "1" if empresa.modo_dian == "PRODUCCION" else "2"
     if factura.tipo_documento == "POS_ELECTRONICO":
         type_code = "20"
         profile_id = "DIAN 2.1: Documento Equivalente POS"
         scheme_name = "CUDE-SHA384"
-    elif factura.tipo_documento == "NOTA_CREDITO":
+    elif es_nc:
         type_code = "91"
         profile_id = "DIAN 2.1: Nota Crédito de Factura Electrónica"
         scheme_name = "CUDE-SHA384"
@@ -140,7 +148,7 @@ def generar_xml_ubl(factura):
         scheme_name = "CUFE-SHA384"
 
     root.append(cbc("UBLVersionID", "UBL 2.1"))
-    root.append(cbc("CustomizationID", "10"))
+    root.append(cbc("CustomizationID", "20" if es_nc else "10"))
     root.append(cbc("ProfileID", profile_id))
     root.append(cbc("ProfileExecutionID", tipo_amb))
     root.append(cbc("ID", factura.numero_completo))
@@ -148,10 +156,18 @@ def generar_xml_ubl(factura):
     root.append(cbc("IssueDate", factura.fecha_emision.strftime("%Y-%m-%d")))
     hora_dt = factura.created_at or datetime.now()
     root.append(cbc("IssueTime", hora_dt.strftime("%H:%M:%S-05:00")))
-    root.append(cbc("InvoiceTypeCode", type_code))
+    root.append(cbc("CreditNoteTypeCode" if es_nc else "InvoiceTypeCode", type_code))
     root.append(cbc("DocumentCurrencyCode", "COP"))
 
-    if factura.tipo_documento == "NOTA_CREDITO" and factura.factura_referencia:
+    if es_nc:
+        disc = cac("DiscrepancyResponse")
+        if factura.factura_referencia:
+            disc.append(cbc("ReferenceID", factura.factura_referencia.numero_completo))
+        disc.append(cbc("ResponseCode", "2"))
+        disc.append(cbc("Description", factura.observaciones or "Anulación de factura electrónica"))
+        root.append(disc)
+
+    if es_nc and factura.factura_referencia:
         bref = cac("BillingReference")
         inv_ref = cac("InvoiceDocumentReference")
         inv_ref.append(cbc("ID", factura.factura_referencia.numero_completo))
@@ -222,9 +238,9 @@ def generar_xml_ubl(factura):
 
     # Líneas
     for idx, it in enumerate(factura.items.all(), 1):
-        line = cac("InvoiceLine")
+        line = cac("CreditNoteLine" if es_nc else "InvoiceLine")
         line.append(cbc("ID", idx))
-        line.append(cbc("InvoicedQuantity", f"{it.cantidad:.3f}", unitCode="94"))
+        line.append(cbc("CreditedQuantity" if es_nc else "InvoicedQuantity", f"{it.cantidad:.3f}", unitCode="94"))
         line.append(cbc("LineExtensionAmount", _fmt_dec(it.subtotal - it.descuento), currencyID="COP"))
         item_el = cac("Item")
         item_el.append(cbc("Description", it.descripcion))

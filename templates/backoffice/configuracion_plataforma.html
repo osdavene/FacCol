@@ -190,5 +190,39 @@
         </form>
     </div>
 
+    <!-- Sección 3: Clave Gemini API (FacCol IA) -->
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 sm:p-8 shadow-xl space-y-5 text-xs">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#1e2d47] pb-4">
+            <div>
+                <h2 class="text-sm font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-2">
+                    <i class="fas fa-wand-magic-sparkles"></i>
+                    <span>3. Motor Inteligente FacCol IA (Gemini API Cifrada)</span>
+                </h2>
+                <p class="text-[11px] text-slate-400 mt-0.5">Guarda aquí la clave de Gemini cifrada en base de datos sin exponerla en archivos `.env`.</p>
+            </div>
+            <span class="px-3 py-1 rounded-full text-[10px] font-black uppercase {% if masked_gemini %}bg-emerald-500/15 text-emerald-400 border border-emerald-500/30{% else %}bg-slate-700 text-slate-300{% endif %}">
+                {% if masked_gemini %}Activa ({{ masked_gemini }}){% else %}Modo Analítico Local{% endif %}
+            </span>
+        </div>
+
+        <form method="POST" class="space-y-4">
+            {% csrf_token %}
+            <input type="hidden" name="seccion" value="ia">
+            <div>
+                <label class="block font-semibold text-slate-300 mb-1">Gemini API Key</label>
+                <input type="password" name="gemini_api_key" value="" placeholder="AIza... (dejar vacío para conservar actual)"
+                       class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                <label class="inline-flex items-center gap-1.5 text-[10px] text-rose-400 mt-1 cursor-pointer">
+                    <input type="checkbox" name="clear_gemini_api_key" class="rounded"> Limpiar clave Gemini
+                </label>
+            </div>
+            <div class="flex justify-end">
+                <button type="submit" class="px-5 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black uppercase tracking-wider transition">
+                    Guardar Clave IA Cifrada
+                </button>
+            </div>
+        </form>
+    </div>
+
 </div>
 {% endblock %}

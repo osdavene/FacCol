@@ -1,0 +1,71 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Mi Plan y Suscripción FacCol{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto space-y-6">
+    <div>
+        <h1 class="font-display font-extrabold text-2xl text-white">Mi Plan SaaS — {{ empresa.display_name }}</h1>
+        <p class="text-xs text-slate-400">Consulta tu consumo mensual y renueva o actualiza tu plan pagando directo a la plataforma FacCol.</p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+        <div class="bg-[#111827] border border-amber-500/30 rounded-2xl p-5">
+            <div class="text-[10px] font-bold uppercase text-amber-400">Plan Actual</div>
+            <div class="font-display font-black text-xl text-white mt-1">{{ empresa.plan.nombre|default:"Plan Personalizado" }}</div>
+            <div class="text-slate-400 mt-1">${{ empresa.plan.precio_mensual|default:0|floatformat:0|intcomma }} COP / mes</div>
+        </div>
+
+        <div class="bg-[#111827] border border-[#1e2d47] rounded-2xl p-5 space-y-2">
+            <div class="flex justify-between items-center">
+                <span class="text-[10px] font-bold uppercase text-slate-400">Documentos DIAN Mes Actual</span>
+                <span class="font-bold text-white">{{ docs_mes }} / {% if limite_docs == 0 %}∞{% else %}{{ limite_docs }}{% endif %}</span>
+            </div>
+            {% if limite_docs > 0 %}
+            <div class="w-full h-2 rounded-full bg-[#162034] overflow-hidden">
+                <div class="h-full bg-amber-500" style="width: {{ porcentaje_docs }}%;"></div>
+            </div>
+            {% else %}
+            <div class="text-emerald-400 font-bold">Emisión ilimitada incluida</div>
+            {% endif %}
+        </div>
+
+        <div class="bg-[#111827] border border-[#1e2d47] rounded-2xl p-5">
+            <div class="text-[10px] font-bold uppercase text-slate-400">Usuarios Activos</div>
+            <div class="font-display font-black text-xl text-white mt-1">
+                {{ usuarios_activos }} / {% if not empresa.plan or empresa.plan.limite_usuarios == 0 %}∞{% else %}{{ empresa.plan.limite_usuarios }}{% endif %}
+            </div>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+        {% for p in planes %}
+        <div class="bg-[#111827] border {% if empresa.plan_id == p.id %}border-amber-500/60{% else %}border-[#1e2d47]{% endif %} rounded-3xl p-6 flex flex-col justify-between space-y-4 text-xs">
+            <div class="space-y-2">
+                <div class="flex items-center justify-between">
+                    <h3 class="font-display font-bold text-lg text-white">{{ p.nombre }}</h3>
+                    {% if empresa.plan_id == p.id %}
+                    <span class="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-bold text-[10px]">Activo</span>
+                    {% endif %}
+                </div>
+                <div class="font-black text-2xl text-amber-400">${{ p.precio_mensual|floatformat:0|intcomma }} <span class="text-xs text-slate-400 font-normal">COP/mes</span></div>
+                <p class="text-slate-400">{{ p.descripcion }}</p>
+            </div>
+            {% if p.precio_mensual > 0 and wompi_platform.enabled %}
+            <form method="POST" action="{% url 'core:suscripcion_wompi_iniciar' %}">
+                {% csrf_token %}
+                <input type="hidden" name="plan_id" value="{{ p.id }}">
+                <input type="hidden" name="razon_social" value="{{ empresa.razon_social }}">
+                <input type="hidden" name="nit" value="{{ empresa.nit }}">
+                <input type="hidden" name="email" value="{{ empresa.email|default:user.email }}">
+                <button type="submit" class="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-black uppercase tracking-wider transition">
+                    {% if empresa.plan_id == p.id %}Renovar con Wompi{% else %}Cambiar a este Plan{% endif %}
+                </button>
+            </form>
+            {% endif %}
+        </div>
+        {% endfor %}
+    </div>
+</div>
+{% endblock %}

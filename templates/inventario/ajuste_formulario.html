@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+
+{% block title %}Ajuste de Inventario (Kardex){% endblock %}
+
+{% block content %}
+<div class="max-w-lg mx-auto space-y-6">
+    <div class="flex items-center gap-3">
+        <a href="{% url 'inventario:kardex' %}" class="p-2.5 rounded-xl bg-[#162034] text-slate-400 hover:text-white"><i class="fas fa-arrow-left"></i></a>
+        <div>
+            <h1 class="font-display font-extrabold text-2xl text-white">Ajuste Manual de Kardex</h1>
+            <p class="text-xs text-slate-400">Registra mermas, roturas, vencimientos o conteos físicos</p>
+        </div>
+    </div>
+
+    <form method="POST" class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 space-y-4 text-xs shadow-xl">
+        {% csrf_token %}
+        <div>
+            <label class="block font-semibold text-slate-300 mb-1">Producto *</label>
+            <select name="producto" required class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                {% for p in productos %}
+                <option value="{{ p.id }}">[{{ p.codigo }}] {{ p.nombre }} (Stock actual: {{ p.stock_actual }})</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="grid grid-cols-2 gap-4">
+            <div>
+                <label class="block font-semibold text-slate-300 mb-1">Tipo de Movimiento</label>
+                <select name="tipo" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                    <option value="ENTRADA">Entrada / Sobrante (+)</option>
+                    <option value="SALIDA">Salida / Merma / Rotura (-)</option>
+                </select>
+            </div>
+            <div>
+                <label class="block font-semibold text-slate-300 mb-1">Cantidad *</label>
+                <input type="number" step="0.01" min="0.01" name="cantidad" required
+                       class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+            </div>
+        </div>
+        <div>
+            <label class="block font-semibold text-slate-300 mb-1">Motivo / Justificación *</label>
+            <input type="text" name="motivo" required placeholder="Ej: Conteo físico inventario semanal / Producto vencido"
+                   class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+        </div>
+        <button type="submit" class="w-full py-3 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black uppercase tracking-wider">
+            Aplicar Ajuste en Kardex
+        </button>
+    </form>
+</div>
+{% endblock %}

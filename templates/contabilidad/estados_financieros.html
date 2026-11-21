@@ -1,0 +1,89 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Estados Financieros NIIF{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+            <h1 class="font-display font-extrabold text-2xl text-white">Balance de Prueba y Estados Financieros</h1>
+            <p class="text-xs text-slate-400">Estado de Resultados (P&amp;G), Balance General NIIF PyMEs y exportación contable</p>
+        </div>
+        <a href="?desde={{ desde }}&hasta={{ hasta }}&export=csv"
+           class="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs uppercase tracking-wider flex items-center gap-2">
+            <i class="fas fa-file-csv"></i> Exportar CSV / Excel
+        </a>
+    </div>
+
+    <form method="GET" class="bg-[#111827] border border-[#1e2d47] rounded-2xl p-4 flex flex-wrap items-end gap-3 text-xs">
+        <div>
+            <label class="block text-slate-400 mb-1">Desde</label>
+            <input type="date" name="desde" value="{{ desde }}" class="bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+        </div>
+        <div>
+            <label class="block text-slate-400 mb-1">Hasta</label>
+            <input type="date" name="hasta" value="{{ hasta }}" class="bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+        </div>
+        <button type="submit" class="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold">Filtrar Período</button>
+    </form>
+
+    <!-- Resumen Balance General y P&G -->
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div class="bg-[#111827] border border-emerald-500/20 rounded-2xl p-4">
+            <div class="text-[10px] font-bold uppercase text-slate-400">Activos (Clase 1)</div>
+            <div class="text-xl font-black text-emerald-400 mt-1">${{ totales.activos|floatformat:0|intcomma }}</div>
+        </div>
+        <div class="bg-[#111827] border border-rose-500/20 rounded-2xl p-4">
+            <div class="text-[10px] font-bold uppercase text-slate-400">Pasivos (Clase 2)</div>
+            <div class="text-xl font-black text-rose-400 mt-1">${{ totales.pasivos|floatformat:0|intcomma }}</div>
+        </div>
+        <div class="bg-[#111827] border border-amber-500/20 rounded-2xl p-4">
+            <div class="text-[10px] font-bold uppercase text-slate-400">Ingresos (Clase 4)</div>
+            <div class="text-xl font-black text-amber-400 mt-1">${{ totales.ingresos|floatformat:0|intcomma }}</div>
+        </div>
+        <div class="bg-[#111827] border border-cyan-500/20 rounded-2xl p-4">
+            <div class="text-[10px] font-bold uppercase text-slate-400">Utilidad Neta P&amp;G</div>
+            <div class="text-xl font-black text-cyan-400 mt-1">${{ totales.utilidad|floatformat:0|intcomma }}</div>
+        </div>
+    </div>
+
+    <!-- Tabla Balance de Prueba -->
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl overflow-hidden shadow-xl">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+                <thead>
+                    <tr class="bg-[#141c2e] text-slate-400 font-bold uppercase tracking-wider text-[10px] border-b border-[#1e2d47]">
+                        <th class="p-4">Código PUC</th>
+                        <th class="p-4">Nombre de Cuenta</th>
+                        <th class="p-4 text-right">Débitos</th>
+                        <th class="p-4 text-right">Créditos</th>
+                        <th class="p-4 text-right">Saldo</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-[#1e2d47]/50">
+                    {% for c in cuentas_balance %}
+                    <tr class="hover:bg-[#162034] transition">
+                        <td class="p-4 font-mono font-bold text-amber-400">{{ c.codigo }}</td>
+                        <td class="p-4 text-white font-semibold">{{ c.nombre }}</td>
+                        <td class="p-4 text-right text-slate-300">${{ c.debito|floatformat:0|intcomma }}</td>
+                        <td class="p-4 text-right text-slate-300">${{ c.credito|floatformat:0|intcomma }}</td>
+                        <td class="p-4 text-right font-black text-white">${{ c.saldo|floatformat:0|intcomma }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="5" class="p-8 text-center text-slate-500">No hay movimientos contables registrados en el rango seleccionado.</td></tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot>
+                    <tr class="bg-[#141c2e] font-black text-white border-t border-[#1e2d47]">
+                        <td colspan="2" class="p-4">SUMAS IGUALES BALANCE DE PRUEBA</td>
+                        <td class="p-4 text-right text-emerald-400">${{ totales.debito|floatformat:0|intcomma }}</td>
+                        <td class="p-4 text-right text-emerald-400">${{ totales.credito|floatformat:0|intcomma }}</td>
+                        <td class="p-4 text-right text-amber-400">Patr.+Util: ${{ totales.pasivo_mas_patrimonio|floatformat:0|intcomma }}</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

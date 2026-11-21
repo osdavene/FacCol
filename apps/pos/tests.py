@@ -166,3 +166,38 @@ class TiendaBarrioPosYDianTests(TestCase):
             content_type="application/json",
         )
         self.assertEqual(r3.status_code, 403)
+
+    def test_pos_bloquea_dee_pos_mayor_a_5_uvt_y_dashboard_incluye_pos(self):
+        client = Client()
+        client.force_login(self.cajero)
+
+        # Venta POS válida ($8,000 fiado + contado) debe reflejarse en métricas del Dashboard
+        r_venta = client.post(
+            reverse("pos:pos_procesar_venta"),
+            data=json.dumps({
+                "tercero_id": self.vecino.id,
+                "tipo_documento": "POS_ELECTRONICO",
+                "metodo_pago": "FIADO",
+                "items": [{"producto_id": self.queso.id, "cantidad": 1, "precio": 8000}],
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(r_venta.status_code, 200)
+        r_dash = client.get(reverse("core:dashboard"))
+        self.assertEqual(r_dash.status_code, 200)
+        self.assertEqual(r_dash.context["ventas_mes"], Decimal("8000.00"))
+        self.assertEqual(r_dash.context["cartera_pendiente"], Decimal("8000.00"))
+
+        # Venta POS_ELECTRONICO superior a 5 UVT (~$250,000 COP) debe exigir Factura Electrónica
+        r_tope = client.post(
+            reverse("pos:pos_procesar_venta"),
+            data=json.dumps({
+                "tercero_id": self.vecino.id,
+                "tipo_documento": "POS_ELECTRONICO",
+                "metodo_pago": "EFECTIVO",
+                "items": [{"producto_id": self.queso.id, "cantidad": 40, "precio": 8000}],
+            }),
+            content_type="application/json",
+        )
+        self.assertEqual(r_tope.status_code, 400)
+        self.assertIn("5 UVT", r_tope.json()["error"])

@@ -41,11 +41,23 @@
             </div>
         </div>
 
+        <div class="grid grid-cols-2 gap-4 text-xs">
+            <div>
+                <label class="block font-semibold text-slate-300 mb-1">SMMLV Vigente ($)</label>
+                <input type="number" step="0.01" name="smmlv" value="1423500" required
+                       class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-500">
+            </div>
+            <div>
+                <label class="block font-semibold text-slate-300 mb-1">Auxilio Transporte ($)</label>
+                <input type="number" step="0.01" name="auxilio_transporte" value="202050" required
+                       class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-500">
+            </div>
+        </div>
+
         <div class="p-3.5 rounded-2xl bg-[#162034] border border-[#1e2d47] text-[11px] text-slate-400 space-y-1">
-            <div class="font-bold text-white mb-1">Parámetros Legales Vigentes (Colombia):</div>
-            <div>• SMMLV: <b>$1.423.500 COP</b></div>
-            <div>• Auxilio Transporte: <b>$202.050 COP</b></div>
-            <div>• Deducción Salud y Pensión: <b>4% cada una</b></div>
+            <div class="font-bold text-white mb-1">Parámetros Automáticos Aplicados:</div>
+            <div>• Salud y Pensión Trabajador: <b>4% cada una</b></div>
+            <div>• Fondo Solidaridad Pensional: <b>1% si devenga ≥ 4 SMMLV</b></div>
         </div>
 
         <button type="submit"

@@ -12,7 +12,7 @@ from apps.pos.models import Caja, CajaTurno, MovimientoCaja
 from apps.inventario.models import Producto, MovimientoInventario
 from apps.terceros.models import Tercero
 from apps.facturacion.models import Factura, FacturaItem, ReciboCaja
-from apps.facturacion.dian_service import desglosar_impuestos_item
+from apps.facturacion.dian_service import TOPE_DEE_POS_COP, desglosar_impuestos_item
 from apps.contabilidad.services import registrar_asiento_venta
 from apps.usuarios.decorators import requiere_facturacion
 
@@ -158,6 +158,15 @@ def pos_procesar_venta(request):
                     )
 
             factura.recalcular_totales()
+            if tipo_documento == 'POS_ELECTRONICO' and factura.total > TOPE_DEE_POS_COP:
+                transaction.set_rollback(True)
+                return JsonResponse({
+                    'error': (
+                        f"El monto (${factura.total:,.0f} COP) supera el tope legal DIAN de 5 UVT "
+                        f"(${TOPE_DEE_POS_COP:,.0f} COP) para Tiquete POS Electrónico. "
+                        "Selecciona tipo 'Factura Electrónica' y los datos del cliente."
+                    )
+                }, status=400)
             factura.generar_cufe()
             registrar_asiento_venta(factura, metodo_pago_real=metodo_pago)
 

@@ -1,3 +1,4 @@
+import calendar
 from decimal import Decimal
 from datetime import date
 from django.shortcuts import render, redirect, get_object_or_404
@@ -99,8 +100,9 @@ def nomina_liquidar(request):
             '5': Decimal('0.06960'),
         }
 
-        smmlv = Decimal('1423500.00')
-        aux_trans = Decimal('202050.00')
+        smmlv = Decimal(request.POST.get('smmlv', '1423500.00') or '1423500.00')
+        aux_trans = Decimal(request.POST.get('auxilio_transporte', '202050.00') or '202050.00')
+        ultimo_dia = calendar.monthrange(ano, mes)[1]
 
         with transaction.atomic():
             nomina, _ = Nomina.objects.update_or_create(
@@ -109,7 +111,7 @@ def nomina_liquidar(request):
                 periodo_ano=ano,
                 defaults={
                     'fecha_inicio': date(ano, mes, 1),
-                    'fecha_fin': date(ano, mes, 28),
+                    'fecha_fin': date(ano, mes, ultimo_dia),
                     'smmlv': smmlv,
                     'auxilio_transporte_legal': aux_trans,
                     'estado': 'LIQUIDADA',
@@ -138,7 +140,9 @@ def nomina_liquidar(request):
                 ibc = salario_mes
                 salud_4 = (ibc * Decimal('0.04')).quantize(Decimal('0.01'))
                 pension_4 = (ibc * Decimal('0.04')).quantize(Decimal('0.01'))
-                deducciones = salud_4 + pension_4
+                # Fondo de Solidaridad Pensional (1% obligatorio si salario >= 4 SMMLV)
+                fsp_1 = (ibc * Decimal('0.01')).quantize(Decimal('0.01')) if ibc >= (smmlv * Decimal(4)) else Decimal('0.00')
+                deducciones = salud_4 + pension_4 + fsp_1
                 neto = devengado - deducciones
 
                 # Aportes empleador
@@ -164,6 +168,7 @@ def nomina_liquidar(request):
                     total_devengado=devengado,
                     salud_empleado_4=salud_4,
                     pension_empleado_4=pension_4,
+                    otras_deducciones=fsp_1,
                     total_deducciones=deducciones,
                     neto_a_pagar=neto,
                     salud_empleador_8_5=salud_8_5,

@@ -65,6 +65,17 @@ def registrar_asiento_venta(factura, metodo_pago_real="EFECTIVO"):
             credito=Decimal("0.00"),
         )
 
+        if (factura.retenciones or Decimal("0.00")) > Decimal("0.00"):
+            cta_ret = _asegurar_cuenta(empresa, "135515", "Anticipo Retención en la Fuente / ICA", "DEBITO")
+            AsientoLinea.objects.create(
+                asiento=asiento,
+                cuenta=cta_ret,
+                tercero=factura.tercero,
+                descripcion=f"Retenciones aplicadas {factura.numero_completo}",
+                debito=factura.retenciones,
+                credito=Decimal("0.00"),
+            )
+
         base_neta = (factura.subtotal or Decimal("0.00")) - (factura.descuento or Decimal("0.00"))
         if base_neta > 0:
             AsientoLinea.objects.create(
@@ -249,4 +260,42 @@ def registrar_asiento_nomina(nomina):
                 asiento=asiento, cuenta=cta_por_pagar, descripcion=f"Neto salarios por pagar {ref}",
                 debito=Decimal("0.00"), credito=nomina.total_neto
             )
+        return asiento
+
+
+def registrar_asiento_compra(compra):
+    """
+    Genera asiento contable automático al registrar una Compra a Proveedor / Documento Soporte.
+    """
+    empresa = compra.empresa
+    if not empresa.tiene_modulo("contabilidad") or compra.total <= 0:
+        return None
+
+    ref = compra.numero_completo
+    if AsientoContable.objects.filter(empresa=empresa, referencia_origen=ref, tipo="COMPRA").exists():
+        return None
+
+    with transaction.atomic():
+        cta_inv = _asegurar_cuenta(empresa, "143505", "Mercancías No Fabricadas por la Empresa", "DEBITO")
+        if compra.metodo_pago == "CREDITO":
+            cta_contra = _asegurar_cuenta(empresa, "220505", "Proveedores Nacionales", "CREDITO")
+        else:
+            cta_contra = _asegurar_cuenta(empresa, "110505", "Caja General", "DEBITO")
+
+        asiento = AsientoContable.objects.create(
+            empresa=empresa,
+            numero_comprobante=f"CP-{ref}",
+            fecha=compra.fecha,
+            tipo="COMPRA",
+            concepto=f"Ingreso por compra {ref} ({compra.proveedor.razon_social})",
+            referencia_origen=ref,
+        )
+        AsientoLinea.objects.create(
+            asiento=asiento, cuenta=cta_inv, tercero=compra.proveedor,
+            descripcion=f"Entrada inventario {ref}", debito=compra.total, credito=Decimal("0.00")
+        )
+        AsientoLinea.objects.create(
+            asiento=asiento, cuenta=cta_contra, tercero=compra.proveedor,
+            descripcion=f"Obligación / pago compra {ref}", debito=Decimal("0.00"), credito=compra.total
+        )
         return asiento

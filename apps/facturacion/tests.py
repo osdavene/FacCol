@@ -178,10 +178,11 @@ class FacturacionEmisionTests(TestCase):
         asiento_nc = AsientoContable.objects.get(empresa=self.empresa, numero_comprobante="NC-1")
         self.assertTrue(asiento_nc.esta_cuadrado)
 
-        # XML UBL de la Nota Crédito debe indicar código 91
+        # XML UBL de la Nota Crédito debe usar raíz CreditNote y código 91 DIAN 2.1
         xml_resp = client.get(reverse("facturacion:factura_xml", args=[nc.id]))
         self.assertEqual(xml_resp.status_code, 200)
-        self.assertIn(b"<cbc:InvoiceTypeCode>91</cbc:InvoiceTypeCode>", xml_resp.content)
+        self.assertIn(b"<cbc:CreditNoteTypeCode>91</cbc:CreditNoteTypeCode>", xml_resp.content)
+        self.assertIn(b"<cac:DiscrepancyResponse>", xml_resp.content)
 
     def test_recibo_caja_y_pos_generan_asiento_contable(self):
         caja = Caja.objects.create(empresa=self.empresa, nombre="Caja Principal")
@@ -342,6 +343,32 @@ class FacturacionEmisionTests(TestCase):
         fac.refresh_from_db()
         self.assertEqual(fac.estado_dian, "ENVIADA")
         self.assertTrue(fac.dian_track_id.startswith("DIAN-HAB-"))
+
+    def test_retenciones_automaticas_tercero_y_asiento_contable(self):
+        cliente_ret = Tercero.objects.create(
+            empresa=self.empresa, numero_documento="901777888", razon_social="Cliente Retenedor SAS",
+            es_cliente=True, aplica_retefuente=True, tarifa_retefuente=Decimal("2.50"),
+        )
+        client = Client()
+        client.force_login(self.vendedor)
+
+        r = client.post(reverse("facturacion:factura_crear"), {
+            "tercero": str(cliente_ret.id),
+            "tipo_documento": "FACTURA",
+            "metodo_pago": "CREDITO",
+            "item_producto[]": [str(self.prod.id)],
+            "item_cantidad[]": ["10"],
+            "item_precio[]": ["10000"],
+        }, follow=True)
+        self.assertEqual(r.status_code, 200)
+        fac = Factura.objects.get(empresa=self.empresa, tercero=cliente_ret)
+        self.assertEqual(fac.subtotal, Decimal("100000.00"))
+        self.assertEqual(fac.retenciones, Decimal("2500.00"))
+        self.assertEqual(fac.total, Decimal("97500.00"))
+
+        asiento = AsientoContable.objects.get(empresa=self.empresa, referencia_origen=fac.numero_completo)
+        self.assertTrue(asiento.esta_cuadrado)
+        self.assertEqual(asiento.total_debito, Decimal("100000.00"))
 
 
 

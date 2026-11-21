@@ -1,10 +1,18 @@
+from decimal import Decimal
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.db.models import Q
+from django.views.decorators.http import require_POST
 
 from apps.terceros.models import Tercero
 from apps.empresas.models import Departamento, Municipio
+
+
+def _tiene_permiso_terceros(user, empresa):
+    return bool(
+        empresa and (user.es_admin(empresa) or user.puede_facturar(empresa) or user.puede_contabilidad(empresa))
+    )
 
 
 @login_required
@@ -47,7 +55,8 @@ def tercero_crear(request):
         messages.warning(request, "Acceso restringido: El SuperAdmin administra la plataforma SaaS y no crea clientes de inquilinos.")
         return redirect('core:dashboard')
     empresa = request.empresa_activa
-    if not empresa:
+    if not empresa or not _tiene_permiso_terceros(request.user, empresa):
+        messages.warning(request, "No tienes permisos para crear o editar terceros.")
         return redirect('core:dashboard')
 
     departamentos = Departamento.objects.all()
@@ -86,6 +95,10 @@ def tercero_crear(request):
             email=request.POST.get('email', '').strip(),
             regimen=request.POST.get('regimen', 'NO_RESPONSABLE_IVA'),
             responsabilidades_fiscales=request.POST.get('responsabilidades_fiscales', '').strip(),
+            aplica_retefuente='aplica_retefuente' in request.POST,
+            tarifa_retefuente=Decimal(request.POST.get('tarifa_retefuente', '0') or '0'),
+            aplica_reteica='aplica_reteica' in request.POST,
+            tarifa_reteica=Decimal(request.POST.get('tarifa_reteica', '0') or '0'),
             observaciones=request.POST.get('observaciones', '').strip(),
         )
 
@@ -100,7 +113,8 @@ def tercero_editar(request, tercero_id):
     if request.user.es_superadmin_user():
         return redirect('core:dashboard')
     empresa = request.empresa_activa
-    if not empresa:
+    if not empresa or not _tiene_permiso_terceros(request.user, empresa):
+        messages.warning(request, "No tienes permisos para editar terceros.")
         return redirect('core:dashboard')
     tercero = get_object_or_404(Tercero, id=tercero_id, empresa=empresa)
     departamentos = Departamento.objects.all()
@@ -126,6 +140,10 @@ def tercero_editar(request, tercero_id):
         tercero.email = request.POST.get('email', '').strip()
         tercero.regimen = request.POST.get('regimen', tercero.regimen)
         tercero.responsabilidades_fiscales = request.POST.get('responsabilidades_fiscales', '').strip()
+        tercero.aplica_retefuente = 'aplica_retefuente' in request.POST
+        tercero.tarifa_retefuente = Decimal(request.POST.get('tarifa_retefuente', '0') or '0')
+        tercero.aplica_reteica = 'aplica_reteica' in request.POST
+        tercero.tarifa_reteica = Decimal(request.POST.get('tarifa_reteica', '0') or '0')
         tercero.observaciones = request.POST.get('observaciones', '').strip()
 
         tercero.save()
@@ -157,11 +175,13 @@ def tercero_detalle(request, tercero_id):
 
 
 @login_required
+@require_POST
 def tercero_eliminar(request, tercero_id):
     if request.user.es_superadmin_user():
         return redirect('core:dashboard')
     empresa = request.empresa_activa
-    if not empresa:
+    if not empresa or not _tiene_permiso_terceros(request.user, empresa):
+        messages.warning(request, "No tienes permisos para eliminar terceros.")
         return redirect('core:dashboard')
     tercero = get_object_or_404(Tercero, id=tercero_id, empresa=empresa)
     tercero.activo = False

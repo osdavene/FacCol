@@ -244,17 +244,17 @@ def dashboard(request):
     hoy = date.today()
     primer_dia_mes = hoy.replace(day=1)
 
-    # Ventas del mes
+    # Ventas del mes (Facturas y DEE POS)
     ventas_mes = Factura.objects.filter(
         empresa=empresa,
-        tipo_documento='FACTURA',
+        tipo_documento__in=('FACTURA', 'POS_ELECTRONICO'),
         fecha_emision__gte=primer_dia_mes
     ).exclude(estado='ANULADA').aggregate(total=Sum('total'))['total'] or Decimal('0.00')
 
-    # Facturas pendientes / Cartera por cobrar
+    # Facturas y Fiados pendientes / Cartera por cobrar
     cartera_pendiente = Factura.objects.filter(
         empresa=empresa,
-        tipo_documento='FACTURA',
+        tipo_documento__in=('FACTURA', 'POS_ELECTRONICO'),
         saldo_pendiente__gt=Decimal('0.00')
     ).exclude(estado='ANULADA').aggregate(total=Sum('saldo_pendiente'))['total'] or Decimal('0.00')
 
@@ -276,10 +276,10 @@ def dashboard(request):
         activo=True
     )[:6]
 
-    # Últimas 6 facturas emitidas
+    # Últimos 6 documentos fiscales emitidos
     ultimas_facturas = Factura.objects.filter(
         empresa=empresa,
-        tipo_documento='FACTURA'
+        tipo_documento__in=('FACTURA', 'POS_ELECTRONICO')
     ).select_related('tercero').order_by('-fecha_emision', '-consecutivo')[:6]
 
     # Métricas adicionales según rol
@@ -411,3 +411,31 @@ def busqueda_global(request):
         })
 
     return JsonResponse({'resultados': resultados})
+
+
+@login_required
+@requiere_admin
+def mi_plan_view(request):
+    """Panel para que el administrador de empresa consulte consumo mensual y renueve/mejore su plan vía Wompi Plataforma."""
+    if request.user.es_superadmin_user():
+        return redirect('backoffice:planes_lista')
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+
+    planes = Plan.objects.filter(activo=True).prefetch_related('modulos').order_by('precio_mensual')
+    wompi_platform = get_platform_wompi_config()
+    docs_mes = empresa.documentos_mes_actual()
+    limite_docs = empresa.plan.limite_facturas_mes if empresa.plan else 0
+    porcentaje_docs = min(100, int((docs_mes / limite_docs) * 100)) if limite_docs else 0
+    usuarios_activos = empresa.usuarios_asignados.filter(activo=True).count()
+
+    return render(request, 'core/mi_plan.html', {
+        'empresa': empresa,
+        'planes': planes,
+        'wompi_platform': wompi_platform,
+        'docs_mes': docs_mes,
+        'limite_docs': limite_docs,
+        'porcentaje_docs': porcentaje_docs,
+        'usuarios_activos': usuarios_activos,
+    })

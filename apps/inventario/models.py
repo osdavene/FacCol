@@ -126,3 +126,53 @@ class MovimientoInventario(EmpresaTenantModel):
 
     def __str__(self):
         return f"{self.tipo} - {self.producto.nombre} ({self.cantidad})"
+
+
+class CompraProveedor(EmpresaTenantModel):
+    """
+    Registro de Compras a Proveedores y Documento Soporte Electrónico DIAN (Resolución 000167)
+    para adquisiciones a sujetos no obligados a facturar, con ingreso automático de inventario.
+    """
+    METODO_PAGO_CHOICES = [
+        ('CONTADO', 'Contado'),
+        ('CREDITO', 'Crédito (Cuentas por Pagar)'),
+    ]
+
+    consecutivo = models.BigIntegerField(verbose_name="Consecutivo Interno / DSE")
+    proveedor = models.ForeignKey('terceros.Tercero', on_delete=models.PROTECT, related_name='compras')
+    numero_factura_proveedor = models.CharField(max_length=80, blank=True, verbose_name="No. Factura Proveedor")
+    fecha = models.DateField(verbose_name="Fecha de Compra")
+    metodo_pago = models.CharField(max_length=20, choices=METODO_PAGO_CHOICES, default='CONTADO')
+    es_documento_soporte = models.BooleanField(default=False, verbose_name="Emitir Documento Soporte DIAN (DSE)")
+    cuds = models.CharField(max_length=255, blank=True, verbose_name="CUDS Documento Soporte")
+    estado_dian = models.CharField(max_length=25, default='NO_APLICA')
+    total = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal('0.00'))
+    observaciones = models.TextField(blank=True)
+
+    class Meta:
+        verbose_name = "Compra a Proveedor / DSE"
+        verbose_name_plural = "Compras a Proveedores / DSE"
+        ordering = ['-fecha', '-consecutivo']
+        unique_together = ('empresa', 'consecutivo')
+
+    @property
+    def numero_completo(self):
+        return f"DSE{self.consecutivo}" if self.es_documento_soporte else f"OC{self.consecutivo}"
+
+    def __str__(self):
+        return f"{self.numero_completo} - {self.proveedor.razon_social} (${self.total})"
+
+
+class CompraItem(models.Model):
+    compra = models.ForeignKey(CompraProveedor, on_delete=models.CASCADE, related_name='items')
+    producto = models.ForeignKey(Producto, on_delete=models.PROTECT)
+    cantidad_empaque = models.DecimalField(max_digits=12, decimal_places=3, default=Decimal('1.000'))
+    unidades_por_empaque = models.DecimalField(max_digits=10, decimal_places=3, default=Decimal('1.000'))
+    unidades_totales = models.DecimalField(max_digits=12, decimal_places=3, default=Decimal('1.000'))
+    costo_unitario_empaque = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0.00'))
+    subtotal = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal('0.00'))
+
+    def save(self, *args, **kwargs):
+        self.unidades_totales = (Decimal(str(self.cantidad_empaque)) * Decimal(str(self.unidades_por_empaque))).quantize(Decimal('0.001'))
+        self.subtotal = (Decimal(str(self.cantidad_empaque)) * Decimal(str(self.costo_unitario_empaque))).quantize(Decimal('0.01'))
+        super().save(*args, **kwargs)

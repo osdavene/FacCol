@@ -30,3 +30,31 @@ class TercerosViewsTests(TestCase):
 
         resp_ajeno = client.get(reverse("terceros:detalle", args=[self.cliente_b.id]))
         self.assertEqual(resp_ajeno.status_code, 404)
+
+    def test_tercero_retenciones_y_eliminar_solo_post(self):
+        client = Client()
+        client.force_login(self.user_a)
+
+        r_crea = client.post(reverse("terceros:crear"), {
+            "razon_social": "Distribuidora Mayorista SAS",
+            "tipo_documento": "NIT",
+            "numero_documento": "901222333",
+            "es_cliente": "on",
+            "aplica_retefuente": "on",
+            "tarifa_retefuente": "2.50",
+        }, follow=True)
+        self.assertEqual(r_crea.status_code, 200)
+        t = Tercero.objects.get(empresa=self.emp_a, numero_documento="901222333")
+        self.assertTrue(t.aplica_retefuente)
+        self.assertEqual(float(t.tarifa_retefuente), 2.5)
+
+        # GET no debe desactivar terceros (405)
+        r_get_del = client.get(reverse("terceros:eliminar", args=[t.id]))
+        self.assertEqual(r_get_del.status_code, 405)
+        t.refresh_from_db()
+        self.assertTrue(t.activo)
+
+        r_post_del = client.post(reverse("terceros:eliminar", args=[t.id]), follow=True)
+        self.assertEqual(r_post_del.status_code, 200)
+        t.refresh_from_db()
+        self.assertFalse(t.activo)

@@ -1,0 +1,58 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Compras y Documento Soporte (DSE){% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+            <h1 class="font-display font-extrabold text-2xl text-white">Compras y Documento Soporte DIAN</h1>
+            <p class="text-xs text-slate-400">Ingreso de mercancía por pacas/unidades y Documento Soporte a No Obligados (Res. 000167)</p>
+        </div>
+        <a href="{% url 'inventario:compra_crear' %}"
+           class="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black font-extrabold text-xs uppercase tracking-wider flex items-center gap-2">
+            <i class="fas fa-plus"></i> Nueva Compra / DSE
+        </a>
+    </div>
+
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl overflow-hidden shadow-xl">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+                <thead>
+                    <tr class="bg-[#141c2e] text-slate-400 font-bold uppercase tracking-wider text-[10px] border-b border-[#1e2d47]">
+                        <th class="p-4">Documento</th>
+                        <th class="p-4">Proveedor</th>
+                        <th class="p-4">Fecha</th>
+                        <th class="p-4">Tipo</th>
+                        <th class="p-4 text-right">Total ($ COP)</th>
+                        <th class="p-4 text-right">Acción</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-[#1e2d47]/50">
+                    {% for c in compras %}
+                    <tr class="hover:bg-[#162034] transition">
+                        <td class="p-4 font-bold text-amber-400">{{ c.numero_completo }}</td>
+                        <td class="p-4 text-white font-semibold">{{ c.proveedor.razon_social }}</td>
+                        <td class="p-4 text-slate-400">{{ c.fecha|date:"d/m/Y" }}</td>
+                        <td class="p-4">
+                            {% if c.es_documento_soporte %}
+                            <span class="px-2 py-0.5 rounded bg-cyan-500/15 text-cyan-400 font-bold text-[10px]">DSE DIAN</span>
+                            {% else %}
+                            <span class="px-2 py-0.5 rounded bg-slate-700 text-slate-300 font-bold text-[10px]">Compra Proveedor</span>
+                            {% endif %}
+                        </td>
+                        <td class="p-4 text-right font-black text-white">${{ c.total|floatformat:0|intcomma }}</td>
+                        <td class="p-4 text-right">
+                            <a href="{% url 'inventario:compra_detalle' c.id %}" class="px-2.5 py-1 rounded-xl bg-[#162034] text-slate-300 hover:text-white">Ver</a>
+                        </td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="6" class="p-8 text-center text-slate-500">No hay compras registradas.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

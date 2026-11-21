@@ -424,15 +424,26 @@ def configuracion_plataforma(request):
                     if val:
                         set_platform_setting(field_name, val, is_secret=True)
 
+        if seccion in ('ia', 'all'):
+            if 'clear_gemini_api_key' in request.POST:
+                set_platform_setting('gemini_api_key', '', is_secret=True)
+            else:
+                gkey = request.POST.get('gemini_api_key', '').strip()
+                if gkey:
+                    set_platform_setting('gemini_api_key', gkey, is_secret=True)
+
         messages.success(request, "Configuración cifrada de plataforma guardada exitosamente en la base de datos.")
         return redirect('backoffice:configuracion_plataforma')
 
     mail_cfg = get_mail_runtime_config()
     wompi_cfg = get_wompi_runtime_config()
+    from apps.core.platform_settings import get_platform_setting, mask_secret
+    masked_gemini = mask_secret(get_platform_setting('gemini_api_key', ''))
     webhook_url = request.build_absolute_uri(reverse('facturacion:wompi_webhook'))
     return render(request, 'backoffice/configuracion_plataforma.html', {
         'mail_cfg': mail_cfg,
         'wompi_cfg': wompi_cfg,
+        'masked_gemini': masked_gemini,
         'webhook_url': webhook_url,
     })
 

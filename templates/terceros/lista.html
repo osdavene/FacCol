@@ -85,6 +85,13 @@
                             <a href="{% url 'terceros:editar' t.id %}" title="Editar" class="p-2 rounded-xl bg-[#162034] hover:bg-[#1f2c47] text-slate-300 hover:text-white inline-block">
                                 <i class="fas fa-pen-to-square text-xs"></i>
                             </a>
+                            <form method="POST" action="{% url 'terceros:eliminar' t.id %}" class="inline"
+                                  onsubmit="return confirm('¿Desactivar a {{ t.razon_social|escapejs }}?');">
+                                {% csrf_token %}
+                                <button type="submit" title="Desactivar" class="p-2 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 inline-block">
+                                    <i class="fas fa-trash text-xs"></i>
+                                </button>
+                            </form>
                         </td>
                     </tr>
                     {% empty %}

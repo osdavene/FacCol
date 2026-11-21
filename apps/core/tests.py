@@ -123,3 +123,21 @@ class ConfiguracionCifradaYCorreoTests(TestCase):
         }, follow=True)
         self.assertEqual(get_platform_setting("wompi_integrity_secret"), "test_integrity_xyz")
 
+        # Guardar clave Gemini API cifrada y consultar Mi Plan como inquilino
+        client.post(reverse("backoffice:configuracion_plataforma"), {
+            "seccion": "ia",
+            "gemini_api_key": "AIzaSecretTestKey999",
+        }, follow=True)
+        self.assertEqual(get_platform_setting("gemini_api_key"), "AIzaSecretTestKey999")
+
+        emp = Empresa.objects.create(razon_social="Plan Check SAS", nit="900818283")
+        admin_emp = User.objects.create_user(
+            username="planadmin@faccol.test", email="planadmin@faccol.test", password="SafePass!2026"
+        )
+        EmpresaUsuario.objects.create(user=admin_emp, empresa=emp, rol="admin", activo=True)
+        c2 = Client()
+        c2.force_login(admin_emp)
+        r_plan = c2.get(reverse("core:mi_plan"))
+        self.assertEqual(r_plan.status_code, 200)
+        self.assertContains(r_plan, "Documentos DIAN Mes Actual")
+

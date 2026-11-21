@@ -116,13 +116,13 @@ def generar_respuesta_ia(pregunta, empresa, user):
 
     ventas_mes = Factura.objects.filter(
         empresa=empresa,
-        tipo_documento='FACTURA',
+        tipo_documento__in=('FACTURA', 'POS_ELECTRONICO'),
         fecha_emision__gte=primer_dia_mes
     ).exclude(estado='ANULADA').aggregate(t=Sum('total'))['t'] or Decimal('0.00')
 
     cartera_pendiente = Factura.objects.filter(
         empresa=empresa,
-        tipo_documento='FACTURA',
+        tipo_documento__in=('FACTURA', 'POS_ELECTRONICO'),
         saldo_pendiente__gt=0
     ).exclude(estado='ANULADA').aggregate(t=Sum('saldo_pendiente'))['t'] or Decimal('0.00')
 
@@ -136,8 +136,9 @@ def generar_respuesta_ia(pregunta, empresa, user):
 
     total_clientes = Tercero.objects.filter(empresa=empresa, es_cliente=True, activo=True).count()
 
-    # Si hay clave de Gemini API configurada, consultar al LLM
-    gemini_key = getattr(settings, 'GEMINI_API_KEY', '') or os.getenv('GEMINI_API_KEY', '')
+    # Si hay clave de Gemini API cifrada en plataforma o en settings, consultar al LLM
+    from apps.core.platform_settings import get_platform_setting
+    gemini_key = get_platform_setting('gemini_api_key', '') or getattr(settings, 'GEMINI_API_KEY', '') or os.getenv('GEMINI_API_KEY', '')
     if gemini_key:
         try:
             from google import genai

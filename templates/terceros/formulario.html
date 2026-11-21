@@ -100,11 +100,30 @@
             <div>
                 <label class="block font-semibold text-slate-300 mb-1">Régimen Tributario</label>
                 <select name="regimen" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white focus:outline-none focus:border-amber-500">
-                    <option value="RESPONSABLE_IVA">Responsable de IVA (Común)</option>
-                    <option value="NO_RESPONSABLE_IVA">No Responsable de IVA (Simplificado)</option>
-                    <option value="REGIMEN_SIMPLE">Régimen Simple (RST)</option>
-                    <option value="GRAN_CONTRIBUYENTE">Gran Contribuyente</option>
+                    <option value="RESPONSABLE_IVA" {% if tercero.regimen == 'RESPONSABLE_IVA' %}selected{% endif %}>Responsable de IVA (Común)</option>
+                    <option value="NO_RESPONSABLE_IVA" {% if tercero.regimen == 'NO_RESPONSABLE_IVA' or not tercero %}selected{% endif %}>No Responsable de IVA (Simplificado)</option>
+                    <option value="REGIMEN_SIMPLE" {% if tercero.regimen == 'REGIMEN_SIMPLE' %}selected{% endif %}>Régimen Simple (RST)</option>
+                    <option value="GRAN_CONTRIBUYENTE" {% if tercero.regimen == 'GRAN_CONTRIBUYENTE' %}selected{% endif %}>Gran Contribuyente</option>
                 </select>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs pt-2 border-t border-[#1e2d47]">
+            <div class="bg-[#162034] border border-[#1e2d47] rounded-2xl p-3 space-y-2">
+                <label class="inline-flex items-center gap-2 font-bold text-white cursor-pointer">
+                    <input type="checkbox" name="aplica_retefuente" {% if tercero.aplica_retefuente %}checked{% endif %} class="rounded text-amber-500">
+                    <span>Aplica ReteFuente automática</span>
+                </label>
+                <input type="number" step="0.01" name="tarifa_retefuente" value="{{ tercero.tarifa_retefuente|default:0 }}"
+                       placeholder="Tarifa % (ej. 2.50)" class="w-full bg-[#111827] border border-[#1e2d47] rounded-xl px-3 py-1.5 text-white">
+            </div>
+            <div class="bg-[#162034] border border-[#1e2d47] rounded-2xl p-3 space-y-2">
+                <label class="inline-flex items-center gap-2 font-bold text-white cursor-pointer">
+                    <input type="checkbox" name="aplica_reteica" {% if tercero.aplica_reteica %}checked{% endif %} class="rounded text-amber-500">
+                    <span>Aplica ReteICA automática (por mil ‰)</span>
+                </label>
+                <input type="number" step="0.01" name="tarifa_reteica" value="{{ tercero.tarifa_reteica|default:0 }}"
+                       placeholder="Tarifa ‰ (ej. 9.66)" class="w-full bg-[#111827] border border-[#1e2d47] rounded-xl px-3 py-1.5 text-white">
             </div>
         </div>
 

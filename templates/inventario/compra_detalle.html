@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}{{ compra.numero_completo }}{% endblock %}
+
+{% block content %}
+<div class="max-w-4xl mx-auto space-y-6">
+    <div class="flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <a href="{% url 'inventario:compras_lista' %}" class="p-2.5 rounded-xl bg-[#162034] text-slate-400 hover:text-white"><i class="fas fa-arrow-left"></i></a>
+            <div>
+                <h1 class="font-display font-black text-2xl text-white">{{ compra.numero_completo }}</h1>
+                <p class="text-xs text-slate-400">Proveedor: <b class="text-white">{{ compra.proveedor.razon_social }}</b></p>
+            </div>
+        </div>
+        {% if compra.es_documento_soporte %}
+        <a href="{% url 'inventario:compra_xml_dse' compra.id %}" class="px-4 py-2 rounded-xl bg-[#162034] border border-[#1e2d47] text-cyan-400 font-bold text-xs">
+            Descargar XML DSE
+        </a>
+        {% endif %}
+    </div>
+
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 space-y-4 text-xs">
+        {% if compra.cuds %}
+        <div class="p-3 rounded-xl bg-[#162034] text-[11px] text-slate-300 break-all">
+            <b>CUDS DIAN:</b> <span class="font-mono text-amber-400">{{ compra.cuds }}</span>
+        </div>
+        {% endif %}
+        <table class="w-full text-left">
+            <thead>
+                <tr class="text-slate-400 border-b border-[#1e2d47] text-[10px] uppercase">
+                    <th class="py-2">Producto</th>
+                    <th class="py-2 text-right">Empaques</th>
+                    <th class="py-2 text-right">Unidades Ingresadas</th>
+                    <th class="py-2 text-right">Subtotal</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-[#1e2d47]/50">
+                {% for it in compra.items.all %}
+                <tr>
+                    <td class="py-2.5 font-semibold text-white">{{ it.producto.nombre }}</td>
+                    <td class="py-2.5 text-right">{{ it.cantidad_empaque|floatformat:"-2" }} x {{ it.unidades_por_empaque|floatformat:"-2" }}</td>
+                    <td class="py-2.5 text-right text-emerald-400 font-bold">+{{ it.unidades_totales|floatformat:"-2" }}</td>
+                    <td class="py-2.5 text-right font-bold text-white">${{ it.subtotal|floatformat:0|intcomma }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        <div class="text-right font-display font-black text-xl text-amber-400 pt-2 border-t border-[#1e2d47]">
+            Total Compra: ${{ compra.total|floatformat:0|intcomma }} COP
+        </div>
+    </div>
+</div>
+{% endblock %}

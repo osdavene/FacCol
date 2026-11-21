@@ -37,3 +37,4 @@ class BackofficePlanesYEmpresasTests(TestCase):
         self.assertEqual(r_form.status_code, 200)
         self.assertNotContains(r_form, "wompi_public_key")
         self.assertNotContains(r_form, "Pasarela Wompi")
+        self.assertNotContains(r_form, "smtp_host")
