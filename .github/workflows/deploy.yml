@@ -44,6 +44,7 @@ jobs:
             venv/bin/python manage.py migrate --noinput
             venv/bin/python manage.py seed_base
             venv/bin/python manage.py seed_colombia
+            venv/bin/python manage.py crear_empresa_pruebas --notificar-superadmin
             venv/bin/python manage.py collectstatic --noinput
             EOF
 
