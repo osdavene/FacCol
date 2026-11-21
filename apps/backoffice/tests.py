@@ -32,3 +32,8 @@ class BackofficePlanesYEmpresasTests(TestCase):
         self.assertTrue(emp.modulos.filter(codigo="facturacion").exists())
         usuario = User.objects.get(email="dueno@esquina.co")
         self.assertFalse(usuario.check_password("Clave1234*"))
+
+        r_form = client.get(reverse("backoffice:empresa_crear"))
+        self.assertEqual(r_form.status_code, 200)
+        self.assertNotContains(r_form, "wompi_public_key")
+        self.assertNotContains(r_form, "Pasarela Wompi")

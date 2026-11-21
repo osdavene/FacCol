@@ -199,18 +199,6 @@ def empresa_editar(request, empresa_id):
             empresa.smtp_password = encrypt_secret(new_smtp_pwd)
         empresa.smtp_from_address = request.POST.get('smtp_from_address', '').strip()
 
-        # Configuración Wompi propia de empresa
-        empresa.wompi_public_key = request.POST.get('wompi_public_key', '').strip()
-        new_wompi_priv = request.POST.get('wompi_private_key', '').strip()
-        if new_wompi_priv:
-            empresa.wompi_private_key = encrypt_secret(new_wompi_priv)
-        new_wompi_integ = request.POST.get('wompi_integrity_secret', '').strip()
-        if new_wompi_integ:
-            empresa.wompi_integrity_secret = encrypt_secret(new_wompi_integ)
-        new_wompi_events = request.POST.get('wompi_events_secret', '').strip()
-        if new_wompi_events:
-            empresa.wompi_events_secret = encrypt_secret(new_wompi_events)
-
         empresa.activa = 'activa' in request.POST
         empresa.save()
 
