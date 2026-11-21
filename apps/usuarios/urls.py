@@ -13,4 +13,5 @@ urlpatterns = [
     path('equipo/nuevo/', views.usuario_crear, name='crear'),
     path('equipo/<int:asignacion_id>/rol/', views.usuario_cambiar_rol, name='cambiar_rol'),
     path('equipo/<int:asignacion_id>/estado/', views.usuario_cambiar_estado, name='cambiar_estado'),
+    path('equipo/<int:asignacion_id>/clave/', views.usuario_asignar_clave, name='asignar_clave'),
 ]

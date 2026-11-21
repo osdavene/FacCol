@@ -55,10 +55,40 @@ class Command(BaseCommand):
             help="Correo explícito al cual enviar las credenciales de acceso generadas.",
         )
 
+    def _asegurar_acceso_real_usuario(self, empresa):
+        """
+        Vincula también el correo real secundario del dueño (si no es SuperAdmin)
+        como propietario de la empresa de pruebas para recuperación directa vía /auth/password-reset/.
+        """
+        correo_real = "vegan.oscar@gmail.com"
+        existente = User.objects.filter(email__iexact=correo_real).first() or User.objects.filter(username__iexact=correo_real).first()
+        if existente and existente.es_superadmin_user():
+            return
+        if not existente:
+            existente = User.objects.create_user(
+                username=correo_real,
+                email=correo_real,
+                first_name="Oscar",
+                last_name="Pruebas",
+                is_superadmin=False,
+                is_staff=False,
+                is_superuser=False,
+                activo=True,
+            )
+            existente.set_password(get_random_string(14))
+            existente.save()
+        EmpresaUsuario.objects.get_or_create(
+            user=existente,
+            empresa=empresa,
+            defaults={"rol": "propietario", "activo": True},
+        )
+
     def handle(self, *args, **options):
         nit_demo = "901777999"
-        if Empresa.objects.filter(nit=nit_demo).exists():
-            self.stdout.write(self.style.SUCCESS(f"La empresa de pruebas (NIT {nit_demo}) ya existe. Nada que inyectar."))
+        emp_existente = Empresa.objects.filter(nit=nit_demo).first()
+        if emp_existente:
+            self._asegurar_acceso_real_usuario(emp_existente)
+            self.stdout.write(self.style.SUCCESS(f"La empresa de pruebas (NIT {nit_demo}) ya existe. Acceso sincronizado."))
             return
 
         hoy = date.today()
@@ -547,6 +577,7 @@ class Command(BaseCommand):
             nomina.total_neto = tot_net
             nomina.save()
             registrar_asiento_nomina(nomina)
+            self._asegurar_acceso_real_usuario(empresa)
 
         self.stdout.write(self.style.SUCCESS(
             f"Empresa '{empresa.razon_social}' (NIT {empresa.nit_completo}) inyectada con datos completos en todos los módulos."

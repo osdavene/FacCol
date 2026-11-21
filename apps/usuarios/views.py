@@ -4,8 +4,10 @@ from django.contrib.auth.decorators import login_required
 from django.contrib.auth.tokens import default_token_generator
 from django.contrib import messages
 from django.urls import reverse
+from django.utils.crypto import get_random_string
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
+from django.views.decorators.http import require_POST
 
 from apps.usuarios.models import User, EmpresaUsuario
 from apps.usuarios.decorators import requiere_admin
@@ -193,6 +195,49 @@ def usuario_cambiar_estado(request, asignacion_id):
     asignacion.save()
     estado_str = "activado" if asignacion.activo else "desactivado"
     messages.success(request, f"Acceso de {asignacion.user.username} a la empresa ha sido {estado_str}.")
+    return redirect('usuarios:lista')
+
+
+@login_required
+@require_POST
+def usuario_asignar_clave(request, asignacion_id):
+    """
+    Permite al SuperAdmin global o al Administrador de la empresa asignar o restablecer
+    una contraseña de acceso de forma inmediata desde la tabla de usuarios.
+    """
+    is_sa = bool(request.user.is_superadmin or request.user.is_superuser)
+    empresa = request.empresa_activa
+
+    if is_sa:
+        asignacion = get_object_or_404(EmpresaUsuario.objects.select_related('user', 'empresa'), id=asignacion_id)
+    elif empresa and request.user.es_admin(empresa):
+        asignacion = get_object_or_404(
+            EmpresaUsuario.objects.select_related('user', 'empresa'),
+            id=asignacion_id,
+            empresa=empresa,
+        )
+    else:
+        messages.error(request, "No tienes permisos para asignar contraseñas a este usuario.")
+        return redirect('core:dashboard')
+
+    if asignacion.user.es_superadmin_user() and asignacion.user != request.user:
+        messages.error(request, "No es posible modificar la contraseña de otro SuperAdmin desde esta vista.")
+        return redirect('usuarios:lista')
+
+    nueva_clave = request.POST.get('nueva_clave', '').strip()
+    if nueva_clave and len(nueva_clave) < 6:
+        messages.error(request, "La contraseña debe tener al menos 6 caracteres.")
+        return redirect('usuarios:lista')
+
+    clave_final = nueva_clave or get_random_string(12)
+    u = asignacion.user
+    u.set_password(clave_final)
+    u.save(update_fields=['password'])
+
+    messages.success(
+        request,
+        f"Contraseña actualizada para {u.email or u.username} ({asignacion.empresa.razon_social}): {clave_final}"
+    )
     return redirect('usuarios:lista')
 
 
