@@ -167,13 +167,13 @@ def activate_wompi_transaction(tx: TransaccionWompi) -> bool:
             email = (tx.customer_email or "").strip().lower()
             nit = (tx.customer_nit or "").strip()
 
-            if tx.usuario and not tx.usuario.es_superadmin_user():
+            if nit:
+                emp = Empresa.objects.filter(nit=nit).first()
+
+            if emp is None and tx.usuario and not tx.usuario.es_superadmin_user():
                 rel = tx.usuario.empresas_asignadas.filter(activo=True).select_related("empresa").first()
                 if rel:
                     emp = rel.empresa
-
-            if emp is None and nit:
-                emp = Empresa.objects.filter(nit=nit).first()
 
             if emp is not None:
                 emp.plan = plan
@@ -207,8 +207,7 @@ def activate_wompi_transaction(tx: TransaccionWompi) -> bool:
                     )
                     tx.usuario = user
 
-            for mod in plan.modulos.all():
-                EmpresaModulo.objects.update_or_create(empresa=emp, modulo=mod, defaults={"activo": True})
+            emp.sincronizar_modulos_con_plan(plan)
 
             tx.empresa_creada = emp
             tx.save(update_fields=["empresa_creada", "usuario"])

@@ -4,11 +4,23 @@
 {% block title %}Mi Plan y Suscripción FacCol{% endblock %}
 
 {% block content %}
-<div class="max-w-5xl mx-auto space-y-6">
+<div class="max-w-6xl mx-auto space-y-6">
     <div>
         <h1 class="font-display font-extrabold text-2xl text-white">Mi Plan SaaS — {{ empresa.display_name }}</h1>
         <p class="text-xs text-slate-400">Consulta tu consumo mensual y renueva o actualiza tu plan pagando directo a la plataforma FacCol.</p>
     </div>
+
+    {% if not wompi_platform.enabled %}
+    <div class="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex items-start gap-3 text-xs text-amber-200">
+        <i class="fas fa-circle-info text-amber-400 text-base mt-0.5"></i>
+        <div>
+            <div class="font-bold text-amber-300">Pago automático Wompi de Plataforma pendiente de activación</div>
+            <p class="text-slate-300 mt-0.5">
+                Mientras el administrador de plataforma configura las llaves Wompi en <b>Backoffice → Correo &amp; Wompi</b>, puedes pulsar <b>Solicitar Cambio de Plan</b> en cualquier tarjeta para notificar la actualización de tu suscripción.
+            </p>
+        </div>
+    </div>
+    {% endif %}
 
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
         <div class="bg-[#111827] border border-amber-500/30 rounded-2xl p-5">
@@ -39,19 +51,27 @@
         </div>
     </div>
 
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
         {% for p in planes %}
-        <div class="bg-[#111827] border {% if empresa.plan_id == p.id %}border-amber-500/60{% else %}border-[#1e2d47]{% endif %} rounded-3xl p-6 flex flex-col justify-between space-y-4 text-xs">
-            <div class="space-y-2">
-                <div class="flex items-center justify-between">
+        <div class="bg-[#111827] border {% if empresa.plan_id == p.id %}border-amber-500/60 ring-1 ring-amber-500/20{% else %}border-[#1e2d47] hover:border-slate-600{% endif %} rounded-3xl p-6 flex flex-col justify-between space-y-5 text-xs transition">
+            <div class="space-y-3">
+                <div class="flex items-center justify-between gap-2">
                     <h3 class="font-display font-bold text-lg text-white">{{ p.nombre }}</h3>
                     {% if empresa.plan_id == p.id %}
-                    <span class="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-bold text-[10px]">Activo</span>
+                    <span class="px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-bold text-[10px] whitespace-nowrap">Activo</span>
                     {% endif %}
                 </div>
                 <div class="font-black text-2xl text-amber-400">${{ p.precio_mensual|floatformat:0|intcomma }} <span class="text-xs text-slate-400 font-normal">COP/mes</span></div>
-                <p class="text-slate-400">{{ p.descripcion }}</p>
+                <p class="text-slate-400 leading-relaxed">{{ p.descripcion }}</p>
+                <div class="pt-2 border-t border-[#1e2d47] space-y-1.5 text-[11px] text-slate-300">
+                    <div><i class="fas fa-check text-emerald-400 mr-1.5"></i>{% if p.limite_facturas_mes == 0 or p.limite_facturas_mes >= 99999 %}Documentos DIAN ilimitados{% else %}Hasta {{ p.limite_facturas_mes|intcomma }} docs/mes{% endif %}</div>
+                    <div><i class="fas fa-check text-emerald-400 mr-1.5"></i>{% if p.limite_usuarios == 0 or p.limite_usuarios >= 99999 %}Usuarios ilimitados{% else %}Hasta {{ p.limite_usuarios }} usuarios{% endif %}</div>
+                    {% for item in p.lista_caracteristicas %}
+                    <div><i class="fas fa-check text-emerald-400 mr-1.5"></i>{{ item }}</div>
+                    {% endfor %}
+                </div>
             </div>
+
             {% if p.precio_mensual > 0 and wompi_platform.enabled %}
             <form method="POST" action="{% url 'core:suscripcion_wompi_iniciar' %}">
                 {% csrf_token %}
@@ -59,8 +79,20 @@
                 <input type="hidden" name="razon_social" value="{{ empresa.razon_social }}">
                 <input type="hidden" name="nit" value="{{ empresa.nit }}">
                 <input type="hidden" name="email" value="{{ empresa.email|default:user.email }}">
-                <button type="submit" class="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-black uppercase tracking-wider transition">
+                <button type="submit" class="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-black uppercase tracking-wider transition cursor-pointer">
                     {% if empresa.plan_id == p.id %}Renovar con Wompi{% else %}Cambiar a este Plan{% endif %}
+                </button>
+            </form>
+            {% elif empresa.plan_id == p.id %}
+            <div class="w-full py-2.5 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 font-bold text-center uppercase tracking-wider">
+                Plan Actual Activo
+            </div>
+            {% else %}
+            <form method="POST" action="{% url 'core:solicitar_cambio_plan' %}">
+                {% csrf_token %}
+                <input type="hidden" name="plan_id" value="{{ p.id }}">
+                <button type="submit" class="w-full py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black uppercase tracking-wider transition cursor-pointer">
+                    {% if p.precio_mensual <= 0 %}Activar Plan{% else %}Solicitar Cambio de Plan{% endif %}
                 </button>
             </form>
             {% endif %}

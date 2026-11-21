@@ -22,7 +22,7 @@ from apps.facturacion.wompi_service import (
     get_wompi_runtime_config,
     sync_wompi_transaction_by_id,
 )
-from apps.core.mail_service import get_mail_runtime_config
+from apps.core.mail_service import enviar_correo_sistema, get_mail_runtime_config
 from apps.core.platform_settings import encrypt_secret
 from apps.inventario.models import Producto, MovimientoInventario
 from apps.terceros.models import Tercero
@@ -56,18 +56,24 @@ def suscripcion_wompi_iniciar(request):
     nit = request.POST.get('nit', '').strip()
     email = request.POST.get('email', '').strip().lower()
 
+    destino_error = (
+        'core:mi_plan'
+        if request.user.is_authenticated and not request.user.es_superadmin_user()
+        else 'core:dashboard'
+    )
+
     if not email or not razon_social:
         messages.error(request, "Ingresa el nombre de tu negocio y un correo electrónico válido.")
-        return redirect('core:dashboard')
+        return redirect(destino_error)
 
     if plan.precio_mensual <= 0:
         messages.info(request, "Este plan es gratuito o personalizado; contáctanos para activarlo.")
-        return redirect('core:dashboard')
+        return redirect(destino_error)
 
     wompi_cfg = get_platform_wompi_config()
     if not wompi_cfg['enabled']:
         messages.error(request, "La pasarela de pagos Wompi de la plataforma aún no está habilitada.")
-        return redirect('core:dashboard')
+        return redirect(destino_error)
 
     amount_in_cents = int(plan.precio_mensual * 100)
     currency = "COP"
@@ -433,3 +439,70 @@ def mi_plan_view(request):
         'porcentaje_docs': porcentaje_docs,
         'usuarios_activos': usuarios_activos,
     })
+
+
+@login_required
+@requiere_admin
+@require_POST
+def solicitar_cambio_plan(request):
+    """Permite activar un plan sin costo o solicitar cambio manual cuando Wompi Plataforma aún no está habilitado."""
+    if request.user.es_superadmin_user():
+        return redirect('backoffice:planes_lista')
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+
+    plan_id = request.POST.get('plan_id')
+    plan = get_object_or_404(Plan, id=plan_id, activo=True)
+
+    if empresa.plan_id == plan.id:
+        messages.info(request, f"Tu empresa ya tiene activo el plan '{plan.nombre}'.")
+        return redirect('core:mi_plan')
+
+    if plan.precio_mensual <= 0:
+        empresa.plan = plan
+        empresa.save(update_fields=['plan'])
+        empresa.sincronizar_modulos_con_plan(plan)
+        messages.success(request, f"Plan actualizado correctamente a '{plan.nombre}'.")
+        return redirect('core:mi_plan')
+
+    wompi_platform = get_platform_wompi_config()
+    if wompi_platform['enabled']:
+        messages.info(request, "Usa el botón de pago Wompi en la tarjeta del plan para activar el cambio de inmediato.")
+        return redirect('core:mi_plan')
+
+    superadmins = list(
+        User.objects.filter(Q(is_superadmin=True) | Q(is_superuser=True), is_active=True)
+        .exclude(email='')
+        .values_list('email', flat=True)
+    )
+    mail_cfg = get_mail_runtime_config()
+    destinatarios = sorted({e.strip().lower() for e in superadmins if e} | ({mail_cfg['from_address'].strip().lower()} if mail_cfg.get('from_address') else set()))
+    plan_actual = empresa.plan.nombre if empresa.plan else "Sin plan"
+    cuerpo = (
+        f"<h3>Solicitud de cambio de plan SaaS</h3>"
+        f"<p><b>Empresa:</b> {empresa.display_name} (NIT {empresa.nit_completo})</p>"
+        f"<p><b>Plan actual:</b> {plan_actual}<br>"
+        f"<b>Plan solicitado:</b> {plan.nombre} (${plan.precio_mensual:,.0f} COP/mes)</p>"
+        f"<p><b>Solicitado por:</b> {request.user.get_full_name() or request.user.username} ({request.user.email})</p>"
+    )
+    enviado = False
+    for dest in destinatarios:
+        if enviar_correo_sistema(
+            dest,
+            f"FacCol — Solicitud de cambio a {plan.nombre} ({empresa.display_name})",
+            cuerpo,
+            fail_silently=True,
+        ):
+            enviado = True
+
+    aviso_envio = (
+        "Notificamos al administrador de plataforma por correo para activar tu nuevo plan."
+        if enviado
+        else "Comunícate con el SuperAdministrador para activar este plan manualmente desde Backoffice -> Gestión de Inquilinos."
+    )
+    messages.success(
+        request,
+        f"Solicitud registrada para cambiar de '{plan_actual}' a '{plan.nombre}'. {aviso_envio}",
+    )
+    return redirect('core:mi_plan')

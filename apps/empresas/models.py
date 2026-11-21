@@ -240,6 +240,21 @@ class Empresa(models.Model):
         activos = self.usuarios_asignados.filter(activo=True).count()
         return activos < self.plan.limite_usuarios
 
+    def sincronizar_modulos_con_plan(self, plan):
+        """Sincroniza los módulos habilitados de la empresa con los del plan comercial."""
+        if not plan:
+            return
+        plan_mods = list(plan.modulos.all())
+        if not plan_mods:
+            return
+        EmpresaModulo.objects.filter(empresa=self).exclude(modulo__in=plan_mods).delete()
+        for mod in plan_mods:
+            EmpresaModulo.objects.update_or_create(
+                empresa=self,
+                modulo=mod,
+                defaults={'activo': True},
+            )
+
 
 class EmpresaModulo(models.Model):
     empresa = models.ForeignKey(Empresa, on_delete=models.CASCADE)

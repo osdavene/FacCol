@@ -2,7 +2,9 @@ from django.core import mail
 from django.test import TestCase, Client, override_settings
 from django.urls import reverse
 from apps.usuarios.models import User, EmpresaUsuario
-from apps.empresas.models import Empresa, Plan
+from apps.empresas.models import Empresa, Modulo, Plan
+from apps.facturacion.models import TransaccionWompi
+from apps.facturacion.wompi_service import activate_wompi_transaction
 from apps.core.models import ConfiguracionPlataforma
 from apps.core.platform_settings import encrypt_secret, get_platform_setting, set_platform_setting
 from apps.core.mail_service import get_mail_runtime_config
@@ -140,4 +142,78 @@ class ConfiguracionCifradaYCorreoTests(TestCase):
         r_plan = c2.get(reverse("core:mi_plan"))
         self.assertEqual(r_plan.status_code, 200)
         self.assertContains(r_plan, "Documentos DIAN Mes Actual")
+
+
+class MiPlanYCambioPlanTests(TestCase):
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    def test_mi_plan_con_y_sin_wompi_y_cambio_multiempresa(self):
+        mod_pos = Modulo.objects.create(codigo="pos", nombre="POS", ruta="pos:caja")
+        mod_nom = Modulo.objects.create(codigo="nomina", nombre="Nomina", ruta="nomina:nominas_lista")
+        plan_tienda = Plan.objects.create(nombre="Plan Tienda", precio_mensual=29900, activo=True)
+        plan_tienda.modulos.set([mod_pos])
+        plan_emp = Plan.objects.create(nombre="Plan Empresarial", precio_mensual=189000, activo=True)
+        plan_emp.modulos.set([mod_pos, mod_nom])
+
+        sa = User.objects.create_user(
+            username="sa_plan@faccol.test", email="sa_plan@faccol.test",
+            password="SafePass!2026", is_superadmin=True,
+            is_superuser=True, is_staff=True,
+        )
+        set_platform_setting("mail_host", "smtp.test.local", is_secret=False)
+        set_platform_setting("mail_from_address", "noreply@faccol.test", is_secret=False)
+
+        emp1 = Empresa.objects.create(razon_social="Empresa Uno SAS", nit="900100100", plan=plan_tienda)
+        emp2 = Empresa.objects.create(razon_social="Empresa Dos SAS", nit="900200200", plan=plan_tienda)
+        admin = User.objects.create_user(
+            username="multi@faccol.test", email="multi@faccol.test", password="SafePass!2026"
+        )
+        EmpresaUsuario.objects.create(user=admin, empresa=emp1, rol="propietario", activo=True)
+        EmpresaUsuario.objects.create(user=admin, empresa=emp2, rol="propietario", activo=True)
+
+        client = Client()
+        client.force_login(admin)
+        client.get(reverse("core:cambiar_empresa", args=[emp2.id]))
+
+        # Sin Wompi Plataforma configurado: muestra banner explicativo y botón de solicitud en vez de tarjeta muerta
+        set_platform_setting("wompi_public_key", "", is_secret=False)
+        set_platform_setting("wompi_integrity_secret", "", is_secret=True)
+        r_no_wompi = client.get(reverse("core:mi_plan"))
+        self.assertEqual(r_no_wompi.status_code, 200)
+        self.assertContains(r_no_wompi, "Solicitar Cambio de Plan")
+        self.assertContains(r_no_wompi, "Plan Actual Activo")
+
+        r_req = client.post(reverse("core:solicitar_cambio_plan"), {"plan_id": plan_emp.id}, follow=True)
+        self.assertEqual(r_req.status_code, 200)
+        self.assertContains(r_req, "Solicitud registrada")
+        self.assertGreaterEqual(len(mail.outbox), 1)
+        self.assertTrue(any("sa_plan@faccol.test" in m.to for m in mail.outbox))
+        emp2.refresh_from_db()
+        self.assertEqual(emp2.plan_id, plan_tienda.id)
+
+        # Con Wompi Plataforma activo: inicia checkout y activa exactamente emp2 (por NIT), sincronizando módulos
+        set_platform_setting("wompi_active_flag", "1", is_secret=False)
+        set_platform_setting("wompi_public_key", "pub_test_plan_ok", is_secret=False)
+        set_platform_setting("wompi_integrity_secret", "integ_test_plan_ok", is_secret=True)
+        r_con_wompi = client.get(reverse("core:mi_plan"))
+        self.assertContains(r_con_wompi, "Cambiar a este Plan")
+
+        r_init = client.post(reverse("core:suscripcion_wompi_iniciar"), {
+            "plan_id": plan_emp.id,
+            "razon_social": emp2.razon_social,
+            "nit": emp2.nit,
+            "email": "multi@faccol.test",
+        })
+        self.assertEqual(r_init.status_code, 302)
+        self.assertIn("checkout.wompi.co", r_init.url)
+
+        tx = TransaccionWompi.objects.get(plan=plan_emp, customer_nit=emp2.nit)
+        tx.status = "APPROVED"
+        tx.save()
+        activate_wompi_transaction(tx)
+
+        emp1.refresh_from_db()
+        emp2.refresh_from_db()
+        self.assertEqual(emp1.plan_id, plan_tienda.id)
+        self.assertEqual(emp2.plan_id, plan_emp.id)
+        self.assertTrue(emp2.tiene_modulo("nomina"))
 
