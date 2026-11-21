@@ -69,3 +69,7 @@ class ContabilidadViewsTests(TestCase):
         self.assertEqual(r_csv.status_code, 200)
         self.assertIn("text/csv", r_csv["Content-Type"])
         self.assertIn(b"110505", r_csv.content)
+
+        r_aux = client.get(reverse("contabilidad:auxiliar_terceros"))
+        self.assertEqual(r_aux.status_code, 200)
+        self.assertContains(r_aux, "Libro Auxiliar por Tercero")

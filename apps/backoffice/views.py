@@ -432,6 +432,15 @@ def configuracion_plataforma(request):
                 if gkey:
                     set_platform_setting('gemini_api_key', gkey, is_secret=True)
 
+        if seccion in ('dian_pt', 'all'):
+            set_platform_setting('pt_dian_url', request.POST.get('pt_dian_url', '').strip(), is_secret=False)
+            if 'clear_pt_dian_token' in request.POST:
+                set_platform_setting('pt_dian_token', '', is_secret=True)
+            else:
+                pt_tok = request.POST.get('pt_dian_token', '').strip()
+                if pt_tok:
+                    set_platform_setting('pt_dian_token', pt_tok, is_secret=True)
+
         messages.success(request, "Configuración cifrada de plataforma guardada exitosamente en la base de datos.")
         return redirect('backoffice:configuracion_plataforma')
 
@@ -439,11 +448,15 @@ def configuracion_plataforma(request):
     wompi_cfg = get_wompi_runtime_config()
     from apps.core.platform_settings import get_platform_setting, mask_secret
     masked_gemini = mask_secret(get_platform_setting('gemini_api_key', ''))
+    pt_dian_url = get_platform_setting('pt_dian_url', '')
+    masked_pt_token = mask_secret(get_platform_setting('pt_dian_token', ''))
     webhook_url = request.build_absolute_uri(reverse('facturacion:wompi_webhook'))
     return render(request, 'backoffice/configuracion_plataforma.html', {
         'mail_cfg': mail_cfg,
         'wompi_cfg': wompi_cfg,
         'masked_gemini': masked_gemini,
+        'pt_dian_url': pt_dian_url,
+        'masked_pt_token': masked_pt_token,
         'webhook_url': webhook_url,
     })
 

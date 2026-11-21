@@ -1,0 +1,74 @@
+{% extends 'base.html' %}
+{% load humanize %}
+
+{% block title %}Libro Auxiliar por Tercero{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+    <div>
+        <h1 class="font-display font-extrabold text-2xl text-white">Libro Auxiliar por Tercero</h1>
+        <p class="text-xs text-slate-400">Movimientos detallados de cartera, proveedores y retenciones por NIT / Cédula</p>
+    </div>
+
+    <form method="GET" class="bg-[#111827] border border-[#1e2d47] rounded-2xl p-4 grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs items-end">
+        <div class="sm:col-span-2">
+            <label class="block text-slate-400 mb-1">Tercero</label>
+            <select name="tercero" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                <option value="">-- Todos los terceros --</option>
+                {% for t in terceros %}
+                <option value="{{ t.id }}" {% if tercero_sel and tercero_sel.id == t.id %}selected{% endif %}>{{ t.razon_social }} ({{ t.documento_completo }})</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label class="block text-slate-400 mb-1">Desde / Hasta</label>
+            <div class="grid grid-cols-2 gap-1.5">
+                <input type="date" name="desde" value="{{ desde }}" class="bg-[#162034] border border-[#1e2d47] rounded-xl px-2 py-2 text-white">
+                <input type="date" name="hasta" value="{{ hasta }}" class="bg-[#162034] border border-[#1e2d47] rounded-xl px-2 py-2 text-white">
+            </div>
+        </div>
+        <button type="submit" class="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black uppercase">Consultar</button>
+    </form>
+
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl overflow-hidden shadow-xl">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+                <thead>
+                    <tr class="bg-[#141c2e] text-slate-400 font-bold uppercase tracking-wider text-[10px] border-b border-[#1e2d47]">
+                        <th class="p-4">Fecha / Comp.</th>
+                        <th class="p-4">Cuenta PUC</th>
+                        <th class="p-4">Tercero</th>
+                        <th class="p-4">Descripción</th>
+                        <th class="p-4 text-right">Débito</th>
+                        <th class="p-4 text-right">Crédito</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-[#1e2d47]/50">
+                    {% for m in movimientos %}
+                    <tr class="hover:bg-[#162034] transition">
+                        <td class="p-4">
+                            <div class="font-bold text-amber-400">{{ m.asiento.numero_comprobante }}</div>
+                            <div class="text-[10px] text-slate-500">{{ m.asiento.fecha|date:"d/m/Y" }}</div>
+                        </td>
+                        <td class="p-4 font-mono text-slate-300">{{ m.cuenta.codigo }} — {{ m.cuenta.nombre }}</td>
+                        <td class="p-4 text-white">{{ m.tercero.razon_social|default:"-" }}</td>
+                        <td class="p-4 text-slate-400">{{ m.descripcion }}</td>
+                        <td class="p-4 text-right font-bold text-emerald-400">${{ m.debito|floatformat:0|intcomma }}</td>
+                        <td class="p-4 text-right font-bold text-rose-400">${{ m.credito|floatformat:0|intcomma }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="6" class="p-8 text-center text-slate-500">Sin movimientos contables para este filtro.</td></tr>
+                    {% endfor %}
+                </tbody>
+                <tfoot>
+                    <tr class="bg-[#141c2e] font-black text-white border-t border-[#1e2d47]">
+                        <td colspan="4" class="p-4">TOTALES AUXILIAR (Saldo neto: ${{ saldo_neto|floatformat:0|intcomma }})</td>
+                        <td class="p-4 text-right text-emerald-400">${{ total_deb|floatformat:0|intcomma }}</td>
+                        <td class="p-4 text-right text-rose-400">${{ total_cred|floatformat:0|intcomma }}</td>
+                    </tr>
+                </tfoot>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

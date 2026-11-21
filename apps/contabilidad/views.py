@@ -209,3 +209,41 @@ def estados_financieros_view(request):
         'desde': desde,
         'hasta': hasta,
     })
+
+
+@login_required
+@requiere_contador
+def auxiliar_terceros_view(request):
+    """Libro Auxiliar Contable filtrado por Tercero (Cliente / Proveedor / Empleado)."""
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+
+    terceros = Tercero.objects.filter(empresa=empresa, activo=True).order_by('razon_social')
+    tercero_id = request.GET.get('tercero')
+    desde = request.GET.get('desde', '').strip()
+    hasta = request.GET.get('hasta', '').strip()
+
+    tercero_sel = Tercero.objects.filter(id=tercero_id, empresa=empresa).first() if tercero_id else None
+    movimientos = AsientoLinea.objects.filter(asiento__empresa=empresa).select_related('asiento', 'cuenta', 'tercero')
+    if tercero_sel:
+        movimientos = movimientos.filter(tercero=tercero_sel)
+    if desde:
+        movimientos = movimientos.filter(asiento__fecha__gte=desde)
+    if hasta:
+        movimientos = movimientos.filter(asiento__fecha__lte=hasta)
+
+    movimientos = movimientos.order_by('asiento__fecha', 'asiento_id', 'id')[:100]
+    total_deb = sum((m.debito for m in movimientos), Decimal('0.00'))
+    total_cred = sum((m.credito for m in movimientos), Decimal('0.00'))
+
+    return render(request, 'contabilidad/auxiliar_terceros.html', {
+        'terceros': terceros,
+        'tercero_sel': tercero_sel,
+        'movimientos': movimientos,
+        'total_deb': total_deb,
+        'total_cred': total_cred,
+        'saldo_neto': total_deb - total_cred,
+        'desde': desde,
+        'hasta': hasta,
+    })

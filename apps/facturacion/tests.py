@@ -370,5 +370,45 @@ class FacturacionEmisionTests(TestCase):
         self.assertTrue(asiento.esta_cuadrado)
         self.assertEqual(asiento.total_debito, Decimal("100000.00"))
 
+    def test_transmision_via_proveedor_tecnologico_api_mock(self):
+        from unittest.mock import patch, MagicMock
+        set_platform_setting("pt_dian_url", "https://api.pt-dian.test/v1/emit")
+        set_platform_setting("pt_dian_token", "pt-secret-bearer-token", is_secret=True)
+
+        self.empresa.resolucion_dian = "18764000999"
+        self.empresa.dian_software_id = "SW-PT-01"
+        self.empresa.dian_pin = "54321"
+        self.empresa.dian_test_set_id = "TS-PT-01"
+        self.empresa.save()
+
+        fac = Factura.objects.create(
+            empresa=self.empresa, tipo_documento="FACTURA", prefijo="FE", consecutivo=999,
+            tercero=self.cliente, fecha_emision="2026-11-21", fecha_vencimiento="2026-11-21",
+            estado="EMITIDA", metodo_pago="CONTADO",
+        )
+        FacturaItem.objects.create(
+            factura=fac, producto=self.prod, descripcion="Arroz",
+            cantidad=Decimal("1"), precio_unitario=Decimal("2500.00"), porcentaje_iva=Decimal("0.00"),
+        )
+        fac.recalcular_totales()
+        fac.generar_cufe()
+
+        fake_resp = MagicMock()
+        fake_resp.status_code = 200
+        fake_resp.headers = {"Content-Type": "application/json"}
+        fake_resp.json.return_value = {"track_id": "PT-REAL-TRACK-888", "mensaje": "Aceptado DIAN vía PT"}
+
+        client = Client()
+        client.force_login(self.vendedor)
+        with patch("requests.post", return_value=fake_resp) as m_post:
+            r = client.post(reverse("facturacion:dian_transmitir_documento", args=[fac.id]), follow=True)
+            self.assertEqual(r.status_code, 200)
+            m_post.assert_called_once()
+            self.assertEqual(m_post.call_args.kwargs["headers"]["Authorization"], "Bearer pt-secret-bearer-token")
+
+        fac.refresh_from_db()
+        self.assertEqual(fac.estado_dian, "ENVIADA")
+        self.assertEqual(fac.dian_track_id, "PT-REAL-TRACK-888")
+
 
 

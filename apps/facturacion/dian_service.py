@@ -15,6 +15,10 @@ def _fmt_dec(val):
     return f"{Decimal(val or 0):.2f}"
 
 
+def _fmt_fecha(val):
+    return val.strftime("%Y-%m-%d") if hasattr(val, "strftime") else str(val)[:10]
+
+
 def desglosar_impuestos_item(prod, precio_ingresado, empresa):
     """
     Devuelve (precio_base_sin_impuestos, porcentaje_iva, porcentaje_otro_impuesto)
@@ -42,7 +46,7 @@ def calcular_cufe_y_qr(factura):
     """
     empresa = factura.empresa
     tercero = factura.tercero
-    fecha_str = factura.fecha_emision.strftime("%Y-%m-%d")
+    fecha_str = _fmt_fecha(factura.fecha_emision)
     hora_dt = factura.created_at or datetime.now()
     hora_str = hora_dt.strftime("%H:%M:%S-05:00")
 
@@ -153,7 +157,7 @@ def generar_xml_ubl(factura):
     root.append(cbc("ProfileExecutionID", tipo_amb))
     root.append(cbc("ID", factura.numero_completo))
     root.append(cbc("UUID", factura.cufe, schemeID=tipo_amb, schemeName=scheme_name))
-    root.append(cbc("IssueDate", factura.fecha_emision.strftime("%Y-%m-%d")))
+    root.append(cbc("IssueDate", _fmt_fecha(factura.fecha_emision)))
     hora_dt = factura.created_at or datetime.now()
     root.append(cbc("IssueTime", hora_dt.strftime("%H:%M:%S-05:00")))
     root.append(cbc("CreditNoteTypeCode" if es_nc else "InvoiceTypeCode", type_code))
@@ -172,7 +176,7 @@ def generar_xml_ubl(factura):
         inv_ref = cac("InvoiceDocumentReference")
         inv_ref.append(cbc("ID", factura.factura_referencia.numero_completo))
         inv_ref.append(cbc("UUID", factura.factura_referencia.cufe or factura.factura_referencia.numero_completo, schemeName="CUFE-SHA384"))
-        inv_ref.append(cbc("IssueDate", factura.factura_referencia.fecha_emision.strftime("%Y-%m-%d")))
+        inv_ref.append(cbc("IssueDate", _fmt_fecha(factura.factura_referencia.fecha_emision)))
         bref.append(inv_ref)
         root.append(bref)
 
@@ -288,6 +292,51 @@ def transmitir_documento_dian(factura):
     # Validar generación íntegra del XML UBL 2.1 antes de transmitir
     xml_content = generar_xml_ubl(factura)
     ET.fromstring(xml_content)
+
+    # Si existe Proveedor Tecnológico DIAN configurado cifradamente, transmitir por API REST
+    from apps.core.platform_settings import get_platform_setting
+    pt_url = get_platform_setting("pt_dian_url", "").strip()
+    pt_token = get_platform_setting("pt_dian_token", "").strip()
+
+    if pt_url:
+        import requests
+        headers = {"Content-Type": "application/json"}
+        if pt_token:
+            headers["Authorization"] = f"Bearer {pt_token}"
+        payload = {
+            "empresa_nit": empresa.nit,
+            "software_id": empresa.dian_software_id,
+            "modo_dian": empresa.modo_dian,
+            "test_set_id": empresa.dian_test_set_id,
+            "tipo_documento": factura.tipo_documento,
+            "numero_completo": factura.numero_completo,
+            "cufe": factura.cufe,
+            "total": str(factura.total),
+            "adquiriente_doc": factura.tercero.numero_documento,
+            "xml_ubl": xml_content,
+        }
+        try:
+            resp = requests.post(pt_url, json=payload, headers=headers, timeout=20)
+            data = resp.json() if resp.headers.get("Content-Type", "").startswith("application/json") else {}
+            if 200 <= resp.status_code < 300:
+                factura.dian_track_id = str(data.get("track_id") or f"PT-{factura.cufe[:16].upper()}")
+                if data.get("cufe"):
+                    factura.cufe = str(data["cufe"])
+                factura.estado_dian = "ENVIADA"
+                factura.dian_mensaje = str(
+                    data.get("mensaje") or f"Aceptado vía Proveedor Tecnológico — TrackId: {factura.dian_track_id}"
+                )
+                factura.save(update_fields=["cufe", "qr_data", "dian_track_id", "estado_dian", "dian_mensaje"])
+                return True, factura.dian_mensaje
+            factura.estado_dian = "RECHAZADA"
+            factura.dian_mensaje = str(data.get("error") or f"Rechazo Proveedor Tecnológico (HTTP {resp.status_code})")
+            factura.save(update_fields=["estado_dian", "dian_mensaje"])
+            return False, factura.dian_mensaje
+        except Exception as exc:
+            factura.estado_dian = "CONTINGENCIA"
+            factura.dian_mensaje = f"Error de red con Proveedor Tecnológico DIAN: {exc}"
+            factura.save(update_fields=["estado_dian", "dian_mensaje"])
+            return False, factura.dian_mensaje
 
     modo = "PROD" if empresa.modo_dian == "PRODUCCION" else "HAB"
     track_id = f"DIAN-{modo}-{factura.cufe[:16].upper()}"

@@ -9,4 +9,5 @@ urlpatterns = [
     path('asientos/nuevo/', views.asiento_crear, name='asiento_crear'),
     path('puc/', views.plan_cuentas_lista, name='plan_cuentas_lista'),
     path('estados-financieros/', views.estados_financieros_view, name='estados_financieros'),
+    path('auxiliar-terceros/', views.auxiliar_terceros_view, name='auxiliar_terceros'),
 ]

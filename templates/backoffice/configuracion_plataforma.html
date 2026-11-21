@@ -224,5 +224,48 @@
         </form>
     </div>
 
+    <!-- Sección 4: Proveedor Tecnológico DIAN (API REST) -->
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 sm:p-8 shadow-xl space-y-5 text-xs">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#1e2d47] pb-4">
+            <div>
+                <h2 class="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
+                    <i class="fas fa-network-wired"></i>
+                    <span>4. Proveedor Tecnológico DIAN (API REST)</span>
+                </h2>
+                <p class="text-[11px] text-slate-400 mt-0.5">Si conectas un Proveedor Tecnológico externo (Facturatech / Matias / Factus), la cola DIAN transmitirá el XML UBL por HTTPS con Bearer Token cifrado.</p>
+            </div>
+            <span class="px-3 py-1 rounded-full text-[10px] font-black uppercase {% if pt_dian_url %}bg-emerald-500/15 text-emerald-400 border border-emerald-500/30{% else %}bg-slate-700 text-slate-300{% endif %}">
+                {% if pt_dian_url %}API Activa{% else %}Validación Local{% endif %}
+            </span>
+        </div>
+
+        <form method="POST" class="space-y-4">
+            {% csrf_token %}
+            <input type="hidden" name="seccion" value="dian_pt">
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Endpoint URL Proveedor Tecnológico</label>
+                    <input type="url" name="pt_dian_url" value="{{ pt_dian_url|default:'' }}" placeholder="https://api.proveedor-dian.co/v1/documents"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">
+                        Bearer Token {% if masked_pt_token %}<span class="text-emerald-400 font-mono">({{ masked_pt_token }})</span>{% endif %}
+                    </label>
+                    <input type="password" name="pt_dian_token" value="" placeholder="Dejar vacío para conservar"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                    <label class="inline-flex items-center gap-1.5 text-[10px] text-rose-400 mt-1 cursor-pointer">
+                        <input type="checkbox" name="clear_pt_dian_token" class="rounded"> Limpiar token
+                    </label>
+                </div>
+            </div>
+            <div class="flex justify-end">
+                <button type="submit" class="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black uppercase tracking-wider transition">
+                    Guardar Proveedor DIAN
+                </button>
+            </div>
+        </form>
+    </div>
+
 </div>
 {% endblock %}
