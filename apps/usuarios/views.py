@@ -18,6 +18,7 @@ from apps.usuarios.models import User, EmpresaUsuario
 from apps.usuarios.decorators import requiere_admin
 from apps.core.config import mail_settings
 from apps.core.mail import (
+    get_last_mail_error,
     is_dummy_or_invalid_email,
     send_password_reset_email,
     send_verification_email,
@@ -413,6 +414,7 @@ def password_reset_request_view(request):
 
         if email:
             users = User.objects.filter(email__iexact=email, is_active=True, activo=True)
+            fallidos = 0
             for u in users:
                 uid = urlsafe_base64_encode(force_bytes(u.pk))
                 token = default_token_generator.make_token(u)
@@ -420,9 +422,18 @@ def password_reset_request_view(request):
                     reverse('usuarios:password_reset_confirm', args=[uid, token])
                 )
                 try:
-                    send_password_reset_email(u, reset_url)
+                    if not send_password_reset_email(u, reset_url):
+                        fallidos += 1
                 except Exception as exc:
+                    fallidos += 1
                     logger.warning("Error enviando recuperacion a %s: %s", email, exc)
+            if fallidos:
+                detalle = get_last_mail_error() or "Verifica RESEND_API_KEY o respaldo SMTP."
+                messages.error(
+                    request,
+                    f"No se pudo entregar el correo de recuperación ({detalle})."
+                )
+                return redirect('usuarios:password_reset')
         messages.success(
             request,
             "Si el correo está registrado en FacCol, recibirás un enlace para restablecer tu contraseña."

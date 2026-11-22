@@ -33,7 +33,7 @@ class EmpresaTenantModel(TimestampedModel):
 class ConfiguracionPlataforma(models.Model):
     """
     Almacenamiento cifrado en base de datos para credenciales sensibles de plataforma
-    (Correo SES/Resend y Pasarela Wompi), evitando exponer secretos en .env.
+    (Correo Resend/SMTP y Pasarela Wompi), evitando exponer secretos en .env.
     """
     key = models.CharField(max_length=100, unique=True)
     value = models.TextField(blank=True, default='')

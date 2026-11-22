@@ -17,6 +17,11 @@ import httpx
 from apps.core.config import mail_settings
 
 logger = logging.getLogger("faccol.mail")
+_last_mail_error = ""
+
+
+def get_last_mail_error() -> str:
+    return _last_mail_error
 
 DUMMY_RECIPIENTS = {
     "test@test.com",
@@ -110,6 +115,7 @@ def _send_resend_email(
             _sanitize_header(k): _sanitize_header(v) for k, v in extra_headers.items()
         }
 
+    global _last_mail_error
     try:
         resp = httpx.post(
             "https://api.resend.com/emails",
@@ -121,10 +127,13 @@ def _send_resend_email(
             timeout=12.0,
         )
         if resp.status_code in (200, 201, 202):
+            _last_mail_error = ""
             return True
+        _last_mail_error = f"Resend HTTP {resp.status_code}: {resp.text[:240]}"
         logger.warning("Error Resend API (%s): %s", resp.status_code, resp.text)
         return False
     except Exception as exc:
+        _last_mail_error = f"Excepción Resend: {exc}"
         logger.warning("Excepción enviando vía Resend API a %s: %s", to_email, exc)
         return False
 
@@ -195,7 +204,9 @@ def _send_smtp_message(to_address: str, subject: str, html_body: str) -> bool:
     if captured is not None:
         return captured
 
+    global _last_mail_error
     if not host or not user or not pwd:
+        _last_mail_error = "Falta RESEND_API_KEY o credenciales SMTP completas."
         logger.warning("Credenciales SMTP no configuradas en .env ni Backoffice.")
         return False
 
@@ -223,11 +234,14 @@ def _send_smtp_message(to_address: str, subject: str, html_body: str) -> bool:
                     s.starttls(context=ssl.create_default_context())
                 s.login(user, pwd)
                 s.sendmail(from_addr, [clean_to], msg.as_string())
+        _last_mail_error = ""
         return True
     except smtplib.SMTPResponseException as exc:
+        _last_mail_error = f"SMTP ({exc.smtp_code}): {exc.smtp_error}"
         logger.warning("Respuesta SMTP al enviar a %s: (%s) %s", clean_to, exc.smtp_code, exc.smtp_error)
         return False
     except Exception as exc:
+        _last_mail_error = f"Error SMTP: {exc}"
         logger.warning("Error SMTP enviando a %s: %s", clean_to, exc)
         return False
 

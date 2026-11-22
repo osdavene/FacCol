@@ -138,7 +138,7 @@ def configuracion_empresa(request):
     Autogestión de credenciales propias por cada empresa inquilina:
     - Su propia pasarela Wompi (para recibir pagos directamente en su cuenta).
     - Sus credenciales DIAN y perfil operativo (Tienda de Barrio vs Estándar).
-    - Su propio SMTP opcional (si lo deja vacío usa el servicio SES de la plataforma).
+    - Su propio SMTP opcional (si lo deja vacío usa el correo de la plataforma Resend / SMTP).
     """
     if request.user.es_superadmin_user():
         return redirect('backoffice:configuracion_plataforma')

@@ -10,6 +10,7 @@ from apps.core.config import mail_settings
 from apps.core.mail import (
     _html_to_plain_text,
     _sanitize_header,
+    get_last_mail_error,
     is_dummy_or_invalid_email,
     send_password_reset_email,
     send_system_email,
@@ -118,7 +119,7 @@ def enviar_correo_sistema(
 ):
     """
     Envía correo usando el SMTP de la empresa (si tiene configurado) o el correo
-    unificado de la plataforma (Resend / Amazon SES SMTP) en caso contrario.
+    unificado de la plataforma (Resend API + respaldo SMTP) en caso contrario.
     """
     clean_to = _sanitize_header(to_email).lower()
     if is_dummy_or_invalid_email(clean_to):
@@ -133,7 +134,8 @@ def enviar_correo_sistema(
     if cfg["source"] == "plataforma" and not attachments and not reply_to:
         ok = send_system_email(clean_to, "", clean_subject, html_body)
         if not ok and not fail_silently:
-            raise RuntimeError("No se pudo enviar el correo de plataforma. Verifica .env o Backoffice.")
+            detalle = get_last_mail_error() or "Verifica RESEND_API_KEY o respaldo SMTP en .env o Backoffice."
+            raise RuntimeError(f"No se pudo enviar el correo de plataforma ({detalle}).")
         return ok
 
     # Prioridad Resend cuando se usa correo de plataforma y existe RESEND_API_KEY
@@ -141,7 +143,7 @@ def enviar_correo_sistema(
         if _send_via_resend(cfg, clean_to, clean_subject, html_body, plain_text, reply_to=reply_to, attachments=attachments):
             return True
 
-    # SMTP (Empresa propia o Amazon SES de plataforma)
+    # SMTP (Empresa propia o respaldo de plataforma)
     backend = getattr(settings, "EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
     if "smtp" in backend.lower() and (not cfg["host"] or not cfg["username"] or not cfg["password"]):
         msg = "El servidor de correo de la plataforma aún no tiene credenciales SMTP/Resend configuradas en Backoffice."

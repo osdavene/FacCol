@@ -45,7 +45,7 @@ class MailSettings:
 
     @property
     def MAIL_HOST(self) -> str:
-        return _resolve_setting(("MAIL_HOST", "EMAIL_HOST"), "mail_host", "email-smtp.us-east-1.amazonaws.com")
+        return _resolve_setting(("MAIL_HOST", "EMAIL_HOST"), "mail_host", "smtp.gmail.com")
 
     @property
     def MAIL_PORT(self) -> int:

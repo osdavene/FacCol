@@ -165,7 +165,7 @@ LOGOUT_REDIRECT_URL = 'usuarios:login'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Email Settings (Amazon SES / SMTP / Resend - prioridad .env, con respaldo Laravel/Django)
+# Email Settings (Resend API / Respaldo SMTP - prioridad .env, con respaldo Laravel/Django)
 APP_URL = os.getenv('APP_URL', 'https://faccol.servigest.online').strip().rstrip('/')
 MAIL_MAILER = (os.getenv('MAIL_MAILER') or 'smtp').strip().lower()
 MAIL_ENCRYPTION = (
@@ -173,7 +173,7 @@ MAIL_ENCRYPTION = (
     or ('tls' if os.getenv('EMAIL_USE_TLS', 'True').lower() in ('true', '1', 't') else '')
 ).strip().lower()
 EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
-EMAIL_HOST = (os.getenv('MAIL_HOST') or os.getenv('EMAIL_HOST') or 'email-smtp.us-east-1.amazonaws.com').strip()
+EMAIL_HOST = (os.getenv('MAIL_HOST') or os.getenv('EMAIL_HOST') or 'smtp.gmail.com').strip()
 EMAIL_PORT = int(os.getenv('MAIL_PORT') or os.getenv('EMAIL_PORT') or 587)
 EMAIL_USE_TLS = MAIL_ENCRYPTION in ('tls', 'true', '1')
 EMAIL_USE_SSL = MAIL_ENCRYPTION == 'ssl'

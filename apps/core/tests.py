@@ -62,7 +62,7 @@ class ConfiguracionCifradaYCorreoTests(TestCase):
         self.assertEqual(get_platform_setting("mail_password"), "super-smtp-secret-999")
 
         # Resolución empresa con SMTP propio vs plataforma
-        set_platform_setting("mail_host", "email-smtp.us-east-1.amazonaws.com")
+        set_platform_setting("mail_host", "smtp.gmail.com")
         set_platform_setting("mail_username", "PLATFORM_USER")
         set_platform_setting("mail_from_address", "notificaciones@servigest.online")
 
@@ -334,11 +334,11 @@ class ArquitecturaCorreoYCampanasTests(TestCase):
             {
                 "DJANGO_TEST_ALLOW_RAW_SMTP": "1",
                 "RESEND_API_KEY": "re_test_key",
-                "MAIL_HOST": "email-smtp.us-east-1.amazonaws.com",
+                "MAIL_HOST": "smtp.gmail.com",
                 "MAIL_PORT": "587",
                 "MAIL_ENCRYPTION": "tls",
-                "MAIL_USERNAME": "SES_USER",
-                "MAIL_PASSWORD": "SES_PASSWORD",
+                "MAIL_USERNAME": "SMTP_USER",
+                "MAIL_PASSWORD": "SMTP_PASSWORD",
                 "MAIL_FROM_ADDRESS": "notificaciones@servigest.online",
             },
             clear=False,
@@ -346,7 +346,7 @@ class ArquitecturaCorreoYCampanasTests(TestCase):
             ok = send_system_email("real@empresa.co", "Carlos", "Asunto", "<p>Contenido</p>")
             self.assertTrue(ok)
             mock_smtp_ctx.__enter__.return_value.starttls.assert_called_once()
-            mock_smtp_ctx.__enter__.return_value.login.assert_called_once_with("SES_USER", "SES_PASSWORD")
+            mock_smtp_ctx.__enter__.return_value.login.assert_called_once_with("SMTP_USER", "SMTP_PASSWORD")
             mock_smtp_ctx.__enter__.return_value.sendmail.assert_called_once()
 
         # send_resend_only_email con RESEND_API_KEY incluye List-Unsubscribe

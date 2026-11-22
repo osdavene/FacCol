@@ -531,7 +531,7 @@ def configuracion_probar_correo(request):
         enviar_correo_sistema(
             destino,
             "Prueba de Correo Unificado FacCol",
-            "<p>Este correo confirma que el servidor unificado de plataforma (Amazon SES / Resend) está operativo y cifrado en base de datos.</p>",
+            "<p>Este correo confirma que el servidor unificado de plataforma (Resend API / SMTP) está operativo.</p>",
             fail_silently=False,
         )
         messages.success(request, f"Correo de prueba enviado correctamente a {destino}.")
