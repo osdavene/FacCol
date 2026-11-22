@@ -15,4 +15,7 @@ urlpatterns = [
     path('equipo/<int:asignacion_id>/rol/', views.usuario_cambiar_rol, name='cambiar_rol'),
     path('equipo/<int:asignacion_id>/estado/', views.usuario_cambiar_estado, name='cambiar_estado'),
     path('equipo/<int:asignacion_id>/clave/', views.usuario_asignar_clave, name='asignar_clave'),
+    path('equipo/<int:asignacion_id>/enviar-enlace/', views.usuario_enviar_enlace_clave, name='enviar_enlace_clave'),
+    path('equipo/<int:asignacion_id>/notificar-admin/', views.usuario_notificar_admin_acceso, name='notificar_admin_acceso'),
+    path('equipo/<int:asignacion_id>/actualizar-correo/', views.usuario_actualizar_correo, name='actualizar_correo'),
 ]

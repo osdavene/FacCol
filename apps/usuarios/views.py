@@ -6,6 +6,7 @@ from django.contrib.auth.tokens import PasswordResetTokenGenerator, default_toke
 from django.contrib import messages
 from django.db import transaction
 from django.db.models import Q
+from django.http import HttpResponseForbidden
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.crypto import get_random_string
@@ -20,6 +21,8 @@ from apps.core.audit import registrar_actividad
 from apps.core.config import mail_settings
 from apps.core.mail import (
     get_last_mail_error,
+    is_dummy_or_invalid_email,
+    send_notification_email,
     send_password_reset_email,
 )
 
@@ -278,54 +281,221 @@ def usuario_cambiar_estado(request, asignacion_id):
     return redirect('usuarios:lista')
 
 
+def _resolver_asignacion_accesible(request, asignacion_id):
+    is_sa = bool(request.user.is_superadmin or request.user.is_superuser)
+    empresa = getattr(request, 'empresa_activa', None)
+    if is_sa:
+        return get_object_or_404(EmpresaUsuario.objects.select_related('user', 'empresa'), id=asignacion_id), True
+    if empresa and request.user.es_admin(empresa):
+        return get_object_or_404(
+            EmpresaUsuario.objects.select_related('user', 'empresa'),
+            id=asignacion_id,
+            empresa=empresa,
+        ), False
+    return None, False
+
+
 @login_required
 @require_POST
 def usuario_asignar_clave(request, asignacion_id):
     """
-    Permite al SuperAdmin global o al Administrador de la empresa asignar o restablecer
-    una contraseña de acceso de forma inmediata desde la tabla de usuarios.
+    Bloqueado por privacidad SaaS: ni el SuperAdmin ni terceros deben fijar contraseñas
+    directamente; la gestión de acceso se realiza por enlace firmado al correo del usuario.
     """
-    is_sa = bool(request.user.is_superadmin or request.user.is_superuser)
-    empresa = request.empresa_activa
-
-    if is_sa:
-        asignacion = get_object_or_404(EmpresaUsuario.objects.select_related('user', 'empresa'), id=asignacion_id)
-    elif empresa and request.user.es_admin(empresa):
-        asignacion = get_object_or_404(
-            EmpresaUsuario.objects.select_related('user', 'empresa'),
-            id=asignacion_id,
-            empresa=empresa,
-        )
-    else:
-        messages.error(request, "No tienes permisos para asignar contraseñas a este usuario.")
-        return redirect('core:dashboard')
-
-    if asignacion.user.es_superadmin_user() and asignacion.user != request.user:
-        messages.error(request, "No es posible modificar la contraseña de otro SuperAdmin desde esta vista.")
-        return redirect('usuarios:lista')
-
-    nueva_clave = request.POST.get('nueva_clave', '').strip()
-    if nueva_clave and len(nueva_clave) < 6:
-        messages.error(request, "La contraseña debe tener al menos 6 caracteres.")
-        return redirect('usuarios:lista')
-
-    clave_final = nueva_clave or get_random_string(12)
-    u = asignacion.user
-    u.set_password(clave_final)
-    u.save(update_fields=['password'])
+    asignacion, _ = _resolver_asignacion_accesible(request, asignacion_id)
+    emp_obj = asignacion.empresa if asignacion else None
+    u_obj = asignacion.user if asignacion else None
     registrar_actividad(
         request,
         'usuarios',
-        'ASIGNAR_CLAVE',
-        f"Asignó nueva contraseña a '{u.email or u.username}' en {asignacion.empresa.display_name}.",
-        empresa=asignacion.empresa,
-        objeto=u,
+        'INTENTO_CAMBIO_CLAVE_BLOQUEADO',
+        f"Intento bloqueado de cambio directo de contraseña para '{getattr(u_obj, 'username', asignacion_id)}'.",
+        empresa=emp_obj,
+        objeto=u_obj,
+    )
+    return HttpResponseForbidden(
+        "Por privacidad SaaS no se permite establecer contraseñas de otros usuarios directamente. Usa 'Enviar Enlace' al correo del usuario."
     )
 
-    messages.success(
-        request,
-        f"Contraseña actualizada para {u.email or u.username} ({asignacion.empresa.razon_social}): {clave_final}"
+
+@login_required
+@require_POST
+def usuario_enviar_enlace_clave(request, asignacion_id):
+    """Envía al usuario un enlace firmado de un solo uso para que él mismo defina su contraseña."""
+    asignacion, is_sa = _resolver_asignacion_accesible(request, asignacion_id)
+    if not asignacion:
+        messages.error(request, "No tienes permisos para gestionar el acceso de este usuario.")
+        return redirect('core:dashboard')
+
+    u = asignacion.user
+    if u.es_superadmin_user() and u != request.user:
+        messages.error(request, "No puedes enviar enlaces de restablecimiento para otro SuperAdmin.")
+        return redirect('usuarios:lista')
+
+    correo = (u.email or '').strip().lower()
+    if not correo or is_dummy_or_invalid_email(correo):
+        messages.error(request, f"El usuario {u.username} no tiene un correo electrónico real registrado.")
+        return redirect('usuarios:lista')
+
+    uid = urlsafe_base64_encode(force_bytes(u.pk))
+    token = default_token_generator.make_token(u)
+    reset_url = request.build_absolute_uri(reverse('usuarios:password_reset_confirm', args=[uid, token]))
+    if send_password_reset_email(u, reset_url):
+        registrar_actividad(
+            request,
+            'usuarios',
+            'ENVIAR_ENLACE_CLAVE',
+            f"Envió enlace de restablecimiento de clave al correo '{correo}' de {asignacion.empresa.display_name}.",
+            empresa=asignacion.empresa,
+            objeto=u,
+            datos_extra={'via_superadmin': is_sa},
+        )
+        messages.success(request, f"Enlace seguro de contraseña enviado al correo {correo}.")
+    else:
+        detalle = get_last_mail_error() or "Verifica RESEND_API_KEY o respaldo SMTP."
+        messages.error(request, f"No se pudo enviar el enlace a {correo} ({detalle}).")
+    return redirect('usuarios:lista')
+
+
+@login_required
+@require_POST
+def usuario_notificar_admin_acceso(request, asignacion_id):
+    """Permite al SuperAdmin avisar al Propietario/Admin de la empresa si un miembro perdió acceso a su correo."""
+    is_sa = bool(request.user.is_superadmin or request.user.is_superuser)
+    if not is_sa:
+        return HttpResponseForbidden("Acción exclusiva de SuperAdmin.")
+
+    asignacion = get_object_or_404(EmpresaUsuario.objects.select_related('user', 'empresa'), id=asignacion_id)
+    empresa = asignacion.empresa
+    u = asignacion.user
+
+    admins_otros = (
+        EmpresaUsuario.objects.filter(empresa=empresa, activo=True, rol__in=('propietario', 'admin'))
+        .exclude(user=u)
+        .select_related('user')
     )
+    destinatarios = []
+    seen = set()
+    for a in admins_otros:
+        em = (a.user.email or '').strip().lower()
+        if em and not is_dummy_or_invalid_email(em) and em not in seen:
+            seen.add(em)
+            destinatarios.append(a.user)
+
+    emp_email = (empresa.email or '').strip().lower()
+    nombre_afectado = u.get_full_name() or u.username
+    panel_url = request.build_absolute_uri(reverse('usuarios:lista'))
+
+    enviados = 0
+    for adm in destinatarios:
+        if send_notification_email(
+            adm,
+            f"FacCol — Solicitud de acceso para {nombre_afectado} ({empresa.display_name})",
+            "Asistencia de acceso para usuario de tu empresa",
+            f"El usuario {nombre_afectado} ({u.email or u.username}) requiere restablecer su acceso o actualizar su correo electrónico en {empresa.display_name}.\n\nIngresa a Equipo y Roles para actualizar su correo o enviarle un nuevo enlace de contraseña.",
+            action_url=panel_url,
+            action_text="Ir a Equipo de Empresa",
+        ):
+            enviados += 1
+
+    # Si es único propietario/admin o no hay otros admins con correo, respaldar con correo corporativo de empresa si es distinto
+    if enviados == 0 and emp_email and emp_email != (u.email or '').strip().lower() and not is_dummy_or_invalid_email(emp_email):
+        uid = urlsafe_base64_encode(force_bytes(u.pk))
+        token = default_token_generator.make_token(u)
+        reset_url = request.build_absolute_uri(reverse('usuarios:password_reset_confirm', args=[uid, token]))
+        class _CorpRecipient:
+            def __init__(self, mail_addr, name_str):
+                self.email = mail_addr
+                self.first_name = name_str
+                self.username = mail_addr
+        if send_notification_email(
+            _CorpRecipient(emp_email, empresa.display_name),
+            f"FacCol — Recuperación de acceso de {nombre_afectado} ({empresa.display_name})",
+            "Enlace de recuperación al correo oficial de tu empresa",
+            f"Se solicitó apoyo para recuperar el acceso de {nombre_afectado} ({u.email or u.username}). Como el correo oficial de la empresa ({emp_email}) está registrado como respaldo, puedes usar este enlace de un solo uso para definir una nueva contraseña.",
+            action_url=reset_url,
+            action_text="Restablecer Contraseña Ahora",
+        ):
+            enviados += 1
+
+    if enviados:
+        registrar_actividad(
+            request,
+            'usuarios',
+            'NOTIFICAR_ADMIN_ACCESO',
+            f"Notificó a administrador/correo oficial de {empresa.display_name} sobre acceso de '{u.email or u.username}'.",
+            empresa=empresa,
+            objeto=u,
+        )
+        messages.success(request, f"Aviso de recuperación enviado al administrador/correo oficial de {empresa.display_name}.")
+    else:
+        messages.warning(
+            request,
+            "No se encontraron otros administradores con correo válido ni un correo corporativo distinto en la empresa. Usa 'Cambiar Correo' con motivo auditado si validaste la identidad del Propietario."
+        )
+    return redirect('usuarios:lista')
+
+
+@login_required
+@require_POST
+def usuario_actualizar_correo(request, asignacion_id):
+    """
+    Actualiza el correo del usuario (Admin de empresa para su equipo, o SuperAdmin con motivo
+    obligatorio auditado) y opcionalmente envía enlace de recuperación al nuevo correo.
+    """
+    asignacion, is_sa = _resolver_asignacion_accesible(request, asignacion_id)
+    if not asignacion:
+        messages.error(request, "No tienes permisos para modificar el correo de este usuario.")
+        return redirect('core:dashboard')
+
+    u = asignacion.user
+    if u.es_superadmin_user() and u != request.user:
+        messages.error(request, "No puedes modificar el correo de otro SuperAdmin desde esta vista.")
+        return redirect('usuarios:lista')
+
+    nuevo_correo = (request.POST.get('nuevo_correo') or '').strip().lower()
+    motivo = (request.POST.get('motivo') or '').strip()
+
+    if not nuevo_correo or is_dummy_or_invalid_email(nuevo_correo):
+        messages.error(request, "Ingresa un correo electrónico válido y real.")
+        return redirect('usuarios:lista')
+
+    if is_sa and len(motivo) < 5:
+        messages.error(request, "Como SuperAdmin debes indicar el motivo auditado (mínimo 5 caracteres) para actualizar un correo.")
+        return redirect('usuarios:lista')
+
+    if User.objects.filter(Q(email__iexact=nuevo_correo) | Q(username__iexact=nuevo_correo)).exclude(pk=u.pk).exists():
+        messages.error(request, f"El correo {nuevo_correo} ya pertenece a otra cuenta en FacCol.")
+        return redirect('usuarios:lista')
+
+    correo_anterior = (u.email or '').strip()
+    if u.username.lower() == correo_anterior.lower() or '@' in u.username:
+        u.username = nuevo_correo
+    u.email = nuevo_correo
+    u.email_verified_at = timezone.now()
+    u.save(update_fields=['username', 'email', 'email_verified_at'])
+
+    registrar_actividad(
+        request,
+        'usuarios',
+        'ACTUALIZAR_CORREO_USUARIO',
+        f"Actualizó correo de '{correo_anterior or u.username}' a '{nuevo_correo}' en {asignacion.empresa.display_name}."
+        + (f" Motivo: {motivo}" if motivo else ""),
+        empresa=asignacion.empresa,
+        objeto=u,
+        datos_extra={'correo_anterior': correo_anterior, 'correo_nuevo': nuevo_correo, 'motivo': motivo},
+    )
+
+    if 'enviar_enlace' in request.POST:
+        uid = urlsafe_base64_encode(force_bytes(u.pk))
+        token = default_token_generator.make_token(u)
+        reset_url = request.build_absolute_uri(reverse('usuarios:password_reset_confirm', args=[uid, token]))
+        if send_password_reset_email(u, reset_url):
+            messages.success(request, f"Correo actualizado a {nuevo_correo} y enlace seguro enviado.")
+        else:
+            messages.warning(request, f"Correo actualizado a {nuevo_correo}, pero falló el envío del enlace ({get_last_mail_error()}).")
+    else:
+        messages.success(request, f"Correo actualizado correctamente a {nuevo_correo}.")
     return redirect('usuarios:lista')
 
 
