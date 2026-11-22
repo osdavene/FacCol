@@ -165,16 +165,26 @@ LOGOUT_REDIRECT_URL = 'usuarios:login'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Email Settings (Amazon SES / SMTP - estrictamente desde variables de entorno)
+# Email Settings (Amazon SES / SMTP / Resend - prioridad .env, con respaldo Laravel/Django)
+APP_URL = os.getenv('APP_URL', 'https://faccol.servigest.online').strip().rstrip('/')
+MAIL_MAILER = (os.getenv('MAIL_MAILER') or 'smtp').strip().lower()
+MAIL_ENCRYPTION = (
+    os.getenv('MAIL_ENCRYPTION')
+    or ('tls' if os.getenv('EMAIL_USE_TLS', 'True').lower() in ('true', '1', 't') else '')
+).strip().lower()
 EMAIL_BACKEND = os.getenv('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend')
-EMAIL_HOST = (os.getenv('EMAIL_HOST') or os.getenv('MAIL_HOST') or 'email-smtp.us-east-1.amazonaws.com').strip()
-EMAIL_PORT = int(os.getenv('EMAIL_PORT') or os.getenv('MAIL_PORT') or 587)
-EMAIL_USE_TLS = (os.getenv('EMAIL_USE_TLS') or ('true' if os.getenv('MAIL_ENCRYPTION', 'tls').lower() == 'tls' else 'false')).lower() in ('true', '1', 't')
-EMAIL_HOST_USER = (os.getenv('EMAIL_HOST_USER') or os.getenv('MAIL_USERNAME') or '').strip()
-EMAIL_HOST_PASSWORD = (os.getenv('EMAIL_HOST_PASSWORD') or os.getenv('MAIL_PASSWORD') or '').strip()
+EMAIL_HOST = (os.getenv('MAIL_HOST') or os.getenv('EMAIL_HOST') or 'email-smtp.us-east-1.amazonaws.com').strip()
+EMAIL_PORT = int(os.getenv('MAIL_PORT') or os.getenv('EMAIL_PORT') or 587)
+EMAIL_USE_TLS = MAIL_ENCRYPTION in ('tls', 'true', '1')
+EMAIL_USE_SSL = MAIL_ENCRYPTION == 'ssl'
+EMAIL_HOST_USER = (os.getenv('MAIL_USERNAME') or os.getenv('EMAIL_HOST_USER') or '').strip()
+EMAIL_HOST_PASSWORD = (os.getenv('MAIL_PASSWORD') or os.getenv('EMAIL_HOST_PASSWORD') or '').strip()
 RESEND_API_KEY = os.getenv('RESEND_API_KEY', '').strip()
 
-DEFAULT_FROM_EMAIL = (os.getenv('DEFAULT_FROM_EMAIL') or os.getenv('MAIL_FROM_ADDRESS') or 'notificaciones@servigest.online').strip()
+MAIL_FROM_ADDRESS = (os.getenv('MAIL_FROM_ADDRESS') or os.getenv('DEFAULT_FROM_EMAIL') or 'notificaciones@servigest.online').strip()
+MAIL_FROM_NAME = (os.getenv('MAIL_FROM_NAME') or 'FacCol — ServiGest').strip()
+MAIL_ADMIN_RECIPIENT = (os.getenv('MAIL_ADMIN_RECIPIENT') or 'servigestonline@gmail.com').strip()
+DEFAULT_FROM_EMAIL = MAIL_FROM_ADDRESS
 SERVER_EMAIL = DEFAULT_FROM_EMAIL
 
 # Seguridad adicional en producción

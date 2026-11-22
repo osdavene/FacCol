@@ -357,6 +357,53 @@
 
     {% elif empresa_activa %}
 
+        {% if announcement_banner and announcement_banner.enabled %}
+        <div id="faccolAnnouncementBanner"
+             data-campaign-id="{{ announcement_banner.campaign_id|escapejs }}"
+             class="hidden bg-gradient-to-r from-[#141c2e] via-[#13253a] to-[#0f2928] border border-emerald-500/35 rounded-3xl p-5 shadow-xl flex flex-col lg:flex-row lg:items-center justify-between gap-4 text-xs">
+            <div class="space-y-1.5">
+                <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/15 text-emerald-300 border border-emerald-500/30">
+                    <i class="fas fa-sparkles"></i> {{ announcement_banner.badge }}
+                </span>
+                <h3 class="font-display font-bold text-base text-white">{{ announcement_banner.title }}</h3>
+                <p class="text-slate-300 leading-relaxed max-w-3xl">{{ announcement_banner.message }}</p>
+            </div>
+            <div class="flex items-center gap-2.5 flex-wrap flex-shrink-0">
+                <a href="{{ announcement_banner.cta_url }}"
+                   class="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-black uppercase tracking-wider transition whitespace-nowrap">
+                    {{ announcement_banner.cta_label }}
+                </a>
+                {% if announcement_banner.secondary_label and announcement_banner.secondary_url %}
+                <a href="{{ announcement_banner.secondary_url }}"
+                   class="px-3.5 py-2.5 rounded-xl bg-[#162034] hover:bg-[#1e2d47] border border-[#2a3b5c] text-slate-200 font-bold uppercase tracking-wider transition whitespace-nowrap">
+                    {{ announcement_banner.secondary_label }}
+                </a>
+                {% endif %}
+                <button type="button" onclick="ocultarBannerNovedades()"
+                        class="px-3 py-2.5 rounded-xl bg-[#0e1422] hover:bg-[#1a2337] border border-[#1e2d47] text-slate-400 hover:text-white font-semibold transition">
+                    Ocultar
+                </button>
+            </div>
+        </div>
+        <script>
+            (function () {
+                var el = document.getElementById('faccolAnnouncementBanner');
+                if (!el) return;
+                var cid = el.getAttribute('data-campaign-id') || 'default';
+                if (localStorage.getItem('banner_dismissed_' + cid) !== '1') {
+                    el.classList.remove('hidden');
+                }
+            })();
+            function ocultarBannerNovedades() {
+                var el = document.getElementById('faccolAnnouncementBanner');
+                if (!el) return;
+                var cid = el.getAttribute('data-campaign-id') || 'default';
+                localStorage.setItem('banner_dismissed_' + cid, '1');
+                el.classList.add('hidden');
+            }
+        </script>
+        {% endif %}
+
         <!-- Subtítulo de Contexto Operativo -->
         <div class="flex items-center justify-between">
             <div class="flex items-center gap-2 text-xs font-bold text-slate-300">

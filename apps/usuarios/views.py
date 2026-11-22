@@ -1,17 +1,39 @@
+import logging
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
-from django.contrib.auth.tokens import default_token_generator
+from django.contrib.auth.tokens import PasswordResetTokenGenerator, default_token_generator
 from django.contrib import messages
+from django.db import transaction
+from django.db.models import Q
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.crypto import get_random_string
 from django.utils.encoding import force_bytes, force_str
 from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
 from django.views.decorators.http import require_POST
 
+from apps.empresas.models import Empresa, Plan
 from apps.usuarios.models import User, EmpresaUsuario
 from apps.usuarios.decorators import requiere_admin
-from apps.core.mail_service import enviar_recuperacion_contrasena
+from apps.core.config import mail_settings
+from apps.core.mail import (
+    is_dummy_or_invalid_email,
+    send_password_reset_email,
+    send_verification_email,
+)
+
+
+class EmailVerificationTokenGenerator(PasswordResetTokenGenerator):
+    """Token firmado de un solo uso y con expiración para verificación de correo electrónico."""
+
+    def _make_hash_value(self, user, timestamp):
+        verified_ts = user.email_verified_at.isoformat() if user.email_verified_at else ""
+        return f"{user.pk}{user.password}{user.is_active}{verified_ts}{timestamp}"
+
+
+email_verification_token = EmailVerificationTokenGenerator()
+logger = logging.getLogger("faccol.auth")
 
 
 def login_view(request):
@@ -34,7 +56,13 @@ def login_view(request):
 
         if user:
             if not user.activo:
-                messages.error(request, "Esta cuenta ha sido desactivada. Comuníquese con el administrador.")
+                if user.email_verified_at is None:
+                    messages.warning(
+                        request,
+                        "Tu cuenta aún está pendiente de verificación. Revisa tu correo electrónico para activar el acceso."
+                    )
+                else:
+                    messages.error(request, "Esta cuenta ha sido desactivada. Comuníquese con el administrador.")
                 return render(request, 'usuarios/login.html')
 
             login(request, user)
@@ -45,6 +73,127 @@ def login_view(request):
             messages.error(request, "Credenciales incorrectas. Verifique su usuario o contraseña.")
 
     return render(request, 'usuarios/login.html')
+
+
+def registro_view(request):
+    """Registro público SaaS: crea Empresa + Propietario pendiente y envía correo de verificación."""
+    if request.user.is_authenticated:
+        return redirect('core:dashboard')
+
+    if request.method == 'POST':
+        razon_social = request.POST.get('razon_social', '').strip()
+        nit = request.POST.get('nit', '').strip()
+        first_name = request.POST.get('first_name', '').strip()
+        last_name = request.POST.get('last_name', '').strip()
+        telefono = request.POST.get('telefono', '').strip()
+        email = request.POST.get('email', '').strip().lower()
+        perfil = request.POST.get('perfil_operativo', 'GENERAL').strip().upper()
+        if perfil not in ('GENERAL', 'TIENDA'):
+            perfil = 'GENERAL'
+        p1 = request.POST.get('password1', '').strip()
+        p2 = request.POST.get('password2', '').strip()
+
+        form_data = {
+            'razon_social': razon_social,
+            'nit': nit,
+            'first_name': first_name,
+            'last_name': last_name,
+            'telefono': telefono,
+            'email': email,
+            'perfil_operativo': perfil,
+        }
+
+        if not razon_social or not nit or not email or not p1:
+            messages.error(request, "Completa razón social, NIT/cédula, correo electrónico y contraseña.")
+            return render(request, 'usuarios/registro.html', {'form_data': form_data})
+        if is_dummy_or_invalid_email(email):
+            messages.error(request, "Ingresa una dirección de correo electrónico válida y real.")
+            return render(request, 'usuarios/registro.html', {'form_data': form_data})
+        if len(p1) < 6:
+            messages.error(request, "La contraseña debe tener mínimo 6 caracteres.")
+            return render(request, 'usuarios/registro.html', {'form_data': form_data})
+        if p1 != p2:
+            messages.error(request, "Las contraseñas no coinciden.")
+            return render(request, 'usuarios/registro.html', {'form_data': form_data})
+        if User.objects.filter(Q(username__iexact=email) | Q(email__iexact=email)).exists():
+            messages.error(request, "Ya existe una cuenta registrada con ese correo electrónico.")
+            return render(request, 'usuarios/registro.html', {'form_data': form_data})
+        if Empresa.objects.filter(nit=nit).exists():
+            messages.error(request, "Ya existe una empresa registrada con ese NIT o cédula.")
+            return render(request, 'usuarios/registro.html', {'form_data': form_data})
+
+        with transaction.atomic():
+            plan_gratuito = Plan.objects.filter(activo=True, precio_mensual=0).order_by('id').first()
+            empresa = Empresa.objects.create(
+                razon_social=razon_social,
+                nombre_comercial=razon_social,
+                nit=nit,
+                email=email,
+                telefono=telefono,
+                perfil_operativo=perfil,
+                plan=plan_gratuito,
+                activa=True,
+            )
+            if plan_gratuito:
+                empresa.sincronizar_modulos_con_plan(plan_gratuito)
+
+            user = User.objects.create_user(
+                username=email,
+                email=email,
+                password=p1,
+                first_name=first_name or razon_social[:30],
+                last_name=last_name,
+                telefono=telefono,
+                activo=False,
+                is_active=True,
+                email_verified_at=None,
+            )
+            EmpresaUsuario.objects.create(
+                user=user,
+                empresa=empresa,
+                rol='propietario',
+                activo=True,
+            )
+
+        uid = urlsafe_base64_encode(force_bytes(user.pk))
+        token = email_verification_token.make_token(user)
+        verify_url = request.build_absolute_uri(
+            reverse('usuarios:verificar_email', args=[uid, token])
+        )
+        enviado = send_verification_email(user, verify_url)
+        if enviado:
+            messages.success(
+                request,
+                f"¡Empresa '{empresa.display_name}' creada! Enviamos un enlace de activación a {email} para habilitar tu acceso."
+            )
+        else:
+            messages.warning(
+                request,
+                f"Tu cuenta para '{empresa.display_name}' fue creada, pero el servidor de correo no pudo entregar el enlace de verificación."
+            )
+        return redirect('usuarios:login')
+
+    return render(request, 'usuarios/registro.html', {'form_data': {}})
+
+
+def verificar_email_view(request, uidb64, token):
+    """Activa cuenta nueva validando token firmado de un solo uso y expiración."""
+    try:
+        uid = force_str(urlsafe_base64_decode(uidb64))
+        user = User.objects.get(pk=uid)
+    except Exception:
+        user = None
+
+    if not user or not email_verification_token.check_token(user, token):
+        messages.error(request, "El enlace de verificación es inválido o ya fue utilizado.")
+        return redirect('usuarios:login')
+
+    user.email_verified_at = timezone.now()
+    user.activo = True
+    user.is_active = True
+    user.save(update_fields=['email_verified_at', 'activo', 'is_active'])
+    messages.success(request, "¡Correo verificado y empresa activada! Ya puedes iniciar sesión en FacCol.")
+    return redirect('usuarios:login')
 
 
 def logout_view(request):
@@ -141,6 +290,7 @@ def usuario_crear(request):
                 'first_name': first_name,
                 'last_name': last_name,
                 'telefono': telefono,
+                'email_verified_at': timezone.now(),
             }
         )
         if created:
@@ -248,18 +398,16 @@ def password_reset_request_view(request):
     if request.method == 'POST':
         email = request.POST.get('email', '').strip().lower()
         from django.conf import settings as django_settings
-        from apps.core.mail_service import get_mail_runtime_config
-        cfg = get_mail_runtime_config()
         backend = getattr(django_settings, 'EMAIL_BACKEND', '')
         mail_sin_credenciales = (
-            'smtp' in backend.lower()
-            and not cfg.get('resend_api_key')
-            and (not cfg.get('host') or not cfg.get('username') or not cfg.get('password'))
+            'locmem' not in backend.lower()
+            and not mail_settings.RESEND_API_KEY
+            and (not mail_settings.MAIL_HOST or not mail_settings.MAIL_USERNAME or not mail_settings.MAIL_PASSWORD)
         )
         if mail_sin_credenciales:
             messages.warning(
                 request,
-                "El servidor de correo de la plataforma aún no tiene contraseña SMTP o API Key configurada en Backoffice → Correo & Wompi."
+                "El servidor de correo de la plataforma aún no tiene credenciales SMTP o RESEND_API_KEY configuradas en .env o Backoffice."
             )
             return redirect('usuarios:password_reset')
 
@@ -272,10 +420,9 @@ def password_reset_request_view(request):
                     reverse('usuarios:password_reset_confirm', args=[uid, token])
                 )
                 try:
-                    enviar_recuperacion_contrasena(u, reset_url)
+                    send_password_reset_email(u, reset_url)
                 except Exception as exc:
-                    import logging
-                    logging.getLogger(__name__).warning("Error enviando recuperacion a %s: %s", email, exc)
+                    logger.warning("Error enviando recuperacion a %s: %s", email, exc)
         messages.success(
             request,
             "Si el correo está registrado en FacCol, recibirás un enlace para restablecer tu contraseña."

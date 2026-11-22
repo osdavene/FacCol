@@ -6,48 +6,15 @@ import requests
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives, get_connection
 
+from apps.core.config import mail_settings
+from apps.core.mail import (
+    _html_to_plain_text,
+    _sanitize_header,
+    is_dummy_or_invalid_email,
+    send_password_reset_email,
+    send_system_email,
+)
 from apps.core.platform_settings import decrypt_secret, get_platform_setting, mask_secret
-
-DUMMY_RECIPIENTS = {
-    "test@test.com",
-    "test@example.com",
-    "usuario@test.com",
-    "admin@dian.gov.co",
-}
-DUMMY_DOMAIN_SUFFIXES = ("@example.com", "@test.com", "@localhost", ".local", "@fakemail.com")
-
-
-def _sanitize_header(val):
-    return re.sub(r"[\r\n]+", " ", str(val or "")).strip()
-
-
-def _html_to_plain_text(html_body: str) -> str:
-    """Convierte HTML a texto plano limpio conservando enlaces (URL) para compatibilidad RFC y anti-spam."""
-    text = re.sub(r"<\s*br\s*/?>", "\n", str(html_body or ""), flags=re.IGNORECASE)
-    text = re.sub(r"</\s*p\s*>", "\n\n", text, flags=re.IGNORECASE)
-    text = re.sub(r"</\s*h[1-6]\s*>", "\n\n", text, flags=re.IGNORECASE)
-    text = re.sub(r"</\s*div\s*>", "\n", text, flags=re.IGNORECASE)
-    text = re.sub(
-        r'<\s*a\s+[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)<\s*/a\s*>',
-        lambda m: f"{re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', ' ', m.group(2))).strip()} ({m.group(1)})",
-        text,
-        flags=re.IGNORECASE | re.DOTALL,
-    )
-    text = _html.unescape(re.sub(r"<[^>]+>", " ", text))
-    lines = [re.sub(r"[ \t]+", " ", line).strip() for line in text.split("\n")]
-    return "\n".join(lines).strip()
-
-
-def is_dummy_or_invalid_email(email: str) -> bool:
-    clean = (email or "").strip().lower()
-    if not clean or "@" not in clean or "\r" in clean or "\n" in clean:
-        return True
-    user, _, domain = clean.partition("@")
-    if not user or not domain or "." not in domain:
-        return True
-    if clean in DUMMY_RECIPIENTS or any(clean.endswith(s) for s in DUMMY_DOMAIN_SUFFIXES):
-        return True
-    return False
 
 
 def get_mail_runtime_config(empresa=None):
@@ -76,17 +43,14 @@ def get_mail_runtime_config(empresa=None):
                 "resend_api_key": "",
             }
 
-    host = get_platform_setting("mail_host", getattr(settings, "EMAIL_HOST", "email-smtp.us-east-1.amazonaws.com")).strip()
-    port_raw = get_platform_setting("mail_port", str(getattr(settings, "EMAIL_PORT", 587))).strip()
-    port = int(port_raw) if port_raw.isdigit() else 587
-    username = get_platform_setting("mail_username", getattr(settings, "EMAIL_HOST_USER", "")).strip()
-    password = get_platform_setting("mail_password", getattr(settings, "EMAIL_HOST_PASSWORD", "")).strip()
-    enc = get_platform_setting("mail_encryption", "tls").strip().lower()
-    from_addr = _sanitize_header(
-        get_platform_setting("mail_from_address", getattr(settings, "DEFAULT_FROM_EMAIL", "notificaciones@servigest.online"))
-    )
-    from_name = _sanitize_header(get_platform_setting("mail_from_name", "FacCol — ServiGest"))
-    resend_key = get_platform_setting("resend_api_key", getattr(settings, "RESEND_API_KEY", "")).strip()
+    host = mail_settings.MAIL_HOST
+    port = mail_settings.MAIL_PORT
+    username = mail_settings.MAIL_USERNAME
+    password = mail_settings.MAIL_PASSWORD
+    enc = mail_settings.MAIL_ENCRYPTION
+    from_addr = _sanitize_header(mail_settings.MAIL_FROM_ADDRESS)
+    from_name = _sanitize_header(mail_settings.MAIL_FROM_NAME)
+    resend_key = mail_settings.RESEND_API_KEY
 
     return {
         "source": "plataforma",
@@ -166,6 +130,12 @@ def enviar_correo_sistema(
     plain_text = text_body or _html_to_plain_text(html_body)
     cfg = get_mail_runtime_config(empresa=empresa)
 
+    if cfg["source"] == "plataforma" and not attachments and not reply_to:
+        ok = send_system_email(clean_to, "", clean_subject, html_body)
+        if not ok and not fail_silently:
+            raise RuntimeError("No se pudo enviar el correo de plataforma. Verifica .env o Backoffice.")
+        return ok
+
     # Prioridad Resend cuando se usa correo de plataforma y existe RESEND_API_KEY
     if cfg["source"] == "plataforma" and cfg.get("resend_api_key"):
         if _send_via_resend(cfg, clean_to, clean_subject, html_body, plain_text, reply_to=reply_to, attachments=attachments):
@@ -218,27 +188,7 @@ def enviar_correo_sistema(
 
 
 def enviar_recuperacion_contrasena(user, reset_url: str) -> bool:
-    nombre = _html.escape(user.get_full_name() or user.username)
-    url_safe = _html.escape(reset_url, quote=True)
-    html_body = f"""
-    <div style="font-family:Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;background:#0f172a;color:#e2e8f0;border-radius:16px;">
-      <h2 style="color:#f59e0b;margin-top:0;">Recuperación de Contraseña — FacCol</h2>
-      <p>Hola <b>{nombre}</b>,</p>
-      <p>Recibimos una solicitud para restablecer la contraseña de tu cuenta.</p>
-      <p style="margin:24px 0;">
-        <a href="{url_safe}" style="background:#f59e0b;color:#000;padding:12px 20px;border-radius:10px;text-decoration:none;font-weight:bold;">
-          Restablecer mi Contraseña
-        </a>
-      </p>
-      <p style="font-size:12px;color:#94a3b8;">Si no solicitaste este cambio, puedes ignorar este mensaje con tranquilidad. El enlace expirará pronto por seguridad.</p>
-    </div>
-    """
-    return enviar_correo_sistema(
-        user.email,
-        "Recuperación de contraseña — FacCol",
-        html_body,
-        fail_silently=False,
-    )
+    return send_password_reset_email(user, reset_url)
 
 
 def enviar_notificacion_bienvenida_empresa(empresa, admin_email: str, admin_nombre: str, temp_password: str, login_url: str) -> bool:

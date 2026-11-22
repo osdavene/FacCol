@@ -14,6 +14,7 @@ class User(AbstractUser):
     tema = models.CharField(max_length=20, choices=TEMAS_CHOICES, default='oscuro', verbose_name="Tema de Interfaz")
     is_superadmin = models.BooleanField(default=False, verbose_name="Superadmin de Plataforma")
     activo = models.BooleanField(default=True, verbose_name="Usuario Activo")
+    email_verified_at = models.DateTimeField(null=True, blank=True, verbose_name="Correo verificado el")
 
     class Meta:
         verbose_name = "Usuario"

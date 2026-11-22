@@ -5,6 +5,8 @@ app_name = 'usuarios'
 
 urlpatterns = [
     path('login/', views.login_view, name='login'),
+    path('registro/', views.registro_view, name='registro'),
+    path('verificar/<uidb64>/<token>/', views.verificar_email_view, name='verificar_email'),
     path('logout/', views.logout_view, name='logout'),
     path('password-reset/', views.password_reset_request_view, name='password_reset'),
     path('password-reset/<uidb64>/<token>/', views.password_reset_confirm_view, name='password_reset_confirm'),

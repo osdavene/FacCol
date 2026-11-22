@@ -199,6 +199,7 @@ def activate_wompi_transaction(tx: TransaccionWompi) -> bool:
                             email=email,
                             password=temp_pwd,
                             first_name=nombre_emp[:30],
+                            email_verified_at=now,
                         )
                     EmpresaUsuario.objects.get_or_create(
                         user=user,

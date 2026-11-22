@@ -3,6 +3,7 @@ from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import user_passes_test
 from django.contrib import messages
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.crypto import get_random_string
 from django.views.decorators.http import require_POST
 from apps.empresas.models import Empresa, Plan, Modulo, Departamento, Municipio, SolicitudCambioPlan
@@ -14,6 +15,16 @@ from apps.core.mail_service import (
     enviar_notificacion_bienvenida_empresa,
     get_mail_runtime_config,
 )
+from apps.core.campaigns import (
+    get_campaign_summary,
+    get_tenant_banner,
+    reset_campaign_cycle,
+    save_campaign_draft,
+    save_tenant_banner,
+    send_campaign_batch,
+    send_campaign_test_email,
+)
+from apps.core.config import mail_settings
 from apps.facturacion.wompi_service import get_wompi_runtime_config
 
 
@@ -125,6 +136,7 @@ def empresa_crear(request):
                     'is_superadmin': False,
                     'is_staff': False,
                     'is_superuser': False,
+                    'email_verified_at': timezone.now(),
                 }
             )
             admin_password = raw_password or (get_random_string(12) if created else '')
@@ -526,3 +538,101 @@ def configuracion_probar_correo(request):
     except Exception as exc:
         messages.error(request, f"Error enviando correo de prueba: {exc}")
     return redirect('backoffice:configuracion_plataforma')
+
+
+# ══════════════════════════════════════════════════════════════════════
+# COMUNICADOS POR TANDAS ANTI-SPAM (RESEND) & BANNER DE NOVEDADES
+# ══════════════════════════════════════════════════════════════════════
+
+@user_passes_test(es_superadmin)
+def comunicados_panel(request):
+    tab = request.GET.get('tab', 'correo')
+    if tab not in ('correo', 'banner'):
+        tab = 'correo'
+    summary = get_campaign_summary()
+    banner = get_tenant_banner()
+    return render(request, 'backoffice/comunicados.html', {
+        'summary': summary,
+        'banner': banner,
+        'tab': tab,
+        'resend_configured': bool(mail_settings.RESEND_API_KEY),
+    })
+
+
+def _extraer_borrador_comunicado(post_data):
+    try:
+        batch_size = int(post_data.get('batch_size') or 45)
+    except (TypeError, ValueError):
+        batch_size = 45
+    return {
+        'subject': post_data.get('subject', ''),
+        'body_text': post_data.get('body_text', ''),
+        'cta_label': post_data.get('cta_label', ''),
+        'cta_url': post_data.get('cta_url', ''),
+        'batch_size': batch_size,
+    }
+
+
+@user_passes_test(es_superadmin)
+@require_POST
+def comunicado_guardar_borrador(request):
+    datos = _extraer_borrador_comunicado(request.POST)
+    save_campaign_draft(**datos)
+    messages.success(request, "Borrador de comunicado guardado. Realiza el envío de prueba antes de lanzar la tanda.")
+    return redirect(f"{reverse('backoffice:comunicados_panel')}?tab=correo")
+
+
+@user_passes_test(es_superadmin)
+@require_POST
+def comunicado_probar(request):
+    datos = _extraer_borrador_comunicado(request.POST)
+    test_email = request.POST.get('test_email', '').strip() or request.user.email
+    ok, msg = send_campaign_test_email(
+        test_email=test_email,
+        admin_name=request.user.get_full_name() or request.user.username,
+        **datos,
+    )
+    if ok:
+        messages.success(request, msg)
+    else:
+        messages.error(request, msg)
+    return redirect(f"{reverse('backoffice:comunicados_panel')}?tab=correo")
+
+
+@user_passes_test(es_superadmin)
+@require_POST
+def comunicado_enviar_tanda(request):
+    datos = _extraer_borrador_comunicado(request.POST)
+    res = send_campaign_batch(**datos)
+    if res.get('ok'):
+        messages.success(request, res.get('message', 'Tanda enviada correctamente.'))
+    else:
+        messages.error(request, res.get('message', 'No se pudo enviar la tanda.'))
+    return redirect(f"{reverse('backoffice:comunicados_panel')}?tab=correo")
+
+
+@user_passes_test(es_superadmin)
+@require_POST
+def comunicado_reiniciar(request):
+    custom_slug = request.POST.get('custom_slug', '').strip() or None
+    nuevo_id = reset_campaign_cycle(custom_slug)
+    messages.info(request, f"Ciclo de campaña reiniciado con ID '{nuevo_id}'. Debes probar el borrador nuevamente.")
+    return redirect(f"{reverse('backoffice:comunicados_panel')}?tab=correo")
+
+
+@user_passes_test(es_superadmin)
+@require_POST
+def comunicado_guardar_banner(request):
+    save_tenant_banner({
+        'enabled': 'enabled' in request.POST,
+        'campaign_id': request.POST.get('campaign_id', ''),
+        'badge': request.POST.get('badge', ''),
+        'title': request.POST.get('title', ''),
+        'message': request.POST.get('message', ''),
+        'cta_label': request.POST.get('cta_label', ''),
+        'cta_url': request.POST.get('cta_url', ''),
+        'secondary_label': request.POST.get('secondary_label', ''),
+        'secondary_url': request.POST.get('secondary_url', ''),
+    })
+    messages.success(request, "Banner informativo del panel del usuario actualizado correctamente.")
+    return redirect(f"{reverse('backoffice:comunicados_panel')}?tab=banner")

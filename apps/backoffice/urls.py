@@ -21,4 +21,12 @@ urlpatterns = [
     # Configuración Global Cifrada (Correo y Wompi)
     path('configuracion/', views.configuracion_plataforma, name='configuracion_plataforma'),
     path('configuracion/probar-correo/', views.configuracion_probar_correo, name='configuracion_probar_correo'),
+
+    # Comunicados Masivos Anti-Spam & Banner en Panel del Usuario
+    path('comunicados/', views.comunicados_panel, name='comunicados_panel'),
+    path('comunicados/guardar-borrador/', views.comunicado_guardar_borrador, name='comunicado_guardar_borrador'),
+    path('comunicados/probar/', views.comunicado_probar, name='comunicado_probar'),
+    path('comunicados/enviar-tanda/', views.comunicado_enviar_tanda, name='comunicado_enviar_tanda'),
+    path('comunicados/reiniciar/', views.comunicado_reiniciar, name='comunicado_reiniciar'),
+    path('comunicados/banner/', views.comunicado_guardar_banner, name='comunicado_guardar_banner'),
 ]

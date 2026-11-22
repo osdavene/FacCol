@@ -256,3 +256,280 @@ class MiPlanYCambioPlanTests(TestCase):
         self.assertEqual(emp2.plan_id, plan_emp.id)
         self.assertTrue(emp2.tiene_modulo("nomina"))
 
+
+class ArquitecturaCorreoYCampanasTests(TestCase):
+    def setUp(self):
+        from django.utils import timezone
+        self.now = timezone.now()
+        self.sa = User.objects.create_user(
+            username="sa_camp@faccol.co", email="sa_camp@faccol.co",
+            password="SafePass!2026", is_superadmin=True, is_superuser=True, is_staff=True,
+            email_verified_at=self.now,
+        )
+        self.plan_gratis = Plan.objects.create(nombre="Plan Inicio Gratis", precio_mensual=0, activo=True)
+        self.emp = Empresa.objects.create(razon_social="Cliente Verificado SAS", nit="900555666", plan=self.plan_gratis)
+
+    def test_prioridad_env_sobre_backoffice_y_sanitizacion_mail(self):
+        import os
+        from unittest.mock import patch, MagicMock
+        from apps.core.config import mail_settings
+        from apps.core.mail import (
+            _html_to_plain_text,
+            _safe_http_url,
+            _sanitize_header,
+            build_campaign_email_html,
+            is_dummy_or_invalid_email,
+            send_resend_only_email,
+            send_system_email,
+        )
+
+        # Backoffice como respaldo cuando .env no define la clave
+        set_platform_setting("mail_host", "smtp.backoffice.co")
+        set_platform_setting("mail_username", "backoffice_user")
+        with patch.dict(os.environ, {"MAIL_HOST": "", "EMAIL_HOST": ""}, clear=False):
+            self.assertEqual(mail_settings.MAIL_HOST, "smtp.backoffice.co")
+
+        # .env tiene prioridad estricta sobre Backoffice
+        with patch.dict(os.environ, {"MAIL_HOST": "smtp.env.aws.com", "MAIL_USERNAME": "ENV_USER", "RESEND_API_KEY": "re_env_123"}, clear=False):
+            self.assertEqual(mail_settings.MAIL_HOST, "smtp.env.aws.com")
+            self.assertEqual(mail_settings.MAIL_USERNAME, "ENV_USER")
+            self.assertEqual(mail_settings.RESEND_API_KEY, "re_env_123")
+
+        # Sanitización y URLs seguras
+        self.assertEqual(_sanitize_header("Hola\r\nBcc: evil@x.com"), "Hola Bcc: evil@x.com")
+        self.assertEqual(_safe_http_url("javascript:alert(1)"), "#")
+        self.assertTrue(_safe_http_url("https://faccol.servigest.online/login").startswith("https://"))
+        plain = _html_to_plain_text('<p>Hola</p><a href="https://faccol.servigest.online/ok">Activar</a>')
+        self.assertIn("Activar (https://faccol.servigest.online/ok)", plain)
+        self.assertTrue(is_dummy_or_invalid_email("demo@example.com"))
+        self.assertFalse(is_dummy_or_invalid_email("gerencia@miempresa.co"))
+
+        # HTML de campaña con viñetas, tabla presentation, XSS escapado y BAJA
+        html_c = build_campaign_email_html(
+            recipient_name="<script>alert(1)</script>",
+            subject="Lanzamiento FacCol",
+            body_text="Intro.\n\nBeneficios clave:\n- Factura DIAN: rápida\n- POS Express: 58mm",
+            cta_label="Ir ahora",
+            cta_url="https://faccol.servigest.online/auth/login/",
+        )
+        self.assertNotIn("<script>", html_c)
+        self.assertIn("table role='presentation'", html_c)
+        self.assertIn("&#10003;", html_c)
+        self.assertIn("FACCOL", html_c)
+        self.assertIn("BAJA", html_c)
+
+        # send_resend_only_email nunca cae a SMTP si falta RESEND_API_KEY
+        with patch.dict(os.environ, {"RESEND_API_KEY": ""}, clear=False):
+            set_platform_setting("resend_api_key", "", is_secret=True)
+            self.assertFalse(send_resend_only_email("cliente@empresa.co", "Ana", "Asunto", "<p>Hola</p>"))
+        self.assertFalse(send_resend_only_email("dummy@test.com", "Ana", "Asunto", "<p>Hola</p>"))
+        self.assertTrue(send_system_email("dummy@example.com", "Ana", "Asunto", "<p>Hola</p>"))
+
+        # send_system_email: Resend falla -> fallback automático a smtplib.SMTP real
+        mock_resp = MagicMock(status_code=500, text="err")
+        mock_smtp_ctx = MagicMock()
+        mock_smtp_cls = MagicMock(return_value=mock_smtp_ctx)
+        with patch.dict(
+            os.environ,
+            {
+                "DJANGO_TEST_ALLOW_RAW_SMTP": "1",
+                "RESEND_API_KEY": "re_test_key",
+                "MAIL_HOST": "email-smtp.us-east-1.amazonaws.com",
+                "MAIL_PORT": "587",
+                "MAIL_ENCRYPTION": "tls",
+                "MAIL_USERNAME": "SES_USER",
+                "MAIL_PASSWORD": "SES_PASSWORD",
+                "MAIL_FROM_ADDRESS": "notificaciones@servigest.online",
+            },
+            clear=False,
+        ), patch("apps.core.mail.httpx.post", return_value=mock_resp), patch("apps.core.mail.smtplib.SMTP", mock_smtp_cls):
+            ok = send_system_email("real@empresa.co", "Carlos", "Asunto", "<p>Contenido</p>")
+            self.assertTrue(ok)
+            mock_smtp_ctx.__enter__.return_value.starttls.assert_called_once()
+            mock_smtp_ctx.__enter__.return_value.login.assert_called_once_with("SES_USER", "SES_PASSWORD")
+            mock_smtp_ctx.__enter__.return_value.sendmail.assert_called_once()
+
+        # send_resend_only_email con RESEND_API_KEY incluye List-Unsubscribe
+        ok_resp = MagicMock(status_code=200, text="{}")
+        with patch.dict(
+            os.environ,
+            {"RESEND_API_KEY": "re_live_mock", "MAIL_ADMIN_RECIPIENT": "bajas@servigest.online"},
+            clear=False,
+        ), patch("apps.core.mail.httpx.post", return_value=ok_resp) as m_post:
+            self.assertTrue(send_resend_only_email("real@empresa.co", "Carlos", "Novedad", "<p>Hola</p>"))
+            sent_json = m_post.call_args.kwargs["json"]
+            self.assertEqual(sent_json["headers"]["List-Unsubscribe"], "<mailto:bajas@servigest.online?subject=BAJA>")
+
+    def test_campanas_tandas_antispam_banner_y_panel_superadmin(self):
+        from apps.core.campaigns import (
+            DAILY_SAFE_CAP,
+            get_campaign_state,
+            get_campaign_summary,
+            reset_campaign_cycle,
+            save_campaign_state,
+            send_campaign_batch,
+            send_campaign_test_email,
+        )
+
+        u_ok1 = User.objects.create_user(
+            username="u1@negocio.co", email="u1@negocio.co", password="SafePass!2026",
+            activo=True, is_active=True, email_verified_at=self.now,
+        )
+        u_ok2 = User.objects.create_user(
+            username="u2@negocio.co", email="u2@negocio.co", password="SafePass!2026",
+            activo=True, is_active=True, email_verified_at=self.now,
+        )
+        User.objects.create_user(
+            username="noverif@negocio.co", email="noverif@negocio.co", password="SafePass!2026",
+            activo=True, is_active=True, email_verified_at=None,
+        )
+        User.objects.create_user(
+            username="dummy@test.com", email="dummy@test.com", password="SafePass!2026",
+            activo=True, is_active=True, email_verified_at=self.now,
+        )
+
+        # Sin prueba previa bloquea con pretest_required
+        res_block = send_campaign_batch(
+            subject="Aviso 1", body_text="Cuerpo", cta_label="Ver", cta_url="https://faccol.servigest.online",
+            batch_size=1, sleep_seconds=0.0, sender_fn=lambda *a: True,
+        )
+        self.assertFalse(res_block["ok"])
+        self.assertEqual(res_block["error"], "pretest_required")
+
+        # Prueba con dummy rechazada; con correo real habilita tanda
+        ok_bad, _ = send_campaign_test_email(
+            test_email="bad@example.com", admin_name="Admin",
+            subject="Aviso 1", body_text="Cuerpo", cta_label="Ver", cta_url="https://faccol.servigest.online",
+            sender_fn=lambda *a: True,
+        )
+        self.assertFalse(ok_bad)
+
+        ok_good, _ = send_campaign_test_email(
+            test_email="admin@servigest.online", admin_name="Admin",
+            subject="Aviso 1", body_text="Cuerpo", cta_label="Ver", cta_url="https://faccol.servigest.online",
+            sender_fn=lambda *a: True,
+        )
+        self.assertTrue(ok_good)
+
+        # Si se edita el texto sin re-probar, vuelve a exigir pretest_required
+        res_dirty = send_campaign_batch(
+            subject="Aviso 1 EDITADO", body_text="Cuerpo", cta_label="Ver", cta_url="https://faccol.servigest.online",
+            batch_size=1, sleep_seconds=0.0, sender_fn=lambda *a: True,
+        )
+        self.assertEqual(res_dirty["error"], "pretest_required")
+
+        # Volvemos a probar y enviamos tanda 1 (batch_size=1) y luego tanda 2 (solo envía el faltante, sin repetir u_ok1)
+        send_campaign_test_email(
+            test_email="admin@servigest.online", admin_name="Admin",
+            subject="Aviso 1", body_text="Cuerpo", cta_label="Ver", cta_url="https://faccol.servigest.online",
+            batch_size=1, sender_fn=lambda *a: True,
+        )
+        sent_to = []
+        r1 = send_campaign_batch(
+            subject="Aviso 1", body_text="Cuerpo", cta_label="Ver", cta_url="https://faccol.servigest.online",
+            batch_size=1, sleep_seconds=0.0, sender_fn=lambda e, *a: (sent_to.append(e) or True),
+        )
+        self.assertEqual(r1["sent_count"], 1)
+        self.assertEqual(r1["pending_remaining"], 1)
+
+        r2 = send_campaign_batch(
+            subject="Aviso 1", body_text="Cuerpo", cta_label="Ver", cta_url="https://faccol.servigest.online",
+            batch_size=10, sleep_seconds=0.0, sender_fn=lambda e, *a: (sent_to.append(e) or True),
+        )
+        self.assertEqual(r2["sent_count"], 1)
+        self.assertEqual(set(sent_to), {"u1@negocio.co", "u2@negocio.co"})
+
+        # Tope diario 50/50 bloquea
+        from django.utils import timezone
+        st = get_campaign_state()
+        st["daily_counts"][timezone.localdate().strftime("%Y-%m-%d")] = DAILY_SAFE_CAP
+        save_campaign_state(st)
+        r_cap = send_campaign_batch(
+            subject="Aviso 1", body_text="Cuerpo", cta_label="Ver", cta_url="https://faccol.servigest.online",
+            batch_size=5, sleep_seconds=0.0, sender_fn=lambda *a: True,
+        )
+        self.assertEqual(r_cap["error"], "daily_cap_reached")
+
+        # Reiniciar ciclo limpia prueba y cambia ID
+        new_cid = reset_campaign_cycle("mayo-2026")
+        self.assertEqual(new_cid, "mayo-2026")
+        self.assertFalse(get_campaign_summary()["test_passed"])
+
+        # Panel Admin protegido + pestaña Banner visible en dashboard de usuario
+        c_user = Client()
+        c_user.force_login(u_ok1)
+        EmpresaUsuario.objects.create(user=u_ok1, empresa=self.emp, rol="propietario", activo=True)
+        self.assertEqual(c_user.get(reverse("backoffice:comunicados_panel")).status_code, 302)
+
+        c_sa = Client()
+        c_sa.force_login(self.sa)
+        r_panel = c_sa.get(reverse("backoffice:comunicados_panel"))
+        self.assertEqual(r_panel.status_code, 200)
+        self.assertContains(r_panel, "Elegibles Verificados")
+        c_sa.post(reverse("backoffice:comunicado_guardar_banner"), {
+            "enabled": "on",
+            "campaign_id": "banner-v2",
+            "badge": "Estreno",
+            "title": "Nueva Caja Express",
+            "message": "Prueba ya las mejoras POS.",
+            "cta_label": "Ir al POS",
+            "cta_url": "/pos/",
+        }, follow=True)
+        r_dash = c_user.get(reverse("core:dashboard"))
+        self.assertContains(r_dash, "Nueva Caja Express")
+        self.assertContains(r_dash, "banner_dismissed_")
+
+    @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
+    def test_registro_publico_y_verificacion_token_unico(self):
+        import re
+        c = Client()
+        r_reg = c.post(reverse("usuarios:registro"), {
+            "razon_social": "Comercio Nuevo SAS",
+            "nit": "901777888",
+            "first_name": "Mateo",
+            "last_name": "Rojas",
+            "email": "mateo@comercionuevo.co",
+            "perfil_operativo": "TIENDA",
+            "password1": "ClaveSegura123",
+            "password2": "ClaveSegura123",
+        }, follow=True)
+        self.assertEqual(r_reg.status_code, 200)
+        self.assertContains(r_reg, "enlace de activación")
+
+        u = User.objects.get(email="mateo@comercionuevo.co")
+        self.assertFalse(u.activo)
+        self.assertIsNone(u.email_verified_at)
+        emp_nueva = Empresa.objects.get(nit="901777888")
+        self.assertEqual(emp_nueva.plan_id, self.plan_gratis.id)
+
+        # No puede iniciar sesión antes de verificar correo
+        r_login_antes = c.post(reverse("usuarios:login"), {
+            "login": "mateo@comercionuevo.co",
+            "password": "ClaveSegura123",
+        })
+        self.assertContains(r_login_antes, "pendiente de verificación")
+
+        # Verifica token de correo
+        self.assertEqual(len(mail.outbox), 1)
+        m = re.search(r'href="([^"]+/auth/verificar/[^"]+)"', mail.outbox[0].alternatives[0][0])
+        self.assertIsNotNone(m)
+        verify_path = "/" + m.group(1).split("://", 1)[1].split("/", 1)[1]
+
+        r_ver = c.get(verify_path, follow=True)
+        self.assertContains(r_ver, "Correo verificado")
+        u.refresh_from_db()
+        self.assertTrue(u.activo)
+        self.assertIsNotNone(u.email_verified_at)
+
+        # Token de un solo uso: segundo intento falla
+        r_reuso = c.get(verify_path, follow=True)
+        self.assertContains(r_reuso, "inválido o ya fue utilizado")
+
+        # Ahora sí inicia sesión
+        r_login_ok = c.post(reverse("usuarios:login"), {
+            "login": "mateo@comercionuevo.co",
+            "password": "ClaveSegura123",
+        })
+        self.assertEqual(r_login_ok.status_code, 302)
+
+

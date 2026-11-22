@@ -1,0 +1,259 @@
+{% extends 'base.html' %}
+
+{% block title %}Comunicados & Banner — Backoffice{% endblock %}
+
+{% block content %}
+<div class="max-w-5xl mx-auto space-y-6" x-data="{ activeTab: '{{ tab }}' }">
+
+    <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 bg-gradient-to-r from-[#141c2e] via-[#162034] to-[#121927] border border-[#1e2d47] p-6 rounded-3xl shadow-xl">
+        <div>
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 mb-1.5">
+                <i class="fas fa-bullhorn"></i> Difusión Anti-Spam &amp; Novedades
+            </span>
+            <h1 class="font-display font-extrabold text-2xl text-white">Comunicados por Tandas &amp; Banner Interno</h1>
+            <p class="text-xs text-slate-400 mt-1">
+                Envía comunicados masivos exclusivamente por <b>Resend API</b> con tope seguro de {{ summary.daily_cap }} correos/día y gestiona el banner visible en el tablero de tus clientes.
+            </p>
+        </div>
+
+        <div class="flex items-center gap-2 bg-[#0e1422] p-1.5 rounded-2xl border border-[#1e2d47] text-xs font-bold">
+            <button type="button" @click="activeTab = 'correo'"
+                    :class="activeTab === 'correo' ? 'bg-amber-500 text-black' : 'text-slate-400 hover:text-white'"
+                    class="px-4 py-2 rounded-xl transition">
+                <i class="fas fa-envelope mr-1"></i> Comunicado por Correo
+            </button>
+            <button type="button" @click="activeTab = 'banner'"
+                    :class="activeTab === 'banner' ? 'bg-emerald-500 text-black' : 'text-slate-400 hover:text-white'"
+                    class="px-4 py-2 rounded-xl transition">
+                <i class="fas fa-rectangle-ad mr-1"></i> Banner en Panel
+            </button>
+        </div>
+    </div>
+
+    <!-- PESTAÑA 1: COMUNICADO POR CORREO ANTI-SPAM -->
+    <div x-show="activeTab === 'correo'" class="space-y-6">
+
+        {% if not resend_configured %}
+        <div class="bg-amber-500/10 border border-amber-500/30 rounded-2xl p-4 flex items-start gap-3 text-xs text-amber-200">
+            <i class="fas fa-triangle-exclamation text-amber-400 text-base mt-0.5"></i>
+            <div>
+                <b>RESEND_API_KEY no detectada:</b> Los comunicados masivos usan exclusivamente <b>Resend API</b> y nunca conmutan al servidor SMTP para proteger la reputación de tus correos transaccionales. Configura <code>RESEND_API_KEY</code> en <code>.env</code> o en <a href="{% url 'backoffice:configuracion_plataforma' %}" class="underline font-bold text-amber-300">Correo &amp; Wompi</a>.
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Métricas en tiempo real -->
+        <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 text-xs">
+            <div class="bg-[#111827] border border-[#1e2d47] rounded-2xl p-4">
+                <div class="text-[10px] font-bold uppercase text-slate-400">Elegibles Verificados</div>
+                <div class="font-display font-black text-2xl text-white mt-1">{{ summary.eligible_total }}</div>
+                <div class="text-[11px] text-slate-400 mt-0.5">Usuarios activos con correo verificado</div>
+            </div>
+            <div class="bg-[#111827] border border-[#1e2d47] rounded-2xl p-4">
+                <div class="text-[10px] font-bold uppercase text-slate-400">Ya Enviados (Ciclo)</div>
+                <div class="font-display font-black text-2xl text-emerald-400 mt-1">{{ summary.sent_in_campaign }}</div>
+                <div class="text-[11px] text-slate-400 mt-0.5">ID: <code>{{ summary.campaign_id }}</code></div>
+            </div>
+            <div class="bg-[#111827] border border-[#1e2d47] rounded-2xl p-4">
+                <div class="text-[10px] font-bold uppercase text-slate-400">Pendientes</div>
+                <div class="font-display font-black text-2xl text-amber-400 mt-1">{{ summary.pending_count }}</div>
+                <div class="text-[11px] text-slate-400 mt-0.5">En cola de este ciclo</div>
+            </div>
+            <div class="bg-[#111827] border border-[#1e2d47] rounded-2xl p-4">
+                <div class="text-[10px] font-bold uppercase text-slate-400">Cupo Diario Resend</div>
+                <div class="font-display font-black text-2xl text-cyan-400 mt-1">{{ summary.sent_today }}/{{ summary.daily_cap }}</div>
+                <div class="text-[11px] text-slate-400 mt-0.5">Restantes hoy: {{ summary.remaining_today }}</div>
+            </div>
+        </div>
+
+        {% if summary.last_run_summary %}
+        <div class="bg-[#111827] border border-[#1e2d47] rounded-2xl px-4 py-3 text-xs text-slate-300 flex items-center justify-between gap-2">
+            <span><i class="fas fa-history text-amber-400 mr-1.5"></i> Última tanda ({{ summary.last_run_at }}): <b>{{ summary.last_run_summary }}</b></span>
+            {% if summary.test_passed %}
+            <span class="px-2.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-bold text-[10px]">Prueba vigente ({{ summary.tested_at }})</span>
+            {% else %}
+            <span class="px-2.5 py-0.5 rounded-full bg-amber-500/15 text-amber-400 font-bold text-[10px]">Requiere prueba</span>
+            {% endif %}
+        </div>
+        {% endif %}
+
+        <!-- Borrador + Paso 1 + Paso 2 -->
+        <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 sm:p-8 shadow-xl space-y-5 text-xs"
+             x-data="{
+                initialPassed: {{ summary.test_passed|yesno:'true,false' }},
+                dirty: false,
+                subject: '{{ summary.subject|escapejs }}',
+                bodyText: '{{ summary.body_text|escapejs }}',
+                ctaLabel: '{{ summary.cta_label|escapejs }}',
+                ctaUrl: '{{ summary.cta_url|escapejs }}',
+                batchSize: '{{ summary.batch_size }}'
+             }">
+            <form method="POST" action="{% url 'backoffice:comunicado_probar' %}" class="space-y-4">
+                {% csrf_token %}
+
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Asunto del Comunicado *</label>
+                    <input type="text" name="subject" x-model="subject" @input="dirty = true" required
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3.5 py-2.5 text-white">
+                </div>
+
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">
+                        Cuerpo del Mensaje <span class="text-slate-400 font-normal">(separa bloques con doble Enter; líneas con <code>- </code> se renderizan como viñetas verificadas)</span>
+                    </label>
+                    <textarea name="body_text" rows="8" x-model="bodyText" @input="dirty = true" required
+                              class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3.5 py-2.5 text-white leading-relaxed"></textarea>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div>
+                        <label class="block font-semibold text-slate-300 mb-1">Texto del Botón CTA</label>
+                        <input type="text" name="cta_label" x-model="ctaLabel" @input="dirty = true"
+                               class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3.5 py-2.5 text-white">
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-300 mb-1">URL de Destino CTA (https://)</label>
+                        <input type="url" name="cta_url" x-model="ctaUrl" @input="dirty = true"
+                               class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3.5 py-2.5 text-white font-mono">
+                    </div>
+                    <div>
+                        <label class="block font-semibold text-slate-300 mb-1">Tamaño de Tanda (Máx {{ summary.daily_cap }})</label>
+                        <input type="number" name="batch_size" min="1" max="{{ summary.daily_cap }}" x-model="batchSize"
+                               class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3.5 py-2.5 text-white font-mono">
+                    </div>
+                </div>
+
+                <!-- Paso 1 obligatorio -->
+                <div class="pt-4 border-t border-[#1e2d47] space-y-3">
+                    <div class="font-bold text-amber-400 uppercase tracking-wider text-[11px]">
+                        Paso 1 Obligatorio — Enviar Prueba antes de habilitar la Tanda
+                    </div>
+                    <div class="flex flex-col sm:flex-row gap-3">
+                        <input type="email" name="test_email" value="{{ summary.tested_email|default:request.user.email }}" required
+                               placeholder="admin@tuempresa.co"
+                               class="flex-1 bg-[#162034] border border-[#1e2d47] rounded-xl px-3.5 py-2.5 text-white">
+                        <button type="submit"
+                                class="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black uppercase tracking-wider transition whitespace-nowrap">
+                            <i class="fas fa-vial mr-1"></i> Enviar Prueba a Mi Correo
+                        </button>
+                        <button type="submit" formaction="{% url 'backoffice:comunicado_guardar_borrador' %}"
+                                class="px-4 py-2.5 rounded-xl bg-[#162034] hover:bg-[#1e2d47] border border-[#2b3c5e] text-slate-200 font-bold uppercase tracking-wider transition whitespace-nowrap">
+                            Guardar Borrador
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Paso 2 -->
+                <div class="pt-4 border-t border-[#1e2d47] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div class="text-slate-400">
+                        <span class="font-bold text-emerald-400 uppercase tracking-wider block text-[11px]">Paso 2 — Enviar Tanda ({{ summary.batch_size }} máx / pausa 0.52s)</span>
+                        <span x-show="!initialPassed || dirty" class="text-amber-300">
+                            Debes probar primero el texto actual antes de lanzar la tanda.
+                        </span>
+                        <span x-show="initialPassed && !dirty" class="text-emerald-300">
+                            Prueba verificada para este borrador ({{ summary.tested_email }}). Listo para enviar tanda.
+                        </span>
+                    </div>
+                    <button type="submit"
+                            formaction="{% url 'backoffice:comunicado_enviar_tanda' %}"
+                            :disabled="!initialPassed || dirty || {{ summary.remaining_today }} <= 0"
+                            :class="(!initialPassed || dirty || {{ summary.remaining_today }} <= 0) ? 'opacity-40 cursor-not-allowed bg-slate-700 text-slate-300' : 'bg-emerald-500 hover:bg-emerald-400 text-black cursor-pointer'"
+                            class="px-6 py-3 rounded-xl font-black uppercase tracking-wider transition whitespace-nowrap">
+                        <i class="fas fa-paper-plane mr-1"></i> Enviar Tanda
+                    </button>
+                </div>
+            </form>
+
+            <!-- Reiniciar ciclo -->
+            <form method="POST" action="{% url 'backoffice:comunicado_reiniciar' %}" class="pt-4 border-t border-[#1e2d47] flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                {% csrf_token %}
+                <div class="flex-1">
+                    <label class="block font-semibold text-slate-400 mb-1">Iniciar Nuevo Ciclo de Campaña (opcional slug)</label>
+                    <input type="text" name="custom_slug" placeholder="Ej: novedades-mayo-2026 (opcional)"
+                           class="w-full sm:max-w-xs bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                </div>
+                <button type="submit"
+                        onclick="return confirm('¿Seguro deseas iniciar un nuevo ciclo de campaña? Podrás reenviar al catálogo verificado tras una nueva prueba.')"
+                        class="px-4 py-2.5 rounded-xl bg-rose-500/15 hover:bg-rose-500/25 border border-rose-500/30 text-rose-300 font-bold uppercase tracking-wider transition whitespace-nowrap">
+                    <i class="fas fa-rotate mr-1"></i> Reiniciar Ciclo
+                </button>
+            </form>
+        </div>
+    </div>
+
+    <!-- PESTAÑA 2: BANNER EN PANEL DEL USUARIO -->
+    <div x-show="activeTab === 'banner'" class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 sm:p-8 shadow-xl text-xs">
+        <form method="POST" action="{% url 'backoffice:comunicado_guardar_banner' %}" class="space-y-4">
+            {% csrf_token %}
+            <div class="flex items-center justify-between border-b border-[#1e2d47] pb-4">
+                <div>
+                    <h2 class="font-display font-bold text-base text-white">Banner Informativo en Dashboard de Empresas</h2>
+                    <p class="text-slate-400 mt-0.5">Se muestra arriba en el tablero de los usuarios autenticados con botón Ocultar por versión (<code>campaign_id</code>).</p>
+                </div>
+                <label class="inline-flex items-center gap-2 font-bold text-emerald-300 cursor-pointer">
+                    <input type="checkbox" name="enabled" {% if banner.enabled %}checked{% endif %} class="rounded">
+                    <span>Banner Activo</span>
+                </label>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">ID de Versión (campaign_id)</label>
+                    <input type="text" name="campaign_id" value="{{ banner.campaign_id }}" required
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3.5 py-2.5 text-white font-mono">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Insignia (Badge)</label>
+                    <input type="text" name="badge" value="{{ banner.badge }}" required
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3.5 py-2.5 text-white">
+                </div>
+            </div>
+
+            <div>
+                <label class="block font-semibold text-slate-300 mb-1">Título Principal</label>
+                <input type="text" name="title" value="{{ banner.title }}" required
+                       class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3.5 py-2.5 text-white">
+            </div>
+
+            <div>
+                <label class="block font-semibold text-slate-300 mb-1">Mensaje Descriptivo</label>
+                <textarea name="message" rows="3" required
+                          class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3.5 py-2.5 text-white">{{ banner.message }}</textarea>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Botón Principal (Texto)</label>
+                    <input type="text" name="cta_label" value="{{ banner.cta_label }}" required
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3.5 py-2.5 text-white">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Botón Principal (Ruta /pos/, /mi-plan/ o https://)</label>
+                    <input type="text" name="cta_url" value="{{ banner.cta_url }}" required
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3.5 py-2.5 text-white font-mono">
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Botón Secundario (Texto, opcional)</label>
+                    <input type="text" name="secondary_label" value="{{ banner.secondary_label }}"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3.5 py-2.5 text-white">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Botón Secundario (Ruta / https://)</label>
+                    <input type="text" name="secondary_url" value="{{ banner.secondary_url }}"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3.5 py-2.5 text-white font-mono">
+                </div>
+            </div>
+
+            <div class="flex justify-end pt-2">
+                <button type="submit" class="px-5 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-black uppercase tracking-wider transition">
+                    Guardar Banner de Novedades
+                </button>
+            </div>
+        </form>
+    </div>
+
+</div>
+{% endblock %}

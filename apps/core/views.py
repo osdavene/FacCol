@@ -22,6 +22,7 @@ from apps.facturacion.wompi_service import (
     get_wompi_runtime_config,
     sync_wompi_transaction_by_id,
 )
+from apps.core.campaigns import get_tenant_banner
 from apps.core.mail_service import enviar_correo_sistema, get_mail_runtime_config
 from apps.core.platform_settings import encrypt_secret
 from apps.inventario.models import Producto, MovimientoInventario
@@ -316,6 +317,7 @@ def dashboard(request):
         'total_cuentas_puc': total_cuentas_puc,
         'total_productos': total_productos,
         'ultimos_movimientos': ultimos_movimientos,
+        'announcement_banner': get_tenant_banner(),
     }
     return render(request, 'core/dashboard.html', context)
 
