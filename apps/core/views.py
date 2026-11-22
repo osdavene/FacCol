@@ -6,6 +6,7 @@ from urllib.parse import urlencode
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
+from django.core.paginator import Paginator
 from django.db import models
 from django.db.models import Sum, Count, Q
 from django.http import JsonResponse
@@ -27,7 +28,9 @@ from apps.core.campaigns import get_tenant_banner
 from apps.core.mail_service import enviar_correo_sistema, get_mail_runtime_config
 from apps.core.models import Notificacion, RegistroActividad
 from apps.core.notifications import (
+    CATEGORIAS_PREFERENCIAS,
     destinatarios_propietarios_empresa,
+    es_url_webhook_valida,
     notificar_evento_seguridad,
     notificar_usuarios_app,
 )
@@ -215,11 +218,19 @@ def configuracion_empresa(request):
                 new_resend = request.POST.get('resend_api_key', '').strip()
                 if new_resend:
                     empresa.resend_api_key = encrypt_secret(new_resend)
+            wh_input = request.POST.get('webhook_notificaciones_url', '').strip()
+            if wh_input:
+                if es_url_webhook_valida(wh_input):
+                    empresa.webhook_notificaciones_url = wh_input
+                else:
+                    messages.warning(request, "La URL del webhook externo debe ser HTTP/HTTPS pública válida y se omitió.")
+            else:
+                empresa.webhook_notificaciones_url = ''
             empresa.save()
             registrar_actividad(request, 'configuracion', 'CONFIG_CORREO_EMPRESA', f"Actualizó configuración de correo independiente para {empresa.display_name}.", empresa=empresa, objeto=empresa)
             alerta_cfg = (
                 "Configuración de correo empresarial actualizada",
-                f"Se modificó el servidor SMTP, remitente o API Key de Resend para {empresa.display_name}.",
+                f"Se modificó el servidor SMTP, remitente, Resend o webhook de {empresa.display_name}.",
             )
             messages.success(request, "Configuración de correo de tu empresa actualizada.")
 
@@ -675,3 +686,42 @@ def notificaciones_marcar_todas_leidas(request):
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         return JsonResponse({'ok': True})
     return redirect(request.META.get('HTTP_REFERER') or reverse('core:dashboard'))
+
+
+@login_required
+def notificaciones_lista(request):
+    qs = Notificacion.objects.filter(usuario=request.user)
+    is_sa = bool(request.user.es_superadmin_user())
+    empresa = getattr(request, 'empresa_activa', None)
+    if not is_sa and empresa is not None:
+        qs = qs.filter(Q(empresa=empresa) | Q(empresa__isnull=True))
+
+    total_todas = qs.count()
+    total_no_leidas = qs.filter(leida=False).count()
+
+    categoria = request.GET.get('categoria', '').strip()
+    estado = request.GET.get('estado', 'todas').strip()
+    q = request.GET.get('q', '').strip()
+
+    if categoria:
+        qs = qs.filter(categoria=categoria)
+    if estado == 'no_leidas':
+        qs = qs.filter(leida=False)
+    elif estado == 'leidas':
+        qs = qs.filter(leida=True)
+    if q:
+        qs = qs.filter(Q(titulo__icontains=q) | Q(mensaje__icontains=q))
+
+    paginator = Paginator(qs.order_by('-created_at'), 20)
+    page_obj = paginator.get_page(request.GET.get('page'))
+    categorias_filtro = [('seguridad', 'Seguridad y accesos')] + list(CATEGORIAS_PREFERENCIAS)
+
+    return render(request, 'core/notificaciones_lista.html', {
+        'page_obj': page_obj,
+        'categoria': categoria,
+        'estado': estado,
+        'q': q,
+        'total_todas': total_todas,
+        'total_no_leidas': total_no_leidas,
+        'categorias_filtro': categorias_filtro,
+    })

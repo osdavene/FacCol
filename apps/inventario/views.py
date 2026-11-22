@@ -448,6 +448,35 @@ def compra_crear(request):
             registrar_asiento_compra(compra)
 
         registrar_actividad(request, 'inventario', 'COMPRA_PROVEEDOR', f"Registró compra {compra.numero_completo} por ${compra.total:,.0f} COP.", empresa=empresa, objeto=compra)
+        if es_dse:
+            url_comp = reverse('inventario:compra_detalle', args=[compra.id])
+            resumen_dse = (
+                f"Se registró Documento Soporte Electrónico {compra.numero_completo} al proveedor "
+                f"{proveedor.razon_social} por ${compra.total:,.0f} COP (estado DIAN: {compra.estado_dian})."
+            )
+            notificar_usuarios_app(
+                f"Documento Soporte registrado: {compra.numero_completo}",
+                resumen_dse,
+                empresa=empresa,
+                roles=('propietario', 'admin', 'contador'),
+                nivel='warning' if compra.estado_dian == 'CONTINGENCIA' else 'info',
+                categoria='dian',
+                url=url_comp,
+            )
+            notificar_evento_seguridad(
+                request,
+                f"Documento Soporte Electrónico {compra.numero_completo}",
+                resumen_dse,
+                destinatarios=destinatarios_propietarios_empresa(
+                    empresa, incluir_roles=('propietario', 'contador')
+                ),
+                empresa=empresa,
+                action_url=request.build_absolute_uri(url_comp),
+                action_text="Ver Documento Soporte",
+                categoria='dian',
+                nivel='warning' if compra.estado_dian == 'CONTINGENCIA' else 'info',
+                registrar_in_app=False,
+            )
         messages.success(request, f"{compra.numero_completo} registrada por ${compra.total:,.0f} COP e inventario actualizado.")
         return redirect('inventario:compra_detalle', compra_id=compra.id)
 

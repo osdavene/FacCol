@@ -1,10 +1,12 @@
 import hashlib
 import json
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
+from io import StringIO
 from unittest.mock import patch
 
 from django.core import mail
+from django.core.management import call_command
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 
@@ -470,3 +472,143 @@ class CentroNotificacionesYEventosTests(TestCase):
         self.assertEqual(len(mail.outbox), 1)
         self.assertEqual(mail.outbox[0].to, ["juan.valdez@andinasas.co"])
         self.assertTrue(RegistroActividad.objects.filter(empresa=self.empresa, accion="ENVIAR_COLILLAS_LOTE").exists())
+
+    def test_recibo_manual_recordatorio_fiado_y_autoenvio_pdf_factura(self):
+        c_prop = Client()
+        c_prop.force_login(self.propietario)
+
+        # Emitir factura con envío automático de PDF al correo del cliente
+        mail.outbox.clear()
+        r_fac = c_prop.post(reverse("facturacion:factura_crear"), {
+            "tercero": str(self.cliente.id),
+            "tipo_documento": "FACTURA",
+            "metodo_pago": "CREDITO",
+            "enviar_email_cliente": "on",
+            "item_producto[]": [str(self.prod.id)],
+            "item_cantidad[]": ["1"],
+            "item_precio[]": ["18000"],
+        }, follow=True)
+        self.assertEqual(r_fac.status_code, 200)
+        fac = Factura.objects.filter(empresa=self.empresa, tipo_documento="FACTURA").latest("id")
+        correos_cli = [m for m in mail.outbox if m.to == ["cliente.real@andinasas.co"]]
+        self.assertEqual(len(correos_cli), 1)
+        self.assertTrue(any(att[0].endswith(".pdf") for att in correos_cli[0].attachments))
+
+        # Recordatorio de fiado/cartera pendiente al correo del cliente
+        mail.outbox.clear()
+        r_rec = c_prop.post(reverse("facturacion:fiado_enviar_recordatorio", args=[fac.id]), follow=True)
+        self.assertEqual(r_rec.status_code, 200)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertEqual(mail.outbox[0].to, ["cliente.real@andinasas.co"])
+        self.assertTrue(RegistroActividad.objects.filter(empresa=self.empresa, accion="RECORDATORIO_CARTERA").exists())
+
+        # Recibo de caja manual envía comprobante al cliente y registra notificación in-app
+        mail.outbox.clear()
+        r_rc = c_prop.post(reverse("facturacion:recibo_crear"), {
+            "factura": str(fac.id),
+            "valor": "18000",
+            "metodo_pago": "NEQUI",
+        }, follow=True)
+        self.assertEqual(r_rc.status_code, 200)
+        self.assertIn("cliente.real@andinasas.co", [addr for m in mail.outbox for addr in m.to])
+        self.assertTrue(Notificacion.objects.filter(empresa=self.empresa, categoria="facturacion", titulo__startswith="Recibo de Caja").exists())
+
+    def test_historial_notificaciones_preferencias_correo_y_webhook_ssrf(self):
+        c_prop = Client()
+        c_prop.force_login(self.propietario)
+
+        # Desactivar correos de inventario en perfil, manteniendo seguridad obligatoria
+        c_prop.post(reverse("usuarios:perfil"), {
+            "first_name": "Laura",
+            "last_name": "Andina",
+            "telefono": "3000001122",
+            "tema": "oscuro",
+            "actualizar_preferencias": "1",
+            "pref_email_wompi": "on",
+            # pref_email_inventario omitido -> desactivado
+        }, follow=True)
+
+        # Bloquear URL interna SSRF y guardar URL pública HTTPS válida
+        c_prop.post(reverse("core:configuracion_empresa"), {
+            "seccion": "smtp",
+            "webhook_notificaciones_url": "http://127.0.0.1:8080/hook",
+        }, follow=True)
+        self.empresa.refresh_from_db()
+        self.assertEqual(self.empresa.webhook_notificaciones_url, "")
+
+        c_prop.post(reverse("core:configuracion_empresa"), {
+            "seccion": "smtp",
+            "webhook_notificaciones_url": "https://hooks.slack.com/services/T000/B000/ABC",
+        }, follow=True)
+        self.empresa.refresh_from_db()
+        self.assertEqual(self.empresa.webhook_notificaciones_url, "https://hooks.slack.com/services/T000/B000/ABC")
+
+        # Ajuste de inventario SALIDA: usuario no recibe correo por preferencia, pero sí in-app y webhook
+        mail.outbox.clear()
+        with patch("apps.core.notifications.httpx.post") as mock_wh:
+            c_prop.post(reverse("inventario:ajuste_crear"), {
+                "producto": str(self.prod.id),
+                "tipo": "SALIDA",
+                "cantidad": "1",
+                "motivo": "Muestra comercial",
+            }, follow=True)
+            self.assertTrue(mock_wh.called)
+        dests = [addr for m in mail.outbox for addr in m.to]
+        self.assertNotIn("prop@andinasas.co", dests)
+        self.assertIn("gerencia@andinasas.co", dests)
+
+        # Historial paginado y filtrable de notificaciones
+        r_hist = c_prop.get(reverse("core:notificaciones_lista"), {"categoria": "inventario", "estado": "no_leidas"})
+        self.assertEqual(r_hist.status_code, 200)
+        self.assertContains(r_hist, "Ajuste manual de salida")
+
+    def test_alerta_configuracion_plataforma_y_compra_dse(self):
+        c_sa = Client()
+        c_sa.force_login(self.superadmin)
+        mail.outbox.clear()
+        c_sa.post(reverse("backoffice:configuracion_plataforma"), {
+            "seccion": "ia",
+            "gemini_api_key": "AIzaFakeTestKey",
+        }, follow=True)
+        self.assertIn("sa_alertas@servigest.online", [addr for m in mail.outbox for addr in m.to])
+        self.assertTrue(Notificacion.objects.filter(usuario=self.superadmin, categoria="seguridad").exists())
+
+        # Compra marcada como Documento Soporte Electrónico alerta a propietario y contador
+        prov = Tercero.objects.create(
+            empresa=self.empresa, numero_documento="800111222", razon_social="Proveedor DSE SAS",
+            es_cliente=False, es_proveedor=True,
+        )
+        c_prop = Client()
+        c_prop.force_login(self.propietario)
+        mail.outbox.clear()
+        c_prop.post(reverse("inventario:compra_crear"), {
+            "proveedor": str(prov.id),
+            "numero_factura_proveedor": "FAC-PROV-9",
+            "metodo_pago": "CONTADO",
+            "es_documento_soporte": "on",
+            "item_producto[]": [str(self.prod.id)],
+            "item_cantidad[]": ["2"],
+            "item_factor[]": ["1"],
+            "item_costo[]": ["9000"],
+        }, follow=True)
+        self.assertIn("contador@andinasas.co", [addr for m in mail.outbox for addr in m.to])
+        self.assertTrue(Notificacion.objects.filter(empresa=self.empresa, categoria="dian", usuario=self.contador).exists())
+
+    def test_comando_resumen_diario_y_cola_dian(self):
+        # Factura vencida ayer con saldo pendiente
+        Factura.objects.create(
+            empresa=self.empresa, tipo_documento="FACTURA", prefijo="FE", consecutivo=901,
+            tercero=self.cliente, fecha_emision=date.today() - timedelta(days=10),
+            fecha_vencimiento=date.today() - timedelta(days=1),
+            estado="EMITIDA", metodo_pago="CREDITO", total=Decimal("50000.00"), saldo_pendiente=Decimal("50000.00"),
+        )
+        mail.outbox.clear()
+        out_res = StringIO()
+        call_command("enviar_resumen_diario", empresa_id=self.empresa.id, stdout=out_res)
+        self.assertIn("Resúmenes diarios procesados y enviados: 1", out_res.getvalue())
+        self.assertIn("prop@andinasas.co", [addr for m in mail.outbox for addr in m.to])
+
+        out_dian = StringIO()
+        call_command("procesar_cola_dian", stdout=out_dian)
+        self.assertIn("Cola DIAN procesada:", out_dian.getvalue())
+

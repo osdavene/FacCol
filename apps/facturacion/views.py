@@ -256,9 +256,25 @@ def factura_crear(request):
         )
         if es_fiscal:
             verificar_alertas_cupo_plan(empresa, request)
+        extra_envio = ""
+        if 'enviar_email_cliente' in request.POST and factura.tercero and factura.tercero.email:
+            if not is_dummy_or_invalid_email(factura.tercero.email):
+                try:
+                    _enviar_factura_pdf_cliente(empresa, factura, factura.tercero.email)
+                    registrar_actividad(
+                        request,
+                        'facturacion',
+                        'ENVIAR_FACTURA_EMAIL',
+                        f"Envió automáticamente {factura.numero_completo} al emitir a {factura.tercero.email}.",
+                        empresa=empresa,
+                        objeto=factura,
+                    )
+                    extra_envio = f" y enviada por correo a {factura.tercero.email}"
+                except Exception as exc:
+                    messages.warning(request, f"Documento emitido, pero falló el envío automático del PDF ({exc}).")
         messages.success(
             request,
-            f"{factura.get_tipo_documento_display()} {factura.numero_completo} emitida exitosamente por ${factura.total:,.0f} COP."
+            f"{factura.get_tipo_documento_display()} {factura.numero_completo} emitida exitosamente por ${factura.total:,.0f} COP{extra_envio}."
         )
         return redirect('facturacion:factura_detalle', factura_id=factura.id)
 
@@ -390,6 +406,85 @@ def fiados_lista(request):
     })
 
 
+def _enviar_factura_pdf_cliente(empresa, factura, destinatario: str, mensaje_personalizado: str = ""):
+    """Renderiza PDF + plantilla corporativa y envía la factura por el correo de la empresa/plataforma."""
+    pdf_bytes = generar_pdf_factura(factura)
+    filename = f"Factura_{factura.numero_completo}.pdf"
+    asunto = f"Factura Electrónica No. {factura.numero_completo} — {empresa.razon_social}"
+    html_content = render_to_string('facturacion/emails/factura_email.html', {
+        'factura': factura,
+        'empresa': empresa,
+        'mensaje_personalizado': mensaje_personalizado,
+    })
+    text_content = strip_tags(html_content)
+    reply_to = [empresa.email] if (empresa and empresa.email) else None
+    enviar_correo_sistema(
+        destinatario,
+        asunto,
+        html_content,
+        text_body=text_content,
+        reply_to=reply_to,
+        attachments=[(filename, pdf_bytes, 'application/pdf')],
+        empresa=empresa,
+        fail_silently=False,
+    )
+
+
+@login_required
+@requiere_facturacion
+@require_POST
+def fiado_enviar_recordatorio(request, factura_id):
+    """Envía recordatorio amistoso de cobro por correo al cliente de un fiado o factura pendiente."""
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+    factura = get_object_or_404(
+        Factura.objects.select_related('tercero'),
+        id=factura_id,
+        empresa=empresa,
+    )
+    if factura.estado == 'ANULADA' or factura.saldo_pendiente <= Decimal('0.00'):
+        messages.info(request, f"El documento {factura.numero_completo} no tiene saldo pendiente.")
+        return redirect('facturacion:fiados_lista')
+
+    correo = (factura.tercero.email or '').strip().lower()
+    if not correo or is_dummy_or_invalid_email(correo):
+        messages.error(request, f"El cliente {factura.tercero.razon_social} no tiene un correo válido registrado.")
+        return redirect('facturacion:fiados_lista')
+
+    vence_txt = factura.fecha_vencimiento.strftime('%d/%m/%Y') if factura.fecha_vencimiento else factura.fecha_emision.strftime('%d/%m/%Y')
+    html = (
+        f"<h3>Recordatorio de saldo pendiente</h3>"
+        f"<p>Hola <b>{escape(factura.tercero.razon_social)}</b>,</p>"
+        f"<p>Te recordamos amablemente que tienes un saldo pendiente de "
+        f"<b>${factura.saldo_pendiente:,.0f} COP</b> correspondiente al documento "
+        f"<b>{escape(factura.numero_completo)}</b> en <b>{escape(empresa.display_name)}</b> "
+        f"(vencimiento: {vence_txt}).</p>"
+        f"<p>Si ya realizaste tu pago, por favor haz caso omiso a este aviso o responde con tu comprobante.</p>"
+    )
+    try:
+        enviar_correo_sistema(
+            correo,
+            f"Recordatorio de pago {factura.numero_completo} — {empresa.display_name}",
+            html,
+            reply_to=[empresa.email] if empresa.email else None,
+            empresa=empresa,
+            fail_silently=False,
+        )
+        registrar_actividad(
+            request,
+            'facturacion',
+            'RECORDATORIO_CARTERA',
+            f"Envió recordatorio de cobro por {factura.numero_completo} (${factura.saldo_pendiente:,.0f} COP) a {correo}.",
+            empresa=empresa,
+            objeto=factura,
+        )
+        messages.success(request, f"Recordatorio enviado a {correo} por saldo de ${factura.saldo_pendiente:,.0f} COP.")
+    except Exception as exc:
+        messages.error(request, f"No se pudo enviar el recordatorio: {exc}")
+    return redirect('facturacion:fiados_lista')
+
+
 @login_required
 @requiere_facturacion
 def factura_enviar_email(request, factura_id):
@@ -414,32 +509,7 @@ def factura_enviar_email(request, factura_id):
             return redirect('facturacion:factura_detalle', factura_id=factura.id)
 
         try:
-            # 1. Generar el PDF dinámico oficial
-            pdf_bytes = generar_pdf_factura(factura)
-            filename = f"Factura_{factura.numero_completo}.pdf"
-
-            # 2. Asunto y cuerpo del correo
-            asunto = f"Factura Electrónica No. {factura.numero_completo} — {empresa.razon_social}"
-            contexto = {
-                'factura': factura,
-                'empresa': empresa,
-                'mensaje_personalizado': mensaje_personalizado,
-            }
-            html_content = render_to_string('facturacion/emails/factura_email.html', contexto)
-            text_content = strip_tags(html_content)
-
-            # 3. Enviar usando SMTP de empresa (si tiene) o correo unificado de plataforma
-            reply_to = [empresa.email] if (empresa and empresa.email) else None
-            enviar_correo_sistema(
-                destinatario,
-                asunto,
-                html_content,
-                text_body=text_content,
-                reply_to=reply_to,
-                attachments=[(filename, pdf_bytes, 'application/pdf')],
-                empresa=empresa,
-                fail_silently=False,
-            )
+            _enviar_factura_pdf_cliente(empresa, factura, destinatario, mensaje_personalizado)
 
             registrar_actividad(
                 request,
@@ -734,6 +804,31 @@ def recibo_crear(request):
             empresa=empresa,
             objeto=recibo,
         )
+        doc_ref = f" aplicado a {fac.numero_completo} (saldo restante: ${fac.saldo_pendiente:,.0f} COP)" if fac else ""
+        notificar_usuarios_app(
+            f"Recibo de Caja RC-{recibo.consecutivo}",
+            f"Ingreso de ${recibo.valor:,.0f} COP ({metodo}) de {tercero.razon_social}{doc_ref}.",
+            empresa=empresa,
+            roles=('propietario', 'admin', 'contador'),
+            nivel='success',
+            categoria='facturacion',
+            url=reverse('facturacion:recibos_lista'),
+        )
+        correo_cli = (getattr(tercero, 'email', '') or '').strip().lower()
+        if correo_cli and not is_dummy_or_invalid_email(correo_cli):
+            enviar_correo_sistema(
+                correo_cli,
+                f"Comprobante de pago RC-{recibo.consecutivo} — {empresa.display_name}",
+                (
+                    f"<h3>Comprobante de Recibo de Caja</h3>"
+                    f"<p>Hola <b>{escape(tercero.razon_social)}</b>,</p>"
+                    f"<p>Confirmamos tu pago por <b>${recibo.valor:,.0f} COP</b> mediante <b>{escape(metodo)}</b> "
+                    f"(Recibo <b>RC-{recibo.consecutivo}</b>{escape(doc_ref)}).</p>"
+                ),
+                reply_to=[empresa.email] if empresa.email else None,
+                empresa=empresa,
+                fail_silently=True,
+            )
         messages.success(request, f"Recibo RC-{recibo.consecutivo} registrado exitosamente por ${recibo.valor:,.0f} COP.")
         return redirect('facturacion:recibos_lista')
 

@@ -17,7 +17,9 @@ from apps.core.audit import registrar_actividad
 from apps.core.models import RegistroActividad
 from apps.core.notifications import (
     destinatarios_propietarios_empresa,
+    destinatarios_superadmins,
     notificar_evento_seguridad,
+    notificar_usuarios_app,
 )
 from apps.core.platform_settings import encrypt_secret, mask_secret, set_platform_setting
 from apps.core.mail import send_password_reset_email
@@ -697,6 +699,29 @@ def configuracion_plataforma(request):
                     set_platform_setting('pt_dian_token', pt_tok, is_secret=True)
 
         registrar_actividad(request, 'configuracion', 'CONFIG_PLATAFORMA', f"Actualizó configuración global cifrada (sección '{seccion}').")
+        url_cfg = reverse('backoffice:configuracion_plataforma')
+        resumen_plat = (
+            f"Se actualizó la configuración global cifrada de la plataforma (sección '{seccion}')."
+        )
+        notificar_usuarios_app(
+            f"Configuración global modificada ({seccion})",
+            resumen_plat,
+            empresa=None,
+            roles=(),
+            superadmins=True,
+            nivel='warning',
+            categoria='seguridad',
+            url=url_cfg,
+        )
+        notificar_evento_seguridad(
+            request,
+            f"Configuración global modificada ({seccion})",
+            resumen_plat,
+            destinatarios=destinatarios_superadmins(),
+            action_url=request.build_absolute_uri(url_cfg),
+            action_text="Revisar Configuración SaaS",
+            registrar_in_app=False,
+        )
         messages.success(request, "Configuración cifrada de plataforma guardada exitosamente en la base de datos.")
         return redirect('backoffice:configuracion_plataforma')
 

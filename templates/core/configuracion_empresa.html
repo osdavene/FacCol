@@ -221,6 +221,12 @@
                         <input type="checkbox" name="clear_smtp_password" class="rounded"> Limpiar contraseña SMTP (usar ServiGest)
                     </label>
                 </div>
+                <div class="sm:col-span-3 pt-2 border-t border-[#1e2d47]">
+                    <label class="block font-semibold text-slate-300 mb-1">Webhook Externo de Notificaciones (Opcional — Slack / n8n / WhatsApp Bridge)</label>
+                    <input type="url" name="webhook_notificaciones_url" value="{{ empresa.webhook_notificaciones_url }}" placeholder="https://tu-servidor.com/webhook/faccol"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                    <p class="text-[11px] text-slate-500 mt-1">Si configuras una URL pública HTTPS/HTTP, FacCol enviará un JSON en cada alerta crítica de seguridad, Wompi, DIAN o cierres POS.</p>
+                </div>
             </div>
             <div class="flex justify-end">
                 <button type="submit" class="px-5 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-black uppercase tracking-wider transition">

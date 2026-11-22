@@ -15,6 +15,7 @@ class User(AbstractUser):
     is_superadmin = models.BooleanField(default=False, verbose_name="Superadmin de Plataforma")
     activo = models.BooleanField(default=True, verbose_name="Usuario Activo")
     email_verified_at = models.DateTimeField(null=True, blank=True, verbose_name="Correo verificado el")
+    preferencias_notificaciones = models.JSONField(default=dict, blank=True, verbose_name="Preferencias de Notificación")
 
     class Meta:
         verbose_name = "Usuario"

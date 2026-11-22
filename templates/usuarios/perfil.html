@@ -47,6 +47,26 @@
             </select>
         </div>
 
+        <div class="pt-4 border-t border-[#1e2d47] space-y-3">
+            <div>
+                <h2 class="text-sm font-bold text-white">Preferencias de Notificaciones por Correo</h2>
+                <p class="text-[11px] text-slate-400">Las alertas aparecerán siempre en tu campanita in-app. Aquí eliges cuáles deseas recibir también por correo.</p>
+            </div>
+            <input type="hidden" name="actualizar_preferencias" value="1">
+            <div class="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-between">
+                <span class="text-slate-200 font-semibold"><i class="fas fa-shield-halved text-amber-400 mr-1.5"></i> Alertas de seguridad, contraseñas y cambios de correo</span>
+                <span class="text-[10px] font-bold uppercase text-amber-300">Siempre activo</span>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {% for cat_val, cat_lbl, cat_activo in prefs_notificaciones %}
+                <label class="flex items-center gap-2.5 p-2.5 rounded-xl bg-[#162034] border border-[#1e2d47] cursor-pointer hover:border-cyan-500/40 transition">
+                    <input type="checkbox" name="pref_email_{{ cat_val }}" {% if cat_activo %}checked{% endif %} class="rounded text-amber-500">
+                    <span class="text-slate-200">{{ cat_lbl }}</span>
+                </label>
+                {% endfor %}
+            </div>
+        </div>
+
         <div class="pt-4 border-t border-[#1e2d47]">
             <label class="block font-semibold text-slate-300 mb-1">Cambiar Contraseña (Dejar vacío para conservar actual)</label>
             <input type="password" name="nuevo_password" placeholder="Nueva contraseña segura..." class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">

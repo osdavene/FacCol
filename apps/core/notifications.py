@@ -1,11 +1,14 @@
 """Servicio unificado de notificaciones in-app y alertas por correo electrónico en FacCol."""
 
+import ipaddress
 import logging
+import socket
 from datetime import date
 from types import SimpleNamespace
 from typing import Iterable, Optional
 from urllib.parse import urlparse
 
+import httpx
 from django.db.models import Q
 from django.urls import reverse
 from django.utils import timezone
@@ -14,6 +17,91 @@ from apps.core.audit import _extraer_ip, registrar_actividad
 from apps.core.mail import is_dummy_or_invalid_email, send_notification_email
 
 logger = logging.getLogger("faccol.notifications")
+
+CATEGORIAS_PREFERENCIAS = (
+    ("wompi", "Pagos Wompi y recaudos"),
+    ("dian", "DIAN y Documentos Soporte"),
+    ("facturacion", "Notas Crédito y facturación"),
+    ("caja", "Cierres y descuadres de caja POS"),
+    ("inventario", "Stock crítico y salidas de Kardex"),
+    ("plan", "Cupo mensual y estado de plan"),
+    ("nomina", "Liquidaciones de nómina"),
+)
+
+
+def usuario_quiere_correo(user, categoria: str) -> bool:
+    """Seguridad es siempre obligatoria; categorías operativas respetan preferencias del usuario."""
+    if not categoria or categoria == "seguridad":
+        return True
+    prefs = getattr(user, "preferencias_notificaciones", None)
+    if not isinstance(prefs, dict):
+        return True
+    return bool(prefs.get(f"email_{categoria}", True))
+
+
+def es_url_webhook_valida(url: str) -> bool:
+    """Valida URL http/https externa bloqueando loopback, redes privadas e IPs internas (SSRF)."""
+    raw = (url or "").strip()
+    if not raw:
+        return False
+    try:
+        parsed = urlparse(raw)
+    except Exception:
+        return False
+    if parsed.scheme not in ("http", "https") or not parsed.netloc or not parsed.hostname:
+        return False
+    host = parsed.hostname.lower().strip(".")
+    if host in ("localhost", "ip6-localhost") or host.endswith((".local", ".internal", ".localhost")):
+        return False
+    try:
+        ip_obj = ipaddress.ip_address(host)
+        return ip_obj.is_global
+    except ValueError:
+        pass
+    try:
+        infos = socket.getaddrinfo(host, None)
+        for info in infos:
+            addr = info[4][0]
+            ip_obj = ipaddress.ip_address(addr.split("%", 1)[0])
+            if not ip_obj.is_global:
+                return False
+    except socket.gaierror:
+        return True
+    except Exception:
+        return False
+    return True
+
+
+def _enviar_webhook_empresa(
+    empresa,
+    titulo: str,
+    resumen: str,
+    *,
+    categoria: str,
+    nivel: str,
+    url: Optional[str] = None,
+) -> bool:
+    wh_url = (getattr(empresa, "webhook_notificaciones_url", "") or "").strip() if empresa else ""
+    if not wh_url or not es_url_webhook_valida(wh_url):
+        return False
+    payload = {
+        "source": "faccol",
+        "empresa": empresa.display_name,
+        "nit": empresa.nit,
+        "categoria": categoria,
+        "nivel": nivel,
+        "titulo": titulo,
+        "mensaje": resumen,
+        "text": f"[{empresa.display_name}] {titulo}: {resumen}",
+        "url": url or "",
+        "timestamp": timezone.localtime().isoformat(),
+    }
+    try:
+        httpx.post(wh_url, json=payload, timeout=4.0)
+        return True
+    except Exception as exc:
+        logger.warning("Error enviando webhook externo de empresa %s: %s", empresa.id, exc)
+        return False
 
 
 def _as_recipient(email: str, nombre: str = ""):
@@ -262,7 +350,17 @@ def notificar_evento_seguridad(
             continue
         seen_set.add(dest)
         vistos.append(dest)
-        if is_dummy_or_invalid_email(dest):
+
+    optout_emails = set()
+    if categoria != "seguridad" and vistos:
+        from apps.usuarios.models import User
+
+        for u in User.objects.filter(email__in=vistos, is_active=True, activo=True):
+            if not usuario_quiere_correo(u, categoria):
+                optout_emails.add((u.email or "").strip().lower())
+
+    for dest in vistos:
+        if dest in optout_emails or is_dummy_or_invalid_email(dest):
             continue
         try:
             nombre_dest = empresa.display_name if (empresa and getattr(empresa, "email", "").strip().lower() == dest) else ""
@@ -287,6 +385,16 @@ def notificar_evento_seguridad(
             nivel=nivel,
             categoria=categoria,
             url=_normalizar_ruta_local(action_url),
+        )
+
+    if empresa is not None:
+        _enviar_webhook_empresa(
+            empresa,
+            titulo,
+            resumen,
+            categoria=categoria,
+            nivel=nivel,
+            url=action_url,
         )
 
     return enviados

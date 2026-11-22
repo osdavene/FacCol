@@ -22,8 +22,10 @@ from apps.core.audit import registrar_actividad
 from apps.core.config import mail_settings
 from apps.core.models import RegistroActividad
 from apps.core.notifications import (
+    CATEGORIAS_PREFERENCIAS,
     destinatarios_propietarios_empresa,
     notificar_evento_seguridad,
+    usuario_quiere_correo,
 )
 from apps.core.mail import (
     get_last_mail_error,
@@ -205,6 +207,12 @@ def perfil_view(request):
         if 'avatar' in request.FILES:
             user.avatar = request.FILES['avatar']
 
+        if 'actualizar_preferencias' in request.POST:
+            prefs = dict(user.preferencias_notificaciones or {})
+            for cat_val, _lbl in CATEGORIAS_PREFERENCIAS:
+                prefs[f'email_{cat_val}'] = f'pref_email_{cat_val}' in request.POST
+            user.preferencias_notificaciones = prefs
+
         # Cambio de contraseña opcional
         nuevo_pwd = request.POST.get('nuevo_password', '').strip()
         clave_actualizada = False
@@ -231,7 +239,11 @@ def perfil_view(request):
         messages.success(request, "Perfil actualizado correctamente.")
         return redirect('usuarios:perfil')
 
-    return render(request, 'usuarios/perfil.html')
+    prefs_notificaciones = [
+        (cat_val, cat_lbl, usuario_quiere_correo(user, cat_val))
+        for cat_val, cat_lbl in CATEGORIAS_PREFERENCIAS
+    ]
+    return render(request, 'usuarios/perfil.html', {'prefs_notificaciones': prefs_notificaciones})
 
 
 @login_required

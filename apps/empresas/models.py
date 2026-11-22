@@ -161,6 +161,7 @@ class Empresa(models.Model):
     smtp_encryption = models.CharField(max_length=10, default='tls', choices=[('tls', 'TLS'), ('ssl', 'SSL'), ('none', 'Ninguna')])
     smtp_from_address = models.CharField(max_length=150, blank=True, verbose_name="Correo Remitente")
     smtp_from_name = models.CharField(max_length=150, blank=True, verbose_name="Nombre Remitente")
+    webhook_notificaciones_url = models.URLField(max_length=300, blank=True, verbose_name="Webhook Externo de Notificaciones")
 
     # Wompi (Pagos en línea Colombia)
     wompi_public_key = models.CharField(max_length=200, blank=True)

@@ -50,11 +50,20 @@
                         <td class="p-4 text-slate-400">{{ f.fecha_emision|date:"d/m/Y" }}</td>
                         <td class="p-4 text-right text-slate-300">${{ f.total|floatformat:0|intcomma }}</td>
                         <td class="p-4 text-right font-black text-rose-400">${{ f.saldo_pendiente|floatformat:0|intcomma }}</td>
-                        <td class="p-4 text-right space-x-1">
+                        <td class="p-4 text-right space-x-1 whitespace-nowrap">
                             <a href="{% url 'facturacion:recibo_crear' %}?factura={{ f.id }}"
                                class="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold text-[11px] inline-flex items-center gap-1">
                                 <i class="fas fa-hand-holding-dollar"></i> Abonar
                             </a>
+                            {% if f.tercero.email %}
+                            <form method="post" action="{% url 'facturacion:fiado_enviar_recordatorio' f.id %}" class="inline">
+                                {% csrf_token %}
+                                <button type="submit" title="Enviar recordatorio de cobro por correo"
+                                        class="px-2.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-[11px] inline-flex items-center gap-1 transition">
+                                    <i class="fas fa-envelope text-[10px]"></i> Recordar
+                                </button>
+                            </form>
+                            {% endif %}
                             <a href="{% url 'facturacion:factura_tirilla' f.id %}" title="Tirilla / WhatsApp"
                                class="p-2 rounded-xl bg-[#162034] hover:bg-[#1f2c47] text-slate-300 hover:text-amber-400 inline-block">
                                 <i class="fas fa-receipt text-xs"></i>
