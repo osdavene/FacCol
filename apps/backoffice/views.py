@@ -1,11 +1,14 @@
 from decimal import Decimal
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import user_passes_test
+from django.contrib.auth.tokens import default_token_generator
 from django.contrib import messages
 from django.db.models import Q
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.crypto import get_random_string
+from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_encode
 from django.views.decorators.http import require_POST
 from apps.empresas.models import Empresa, Plan, Modulo, Departamento, Municipio, SolicitudCambioPlan
 from apps.usuarios.models import User, EmpresaUsuario
@@ -17,6 +20,7 @@ from apps.core.notifications import (
     notificar_evento_seguridad,
 )
 from apps.core.platform_settings import encrypt_secret, mask_secret, set_platform_setting
+from apps.core.mail import send_password_reset_email
 from apps.core.mail_service import (
     enviar_correo_sistema,
     enviar_notificacion_bienvenida_empresa,
@@ -92,9 +96,25 @@ def empresa_crear(request):
         dv = request.POST.get('dv', '').strip()
         email = request.POST.get('email', '').strip()
         plan_id = request.POST.get('plan')
+        admin_tipo = request.POST.get('admin_tipo', 'nuevo_cliente')
+        admin_email = request.POST.get('admin_email', '').strip().lower() or email.lower()
+        admin_nombre = request.POST.get('admin_nombre', '').strip() or razon_social
+        raw_password = request.POST.get('admin_password', '').strip()
 
         if not razon_social or not nit:
             messages.error(request, "Razón Social y NIT son obligatorios.")
+            return render(request, 'backoffice/empresa_formulario.html', {
+                'departamentos': departamentos, 'planes': planes, 'accion': 'Crear'
+            })
+
+        if admin_tipo != 'asignar_superadmin' and not admin_email:
+            messages.error(request, "Debes indicar el correo del propietario inicial o el correo oficial de la empresa.")
+            return render(request, 'backoffice/empresa_formulario.html', {
+                'departamentos': departamentos, 'planes': planes, 'accion': 'Crear'
+            })
+
+        if admin_tipo != 'asignar_superadmin' and raw_password and len(raw_password) < 6:
+            messages.error(request, "La contraseña inicial debe tener al menos 6 caracteres o quedar vacía para enviar enlace de activación.")
             return render(request, 'backoffice/empresa_formulario.html', {
                 'departamentos': departamentos, 'planes': planes, 'accion': 'Crear'
             })
@@ -127,9 +147,9 @@ def empresa_crear(request):
             for mod in Modulo.objects.filter(activo_por_defecto=True):
                 empresa.modulos.add(mod)
 
-        # Aislamiento Estricto SaaS: Determinar el Propietario inicial
-        admin_tipo = request.POST.get('admin_tipo', 'nuevo_cliente')
+        plan_txt = empresa.plan.nombre if empresa.plan else "Sin plan asignado"
 
+        # Aislamiento Estricto SaaS: Determinar el Propietario inicial
         if admin_tipo == 'asignar_superadmin':
             # Empresa propia del SuperAdmin (ej. ServiGest)
             EmpresaUsuario.objects.create(
@@ -138,13 +158,21 @@ def empresa_crear(request):
                 rol='propietario',
                 activo=True
             )
+            dests_prop = destinatarios_propietarios_empresa(empresa, excluir_emails=[request.user.email])
+            if dests_prop:
+                notificar_evento_seguridad(
+                    request,
+                    f"Nueva empresa registrada: {empresa.display_name}",
+                    f"Se creó la empresa '{empresa.display_name}' (NIT {empresa.nit}) con el plan '{plan_txt}'.",
+                    destinatarios=dests_prop,
+                    empresa=empresa,
+                    action_url=request.build_absolute_uri(reverse('usuarios:login')),
+                    action_text="Ingresar a FacCol",
+                )
             messages.success(request, f"Empresa propia '{empresa.razon_social}' creada exitosamente y asignada a tu cuenta como Propietario.")
         else:
-            # Empresa de un cliente: Creamos su usuario administrador inicial independiente
-            admin_email = request.POST.get('admin_email', '').strip().lower() or email
-            admin_nombre = request.POST.get('admin_nombre', '').strip() or razon_social
-            raw_password = request.POST.get('admin_password', '').strip()
-
+            # Empresa de un cliente: Creamos su usuario propietario inicial o vinculamos uno existente sin tocar su clave
+            enviar_enlace_inicial = not bool(raw_password)
             client_user, created = User.objects.get_or_create(
                 username=admin_email,
                 defaults={
@@ -156,9 +184,8 @@ def empresa_crear(request):
                     'email_verified_at': timezone.now(),
                 }
             )
-            admin_password = raw_password or (get_random_string(12) if created else '')
-            if admin_password:
-                client_user.set_password(admin_password)
+            if created:
+                client_user.set_password(raw_password or get_random_string(20))
                 client_user.save()
 
             EmpresaUsuario.objects.create(
@@ -168,17 +195,66 @@ def empresa_crear(request):
                 activo=True
             )
 
-            if admin_password and admin_email:
-                login_url = request.build_absolute_uri(reverse('usuarios:login'))
-                enviar_notificacion_bienvenida_empresa(empresa, admin_email, admin_nombre, admin_password, login_url)
+            login_url = request.build_absolute_uri(reverse('usuarios:login'))
+            if created and enviar_enlace_inicial:
+                uid = urlsafe_base64_encode(force_bytes(client_user.pk))
+                token = default_token_generator.make_token(client_user)
+                reset_url = request.build_absolute_uri(reverse('usuarios:password_reset_confirm', args=[uid, token]))
+                enlace_ok = send_password_reset_email(client_user, reset_url)
+                dests_corp = destinatarios_propietarios_empresa(empresa, excluir_emails=[admin_email])
+                if dests_corp:
+                    notificar_evento_seguridad(
+                        request,
+                        f"Nueva empresa activada: {empresa.display_name}",
+                        f"Se creó '{empresa.display_name}' (NIT {empresa.nit}) con plan '{plan_txt}' y se envió enlace de creación de contraseña a {admin_email}.",
+                        destinatarios=dests_corp,
+                        empresa=empresa,
+                        action_url=login_url,
+                        action_text="Ingresar a FacCol",
+                    )
+                if enlace_ok:
+                    messages.success(
+                        request,
+                        f"Empresa inquilina '{empresa.razon_social}' creada exitosamente. Se envió enlace de activación a {admin_email} para definir su contraseña."
+                    )
+                else:
+                    messages.warning(
+                        request,
+                        f"Empresa '{empresa.razon_social}' creada, pero falló el envío del enlace de activación a {admin_email}."
+                    )
+            elif created and raw_password:
+                enviar_notificacion_bienvenida_empresa(empresa, admin_email, admin_nombre, raw_password, login_url)
+                dests_corp = destinatarios_propietarios_empresa(empresa, excluir_emails=[admin_email])
+                if dests_corp:
+                    notificar_evento_seguridad(
+                        request,
+                        f"Nueva empresa activada: {empresa.display_name}",
+                        f"Se creó '{empresa.display_name}' (NIT {empresa.nit}) con plan '{plan_txt}' y usuario propietario {admin_email}.",
+                        destinatarios=dests_corp,
+                        empresa=empresa,
+                        action_url=login_url,
+                        action_text="Ingresar a FacCol",
+                    )
+                messages.success(
+                    request,
+                    f"Empresa inquilina '{empresa.razon_social}' creada exitosamente con Aislamiento Estricto para {admin_email}."
+                )
+            else:
+                dests_asig = [admin_email] + destinatarios_propietarios_empresa(empresa)
+                notificar_evento_seguridad(
+                    request,
+                    f"Nueva empresa asignada: {empresa.display_name}",
+                    f"La cuenta {admin_email} fue vinculada como Propietario de '{empresa.display_name}' (NIT {empresa.nit}) con el plan '{plan_txt}'.",
+                    destinatarios=dests_asig,
+                    empresa=empresa,
+                    action_url=login_url,
+                    action_text="Ingresar a FacCol",
+                )
+                messages.success(
+                    request,
+                    f"Empresa inquilina '{empresa.razon_social}' creada exitosamente y asignada al usuario existente {admin_email}."
+                )
 
-            cred_msg = f"Usuario: {admin_email} | Clave temporal: {admin_password}" if admin_password else f"Usuario existente asignado: {admin_email}"
-            messages.success(
-                request,
-                f"Empresa inquilina '{empresa.razon_social}' creada exitosamente con Aislamiento Estricto. {cred_msg}"
-            )
-
-        plan_txt = empresa.plan.nombre if empresa.plan else "Sin plan asignado"
         registrar_actividad(
             request,
             'empresas',
