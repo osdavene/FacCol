@@ -124,7 +124,13 @@
                 </div>
                 <div>
                     <label class="block font-semibold text-slate-300 mb-1">PIN Software DIAN</label>
-                    <input type="text" name="dian_pin" value="{{ empresa.dian_pin }}" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                    <input type="password" name="dian_pin" value=""
+                           placeholder="{% if empresa.dian_pin %}•••••••• (guardado cifrado){% else %}Ingresa PIN DIAN{% endif %}"
+                           autocomplete="new-password"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                    <label class="inline-flex items-center gap-1.5 text-[10px] text-rose-400 mt-1 cursor-pointer">
+                        <input type="checkbox" name="clear_dian_pin" class="rounded"> Limpiar PIN DIAN
+                    </label>
                 </div>
                 <div class="sm:col-span-2">
                     <label class="block font-semibold text-slate-300 mb-1">TestSetId (Habilitación DIAN)</label>

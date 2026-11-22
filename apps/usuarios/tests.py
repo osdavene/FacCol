@@ -290,4 +290,71 @@ class NotificacionesSeguridadTests(TestCase):
         self.assertIn("gerencia@nortesas.co", destinos_plan)
         self.assertTrue(any("Corporativo" in m.subject or "Corporativo" in m.body for m in mail.outbox))
 
+    def test_seguridad_hardening_login_open_redirect_rate_limit_y_dian_pin(self):
+        # 1. Open Redirect bloqueado en login
+        client = Client()
+        r_ext = client.post(
+            reverse("usuarios:login") + "?next=https://sitio-malicioso.example/phishing",
+            {"login": "operador@nortesas.co", "password": "OperPass!2026"},
+        )
+        self.assertEqual(r_ext.status_code, 302)
+        self.assertEqual(r_ext["Location"], reverse("core:dashboard"))
+
+        client.logout()
+        r_int = client.post(
+            reverse("usuarios:login") + "?next=" + reverse("facturacion:facturas_lista"),
+            {"login": "operador@nortesas.co", "password": "OperPass!2026"},
+        )
+        self.assertEqual(r_int.status_code, 302)
+        self.assertEqual(r_int["Location"], reverse("facturacion:facturas_lista"))
+
+        # 2. Bloqueo por fuerza bruta tras 6 intentos fallidos (HTTP 429)
+        client.logout()
+        for intento in range(1, 7):
+            client.post(reverse("usuarios:login"), {
+                "login": "operador@nortesas.co",
+                "password": f"BadPass{intento}!",
+            })
+        r_blk = client.post(reverse("usuarios:login"), {
+            "login": "operador@nortesas.co",
+            "password": "OperPass!2026",
+        })
+        self.assertEqual(r_blk.status_code, 429)
+
+        # 3. Rate limiting en solicitud de password reset por correo
+        for _ in range(3):
+            r_rst_ok = client.post(reverse("usuarios:password_reset"), {"email": "operador@nortesas.co"})
+            self.assertEqual(r_rst_ok.status_code, 302)
+        r_rst_blk = client.post(reverse("usuarios:password_reset"), {"email": "operador@nortesas.co"})
+        self.assertEqual(r_rst_blk.status_code, 429)
+
+        # 4. Política de contraseña mínima de 8 caracteres
+        c_prop = Client()
+        c_prop.force_login(self.propietario)
+        c_prop.post(reverse("usuarios:perfil"), {
+            "first_name": self.propietario.first_name,
+            "last_name": self.propietario.last_name,
+            "nuevo_password": "corto",
+        })
+        self.propietario.refresh_from_db()
+        self.assertTrue(self.propietario.check_password("PropPass!2026"))
+
+        # 5. Cifrado de dian_pin en reposo y ocultamiento en HTML
+        c_prop.post(reverse("core:configuracion_empresa"), {
+            "seccion": "dian",
+            "perfil_operativo": "GENERAL",
+            "regimen_tributario": "RESPONSABLE_IVA",
+            "prefijo_factura": "FE",
+            "prefijo_pos_electronico": "POS",
+            "modo_dian": "PRUEBAS",
+            "dian_software_id": "SW-123",
+            "dian_pin": "PinSecreto987",
+        }, follow=True)
+        self.emp.refresh_from_db()
+        self.assertTrue(self.emp.dian_pin.startswith("enc:"))
+        self.assertEqual(self.emp.get_dian_pin(), "PinSecreto987")
+        r_cfg_html = c_prop.get(reverse("core:configuracion_empresa"))
+        self.assertNotContains(r_cfg_html, "PinSecreto987")
+        self.assertNotContains(r_cfg_html, self.emp.dian_pin)
+
 

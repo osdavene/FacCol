@@ -3,7 +3,9 @@ from io import StringIO
 from django.core.management import call_command
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import user_passes_test
+from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth.tokens import default_token_generator
+from django.core.exceptions import ValidationError
 from django.contrib import messages
 from django.db.models import Q
 from django.urls import reverse
@@ -117,11 +119,15 @@ def empresa_crear(request):
                 'departamentos': departamentos, 'planes': planes, 'accion': 'Crear'
             })
 
-        if admin_tipo != 'asignar_superadmin' and raw_password and len(raw_password) < 6:
-            messages.error(request, "La contraseña inicial debe tener al menos 6 caracteres o quedar vacía para enviar enlace de activación.")
-            return render(request, 'backoffice/empresa_formulario.html', {
-                'departamentos': departamentos, 'planes': planes, 'accion': 'Crear'
-            })
+        if admin_tipo != 'asignar_superadmin' and raw_password:
+            try:
+                validate_password(raw_password)
+            except ValidationError as exc:
+                for err in exc.messages:
+                    messages.error(request, err)
+                return render(request, 'backoffice/empresa_formulario.html', {
+                    'departamentos': departamentos, 'planes': planes, 'accion': 'Crear'
+                })
 
         empresa = Empresa.objects.create(
             razon_social=razon_social,
@@ -139,7 +145,7 @@ def empresa_crear(request):
             resolucion_dian=request.POST.get('resolucion_dian', '').strip(),
             modo_dian=request.POST.get('modo_dian', 'PRUEBAS'),
             dian_software_id=request.POST.get('dian_software_id', '').strip(),
-            dian_pin=request.POST.get('dian_pin', '').strip(),
+            dian_pin=encrypt_secret(request.POST.get('dian_pin', '').strip()),
             dian_test_set_id=request.POST.get('dian_test_set_id', '').strip(),
         )
 
@@ -314,7 +320,12 @@ def empresa_editar(request, empresa_id):
         empresa.rango_hasta = int(request.POST.get('rango_hasta', 5000) or 5000)
         empresa.modo_dian = request.POST.get('modo_dian', empresa.modo_dian)
         empresa.dian_software_id = request.POST.get('dian_software_id', '').strip()
-        empresa.dian_pin = request.POST.get('dian_pin', '').strip()
+        if 'clear_dian_pin' in request.POST:
+            empresa.dian_pin = ''
+        else:
+            new_dian_pin = request.POST.get('dian_pin', '').strip()
+            if new_dian_pin:
+                empresa.dian_pin = encrypt_secret(new_dian_pin)
         empresa.dian_test_set_id = request.POST.get('dian_test_set_id', '').strip()
 
         # Configuración de correo independiente de empresa (Resend propio o SMTP propio)

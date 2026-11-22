@@ -150,7 +150,7 @@ class Empresa(models.Model):
     dias_vencimiento = models.IntegerField(default=30, verbose_name="Días de vencimiento por defecto")
     modo_dian = models.CharField(max_length=20, choices=MODO_DIAN_CHOICES, default='PRUEBAS')
     dian_software_id = models.CharField(max_length=120, blank=True, verbose_name="Software ID DIAN")
-    dian_pin = models.CharField(max_length=50, blank=True, verbose_name="PIN Software DIAN")
+    dian_pin = models.CharField(max_length=255, blank=True, verbose_name="PIN Software DIAN")
     dian_test_set_id = models.CharField(max_length=120, blank=True, verbose_name="TestSetId Habilitación DIAN")
 
     # Servidor de Correo Independiente de la Empresa (Resend o SMTP propio; vacío = oficial ServiGest)
@@ -204,6 +204,10 @@ class Empresa(models.Model):
         if self.logo:
             return self.logo.url
         return None
+
+    def get_dian_pin(self) -> str:
+        from apps.core.platform_settings import decrypt_secret
+        return decrypt_secret(self.dian_pin).strip()
 
     def obtener_siguiente_consecutivo(self):
         num = self.consecutivo_actual

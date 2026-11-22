@@ -11,6 +11,7 @@ from django.db import models
 from django.db.models import Sum, Count, Q
 from django.http import JsonResponse
 from django.urls import reverse
+from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
 from apps.empresas.models import Empresa, Plan, SolicitudCambioPlan
@@ -189,7 +190,12 @@ def configuracion_empresa(request):
             empresa.resolucion_dian = request.POST.get('resolucion_dian', '').strip()
             empresa.modo_dian = request.POST.get('modo_dian', empresa.modo_dian)
             empresa.dian_software_id = request.POST.get('dian_software_id', '').strip()
-            empresa.dian_pin = request.POST.get('dian_pin', '').strip()
+            if 'clear_dian_pin' in request.POST:
+                empresa.dian_pin = ''
+            else:
+                new_dian_pin = request.POST.get('dian_pin', '').strip()
+                if new_dian_pin:
+                    empresa.dian_pin = encrypt_secret(new_dian_pin)
             empresa.dian_test_set_id = request.POST.get('dian_test_set_id', '').strip()
             empresa.save()
             registrar_actividad(request, 'configuracion', 'CONFIG_DIAN_EMPRESA', f"Actualizó parámetros DIAN/perfil operativo de {empresa.display_name}.", empresa=empresa, objeto=empresa)
@@ -685,7 +691,14 @@ def notificaciones_marcar_todas_leidas(request):
     qs.update(leida=True)
     if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
         return JsonResponse({'ok': True})
-    return redirect(request.META.get('HTTP_REFERER') or reverse('core:dashboard'))
+    referer = (request.META.get('HTTP_REFERER') or '').strip()
+    if referer and url_has_allowed_host_and_scheme(
+        url=referer,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        return redirect(referer)
+    return redirect('core:dashboard')
 
 
 @login_required

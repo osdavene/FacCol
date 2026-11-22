@@ -59,7 +59,7 @@ def calcular_cufe_y_qr(factura):
 
     nit_fe = (empresa.nit or "").strip()
     num_adq = (tercero.numero_documento or "222222222222").strip()
-    pin_o_cltec = (empresa.dian_pin or empresa.dian_software_id or "FACCOL-DEV-PIN").strip()
+    pin_o_cltec = (empresa.get_dian_pin() or empresa.dian_software_id or "FACCOL-DEV-PIN").strip()
     tipo_amb = "1" if empresa.modo_dian == "PRODUCCION" else "2"
 
     cadena = (
@@ -341,7 +341,7 @@ def transmitir_documento_dian(factura):
         faltantes.append("Resolución DIAN")
     if not (empresa.dian_software_id or "").strip():
         faltantes.append("Software ID")
-    if not (empresa.dian_pin or "").strip():
+    if not empresa.get_dian_pin():
         faltantes.append("PIN de Software")
     if empresa.modo_dian == "PRUEBAS" and not (empresa.dian_test_set_id or "").strip():
         faltantes.append("TestSetId de Habilitación")

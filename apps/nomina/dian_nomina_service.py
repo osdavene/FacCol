@@ -32,7 +32,7 @@ def calcular_cune_nomina(detalle):
     nit_emp = (empresa.nit or "").strip()
     doc_trab = (empleado.numero_documento or "").strip()
     tipo_xml = "102"
-    pin_soft = (empresa.dian_pin or empresa.dian_software_id or "FACCOL-NE-PIN").strip()
+    pin_soft = (empresa.get_dian_pin() or empresa.dian_software_id or "FACCOL-NE-PIN").strip()
     tipo_amb = "1" if empresa.modo_dian == "PRODUCCION" else "2"
 
     cadena = (

@@ -97,7 +97,7 @@ def _enviar_webhook_empresa(
         "timestamp": timezone.localtime().isoformat(),
     }
     try:
-        httpx.post(wh_url, json=payload, timeout=4.0)
+        httpx.post(wh_url, json=payload, timeout=4.0, follow_redirects=False)
         return True
     except Exception as exc:
         logger.warning("Error enviando webhook externo de empresa %s: %s", empresa.id, exc)

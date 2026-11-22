@@ -3,8 +3,10 @@ from datetime import timedelta
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.password_validation import validate_password
 from django.contrib.auth.tokens import PasswordResetTokenGenerator, default_token_generator
 from django.contrib import messages
+from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.db.models import Q
 from django.http import HttpResponseForbidden
@@ -12,13 +14,13 @@ from django.urls import reverse
 from django.utils import timezone
 from django.utils.crypto import get_random_string
 from django.utils.encoding import force_bytes, force_str
-from django.utils.http import urlsafe_base64_decode, urlsafe_base64_encode
+from django.utils.http import url_has_allowed_host_and_scheme, urlsafe_base64_decode, urlsafe_base64_encode
 from django.views.decorators.http import require_POST
 
 from apps.empresas.models import Empresa, Plan
 from apps.usuarios.models import User, EmpresaUsuario
 from apps.usuarios.decorators import requiere_admin
-from apps.core.audit import registrar_actividad
+from apps.core.audit import _extraer_ip, registrar_actividad
 from apps.core.config import mail_settings
 from apps.core.models import RegistroActividad
 from apps.core.notifications import (
@@ -73,6 +75,69 @@ class EmailVerificationTokenGenerator(PasswordResetTokenGenerator):
 email_verification_token = EmailVerificationTokenGenerator()
 logger = logging.getLogger("faccol.auth")
 
+LOGIN_MAX_FALLOS_CUENTA = 6
+LOGIN_MAX_FALLOS_IP = 15
+AUTH_VENTANA_BLOQUEO_MIN = 15
+RESET_MAX_IP = 6
+RESET_MAX_EMAIL = 3
+
+
+def _safe_next_url(request, raw_url: str, fallback: str = 'core:dashboard') -> str:
+    candidate = (raw_url or '').strip()
+    if candidate and url_has_allowed_host_and_scheme(
+        url=candidate,
+        allowed_hosts={request.get_host()},
+        require_https=request.is_secure(),
+    ):
+        return candidate
+    return fallback
+
+
+def _esta_bloqueado_login(request, login_id: str) -> bool:
+    """Bloquea fuerza bruta por IP o por cuenta tras superar el umbral en 15 minutos."""
+    desde = timezone.now() - timedelta(minutes=AUTH_VENTANA_BLOQUEO_MIN)
+    ip = _extraer_ip(request)
+    if ip and RegistroActividad.objects.filter(
+        accion='LOGIN_FALLIDO',
+        ip_address=ip,
+        created_at__gte=desde,
+    ).count() >= LOGIN_MAX_FALLOS_IP:
+        return True
+
+    if not login_id:
+        return False
+
+    u_intento = User.objects.filter(
+        Q(username__iexact=login_id) | Q(email__iexact=login_id)
+    ).first()
+    corte = desde
+    if u_intento:
+        ultimo_ok = (
+            RegistroActividad.objects.filter(
+                accion='LOGIN',
+                usuario=u_intento,
+                created_at__gte=desde,
+            )
+            .order_by('-created_at')
+            .first()
+        )
+        if ultimo_ok:
+            corte = ultimo_ok.created_at
+
+    filtro_cuenta = Q(datos_extra__login_intentado__iexact=login_id)
+    if u_intento:
+        filtro_cuenta = (
+            filtro_cuenta
+            | Q(usuario=u_intento)
+            | Q(datos_extra__login_intentado__iexact=u_intento.username)
+            | Q(datos_extra__login_intentado__iexact=u_intento.email)
+        )
+    fallos = RegistroActividad.objects.filter(
+        accion='LOGIN_FALLIDO',
+        created_at__gte=corte,
+    ).filter(filtro_cuenta).count()
+    return fallos >= LOGIN_MAX_FALLOS_CUENTA
+
 
 def login_view(request):
     if request.user.is_authenticated:
@@ -81,6 +146,20 @@ def login_view(request):
     if request.method == 'POST':
         login_id = request.POST.get('login', '').strip()
         password = request.POST.get('password', '')
+
+        if _esta_bloqueado_login(request, login_id):
+            registrar_actividad(
+                request,
+                'auth',
+                'LOGIN_BLOQUEADO_RATE',
+                f"Bloqueo temporal por múltiples intentos fallidos para '{login_id}'.",
+                datos_extra={'login_intentado': login_id},
+            )
+            messages.error(
+                request,
+                f"Demasiados intentos fallidos. Por seguridad, espera {AUTH_VENTANA_BLOQUEO_MIN} minutos o restablece tu contraseña.",
+            )
+            return render(request, 'usuarios/login.html', status=429)
 
         # Intentar autenticar por username o email
         user = authenticate(request, username=login_id, password=password)
@@ -108,8 +187,8 @@ def login_view(request):
             emp_default = None if user.es_superadmin_user() else (user.empresas_activas()[0] if user.empresas_activas() else None)
             registrar_actividad(request, 'auth', 'LOGIN', f"Inicio de sesión exitoso ({user.username}).", empresa=emp_default, user=user)
             messages.success(request, f"¡Bienvenido de nuevo, {user.first_name or user.username}!")
-            next_url = request.GET.get('next') or 'core:dashboard'
-            return redirect(next_url)
+            raw_next = request.POST.get('next') or request.GET.get('next') or ''
+            return redirect(_safe_next_url(request, raw_next))
         else:
             u_intento = User.objects.filter(
                 Q(username__iexact=login_id) | Q(email__iexact=login_id)
@@ -217,13 +296,15 @@ def perfil_view(request):
         nuevo_pwd = request.POST.get('nuevo_password', '').strip()
         clave_actualizada = False
         if nuevo_pwd:
-            if len(nuevo_pwd) >= 6:
+            try:
+                validate_password(nuevo_pwd, user=user)
                 user.set_password(nuevo_pwd)
                 login(request, user)
                 clave_actualizada = True
                 messages.success(request, "Contraseña actualizada exitosamente.")
-            else:
-                messages.error(request, "La nueva contraseña debe tener mínimo 6 caracteres.")
+            except ValidationError as exc:
+                for err in exc.messages:
+                    messages.error(request, err)
 
         user.save()
         if clave_actualizada:
@@ -320,9 +401,13 @@ def usuario_crear(request):
             messages.error(request, "El correo electrónico es obligatorio.")
             return render(request, 'usuarios/crear.html', {'roles': EmpresaUsuario.ROLES_CHOICES})
 
-        if password and len(password) < 6:
-            messages.error(request, "La contraseña inicial debe tener al menos 6 caracteres o quedar vacía para enviar enlace.")
-            return render(request, 'usuarios/crear.html', {'roles': EmpresaUsuario.ROLES_CHOICES})
+        if password:
+            try:
+                validate_password(password)
+            except ValidationError as exc:
+                for err in exc.messages:
+                    messages.error(request, err)
+                return render(request, 'usuarios/crear.html', {'roles': EmpresaUsuario.ROLES_CHOICES})
 
         enviar_enlace_inicial = not bool(password)
         user, created = User.objects.get_or_create(
@@ -715,6 +800,23 @@ def password_reset_request_view(request):
 
     if request.method == 'POST':
         email = request.POST.get('email', '').strip().lower()
+        desde_reset = timezone.now() - timedelta(minutes=AUTH_VENTANA_BLOQUEO_MIN)
+        ip = _extraer_ip(request)
+        if ip and RegistroActividad.objects.filter(
+            accion='PASSWORD_RESET_SOLICITADO',
+            ip_address=ip,
+            created_at__gte=desde_reset,
+        ).count() >= RESET_MAX_IP:
+            messages.error(request, f"Demasiadas solicitudes de recuperación desde esta IP. Espera {AUTH_VENTANA_BLOQUEO_MIN} minutos.")
+            return render(request, 'usuarios/password_reset_form.html', status=429)
+        if email and RegistroActividad.objects.filter(
+            accion='PASSWORD_RESET_SOLICITADO',
+            datos_extra__email__iexact=email,
+            created_at__gte=desde_reset,
+        ).count() >= RESET_MAX_EMAIL:
+            messages.error(request, f"Ya se enviaron varias solicitudes recientes para este correo. Espera {AUTH_VENTANA_BLOQUEO_MIN} minutos.")
+            return render(request, 'usuarios/password_reset_form.html', status=429)
+
         from django.conf import settings as django_settings
         backend = getattr(django_settings, 'EMAIL_BACKEND', '')
         mail_sin_credenciales = (
@@ -728,6 +830,14 @@ def password_reset_request_view(request):
                 "El servidor de correo de la plataforma aún no tiene credenciales SMTP o RESEND_API_KEY configuradas en .env o Backoffice."
             )
             return redirect('usuarios:password_reset')
+
+        registrar_actividad(
+            request,
+            'auth',
+            'PASSWORD_RESET_SOLICITADO',
+            f"Solicitud de restablecimiento de contraseña para '{email or 'sin-correo'}'.",
+            datos_extra={'email': email},
+        )
 
         if email:
             users = User.objects.filter(email__iexact=email, is_active=True, activo=True)
@@ -775,11 +885,15 @@ def password_reset_confirm_view(request, uidb64, token):
     if request.method == 'POST':
         p1 = request.POST.get('password1', '').strip()
         p2 = request.POST.get('password2', '').strip()
-        if len(p1) < 6:
-            messages.error(request, "La nueva contraseña debe tener al menos 6 caracteres.")
-        elif p1 != p2:
+        if p1 != p2:
             messages.error(request, "Las contraseñas no coinciden.")
         else:
+            try:
+                validate_password(p1, user=user)
+            except ValidationError as exc:
+                for err in exc.messages:
+                    messages.error(request, err)
+                return render(request, 'usuarios/password_reset_confirm.html', {'token_valido': True})
             user.set_password(p1)
             user.save(update_fields=['password'])
             registrar_actividad(
