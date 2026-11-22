@@ -9,6 +9,7 @@ from django.contrib import messages
 from django.db import transaction
 from django.db.models import Q
 from django.http import HttpResponse
+from django.urls import reverse
 
 from apps.inventario.models import (
     Producto,
@@ -20,6 +21,12 @@ from apps.inventario.models import (
 )
 from apps.contabilidad.services import registrar_asiento_compra
 from apps.core.audit import registrar_actividad
+from apps.core.notifications import (
+    destinatarios_propietarios_empresa,
+    notificar_evento_seguridad,
+    notificar_stock_critico_si_aplica,
+    notificar_usuarios_app,
+)
 from apps.terceros.models import Tercero
 from apps.usuarios.decorators import requiere_inventario
 
@@ -290,6 +297,36 @@ def ajuste_inventario_crear(request):
                 referencia_documento="AJUSTE-MANUAL",
             )
         registrar_actividad(request, 'inventario', 'AJUSTE_KARDEX', f"Ajustó Kardex de '{prod.nombre}' ({tipo_mov} {cantidad}): saldo {prod.stock_actual}.", empresa=empresa, objeto=prod)
+        if tipo_mov == 'SALIDA':
+            url_kardex = reverse('inventario:kardex')
+            resumen_aj = (
+                f"Ajuste manual de SALIDA sobre '{prod.nombre}' ({cantidad} uds): "
+                f"saldo pasó de {saldo_ant} a {saldo_nuevo}. Motivo: {motivo}"
+            )
+            notificar_usuarios_app(
+                f"Ajuste manual de salida: {prod.nombre}",
+                resumen_aj,
+                empresa=empresa,
+                roles=('propietario', 'admin'),
+                nivel='warning',
+                categoria='inventario',
+                url=url_kardex,
+            )
+            notificar_evento_seguridad(
+                request,
+                f"Ajuste de salida en inventario: {prod.nombre}",
+                resumen_aj,
+                destinatarios=destinatarios_propietarios_empresa(
+                    empresa, excluir_emails=[request.user.email]
+                ),
+                empresa=empresa,
+                action_url=request.build_absolute_uri(url_kardex),
+                action_text="Revisar Kardex",
+                categoria='inventario',
+                nivel='warning',
+                registrar_in_app=False,
+            )
+            notificar_stock_critico_si_aplica(empresa, prod, request)
         messages.success(request, f"Kardex de '{prod.nombre}' ajustado: saldo actual {prod.stock_actual}.")
         return redirect('inventario:kardex')
 

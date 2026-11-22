@@ -15,6 +15,13 @@ from apps.facturacion.models import Factura, FacturaItem, ReciboCaja
 from apps.facturacion.dian_service import TOPE_DEE_POS_COP, desglosar_impuestos_item
 from apps.contabilidad.services import registrar_asiento_venta
 from apps.core.audit import registrar_actividad
+from apps.core.notifications import (
+    destinatarios_propietarios_empresa,
+    notificar_evento_seguridad,
+    notificar_stock_critico_si_aplica,
+    notificar_usuarios_app,
+    verificar_alertas_cupo_plan,
+)
 from apps.usuarios.decorators import requiere_facturacion
 
 
@@ -125,6 +132,7 @@ def pos_procesar_venta(request):
                 observaciones='Fiado registrado en Caja Express.' if es_fiado else 'Venta en Caja Express POS.',
             )
 
+            productos_afectados = []
             for it in items:
                 prod = Producto.objects.get(id=it['producto_id'], empresa=empresa)
                 cant = Decimal(str(it['cantidad']))
@@ -145,6 +153,7 @@ def pos_procesar_venta(request):
                     saldo_nuevo = max(Decimal('0.00'), saldo_anterior - cant)
                     prod.stock_actual = saldo_nuevo
                     prod.save(update_fields=['stock_actual'])
+                    productos_afectados.append(prod)
 
                     MovimientoInventario.objects.create(
                         empresa=empresa,
@@ -204,6 +213,9 @@ def pos_procesar_venta(request):
             empresa=empresa,
             objeto=factura,
         )
+        for p_afectado in productos_afectados:
+            notificar_stock_critico_si_aplica(empresa, p_afectado, request)
+        verificar_alertas_cupo_plan(empresa, request)
         return JsonResponse({
             'success': True,
             'factura_id': factura.id,
@@ -293,6 +305,50 @@ def caja_cerrar_turno(request, turno_id):
         turno.save()
 
         registrar_actividad(request, 'pos', 'CERRAR_CAJA', f"Cerró turno #{turno.id} con ${monto_real:,.0f} COP (diferencia ${turno.diferencia:,.0f}).", empresa=empresa, objeto=turno)
+        cajero_nom = request.user.get_full_name() or request.user.email or request.user.username
+        url_cajas = reverse('pos:cajas_lista')
+        if turno.diferencia != 0:
+            signo = "+" if turno.diferencia > 0 else ""
+            titulo_caja = f"Descuadre en cierre de caja #{turno.id}"
+            resumen_caja = (
+                f"El turno #{turno.id} ({turno.caja.nombre}) cerró con diferencia de "
+                f"{signo}${turno.diferencia:,.0f} COP (esperado: ${turno.monto_total_esperado:,.0f}, "
+                f"real contado: ${monto_real:,.0f}) por {cajero_nom}."
+            )
+            notificar_usuarios_app(
+                titulo_caja,
+                resumen_caja,
+                empresa=empresa,
+                roles=('propietario', 'admin', 'contador'),
+                nivel='warning',
+                categoria='caja',
+                url=url_cajas,
+            )
+            notificar_evento_seguridad(
+                request,
+                titulo_caja,
+                resumen_caja,
+                destinatarios=destinatarios_propietarios_empresa(
+                    empresa, excluir_emails=[request.user.email]
+                ),
+                empresa=empresa,
+                action_url=request.build_absolute_uri(url_cajas),
+                action_text="Revisar Cajas POS",
+                extra_lineas=[f"Observaciones del cajero: {obs}"] if obs else None,
+                categoria='caja',
+                nivel='warning',
+                registrar_in_app=False,
+            )
+        else:
+            notificar_usuarios_app(
+                f"Cierre de caja cuadrado #{turno.id}",
+                f"Turno #{turno.id} ({turno.caja.nombre}) cerró cuadrado en ${monto_real:,.0f} COP por {cajero_nom}.",
+                empresa=empresa,
+                roles=('propietario', 'admin'),
+                nivel='info',
+                categoria='caja',
+                url=url_cajas,
+            )
         messages.success(request, f"Turno de caja cerrado. Total en caja: ${monto_real:,.0f} COP (Diferencia: ${turno.diferencia:,.0f} COP).")
         return redirect('pos:cajas_lista')
 

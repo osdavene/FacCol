@@ -15,4 +15,6 @@ urlpatterns = [
     path('empresa/cambiar/<int:empresa_id>/', views.cambiar_empresa, name='cambiar_empresa'),
     path('tema/cambiar/<str:tema>/', views.cambiar_tema, name='cambiar_tema'),
     path('api/busqueda-global/', views.busqueda_global, name='busqueda_global'),
+    path('notificaciones/<int:notif_id>/leer/', views.notificacion_marcar_leida, name='notificacion_marcar_leida'),
+    path('notificaciones/leer-todas/', views.notificaciones_marcar_todas_leidas, name='notificaciones_marcar_todas_leidas'),
 ]

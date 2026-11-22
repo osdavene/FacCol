@@ -1,11 +1,24 @@
 import hashlib
 import hmac
+import html as _html
 import re
 import requests
+from django.contrib.auth.tokens import default_token_generator
 from django.db import transaction
+from django.urls import reverse
 from django.utils import timezone
+from django.utils.encoding import force_bytes
+from django.utils.http import urlsafe_base64_encode
 
+from apps.core.config import mail_settings
+from apps.core.mail import is_dummy_or_invalid_email, send_password_reset_email
 from apps.core.mail_service import enviar_correo_sistema
+from apps.core.notifications import (
+    destinatarios_propietarios_empresa,
+    destinatarios_superadmins,
+    notificar_evento_seguridad,
+    notificar_usuarios_app,
+)
 from apps.core.platform_settings import decrypt_secret, get_platform_setting, mask_secret
 from apps.contabilidad.services import registrar_asiento_recibo
 from apps.empresas.models import Empresa, EmpresaModulo
@@ -142,6 +155,7 @@ def activate_wompi_transaction(tx: TransaccionWompi) -> bool:
             return False
 
         tx.refresh_from_db()
+        pago_info = None
         if tx.factura:
             fac = tx.factura
             ultimo_rc = ReciboCaja.objects.filter(empresa=tx.empresa).order_by("-consecutivo").first()
@@ -160,10 +174,11 @@ def activate_wompi_transaction(tx: TransaccionWompi) -> bool:
             )
             fac.recalcular_totales()
             registrar_asiento_recibo(rc)
+            pago_info = ("factura", fac, rc)
         elif tx.plan and tx.empresa is None:
             plan = tx.plan
             emp = None
-            temp_pwd = None
+            user_creado = None
             email = (tx.customer_email or "").strip().lower()
             nit = (tx.customer_nit or "").strip()
 
@@ -193,14 +208,14 @@ def activate_wompi_transaction(tx: TransaccionWompi) -> bool:
                 if email:
                     user = User.objects.filter(email__iexact=email).first() or User.objects.filter(username__iexact=email).first()
                     if not user:
-                        temp_pwd = get_random_string(12)
                         user = User.objects.create_user(
                             username=email,
                             email=email,
-                            password=temp_pwd,
+                            password=get_random_string(20),
                             first_name=nombre_emp[:30],
                             email_verified_at=now,
                         )
+                        user_creado = user
                     EmpresaUsuario.objects.get_or_create(
                         user=user,
                         empresa=emp,
@@ -212,19 +227,102 @@ def activate_wompi_transaction(tx: TransaccionWompi) -> bool:
 
             tx.empresa_creada = emp
             tx.save(update_fields=["empresa_creada", "usuario"])
+            pago_info = ("plan", emp, plan, email, user_creado)
 
-            if email:
-                detalle_clave = (
-                    f"<p><b>Usuario:</b> {email}<br><b>Contraseña temporal:</b> <code>{temp_pwd}</code></p>"
-                    if temp_pwd
-                    else f"<p>Tu empresa <b>{emp.display_name}</b> ya tiene activo el plan <b>{plan.nombre}</b>.</p>"
-                )
-                enviar_correo_sistema(
-                    email,
-                    f"Activación FacCol — Plan {plan.nombre}",
-                    f"<h2>¡Bienvenido a FacCol!</h2><p>Confirmamos tu pago por Wompi ({tx.reference}).</p>{detalle_clave}",
-                    fail_silently=True,
-                )
+    app_base = (mail_settings.APP_URL or "").rstrip("/")
+    if pago_info and pago_info[0] == "factura":
+        _, fac, rc = pago_info
+        correo_cli = (getattr(fac.tercero, "email", "") or tx.customer_email or "").strip().lower()
+        if correo_cli and not is_dummy_or_invalid_email(correo_cli):
+            html_recibo = (
+                f"<h3>Pago recibido correctamente</h3>"
+                f"<p>Hola <b>{_html.escape(fac.tercero.razon_social)}</b>,</p>"
+                f"<p>Confirmamos tu pago en línea vía Wompi por <b>${rc.valor:,.0f} COP</b> "
+                f"aplicado a <b>{_html.escape(fac.numero_completo)}</b>.</p>"
+                f"<p><b>Recibo de Caja:</b> RC-{rc.consecutivo}<br>"
+                f"<b>Referencia Wompi:</b> {_html.escape(tx.reference)}</p>"
+            )
+            enviar_correo_sistema(
+                correo_cli,
+                f"Comprobante de pago {fac.numero_completo} — {tx.empresa.display_name}",
+                html_recibo,
+                empresa=tx.empresa,
+                fail_silently=True,
+            )
+
+        fac_url = reverse("facturacion:factura_detalle", args=[fac.id])
+        resumen_pago = (
+            f"Pago aprobado vía Wompi por ${rc.valor:,.0f} COP para {fac.numero_completo} "
+            f"(Recibo RC-{rc.consecutivo}, Ref. {tx.reference})."
+        )
+        notificar_usuarios_app(
+            f"Pago Wompi recibido: {fac.numero_completo}",
+            resumen_pago,
+            empresa=tx.empresa,
+            roles=("propietario", "admin", "contador"),
+            nivel="success",
+            categoria="wompi",
+            url=fac_url,
+        )
+        notificar_evento_seguridad(
+            None,
+            f"Pago Wompi recibido: {fac.numero_completo}",
+            resumen_pago,
+            destinatarios=destinatarios_propietarios_empresa(tx.empresa),
+            empresa=tx.empresa,
+            action_url=f"{app_base}{fac_url}" if app_base else fac_url,
+            action_text="Ver Factura y Recibo",
+            categoria="wompi",
+            nivel="success",
+            registrar_in_app=False,
+        )
+    elif pago_info and pago_info[0] == "plan":
+        _, emp, plan, email, user_creado = pago_info
+        login_url = f"{app_base}{reverse('usuarios:login')}" if app_base else reverse("usuarios:login")
+        if user_creado is not None:
+            uid = urlsafe_base64_encode(force_bytes(user_creado.pk))
+            token = default_token_generator.make_token(user_creado)
+            reset_url = f"{app_base}{reverse('usuarios:password_reset_confirm', args=[uid, token])}" if app_base else reverse("usuarios:password_reset_confirm", args=[uid, token])
+            send_password_reset_email(user_creado, reset_url)
+        elif email and not is_dummy_or_invalid_email(email):
+            enviar_correo_sistema(
+                email,
+                f"Activación FacCol — Plan {plan.nombre}",
+                (
+                    f"<h2>¡Bienvenido a FacCol!</h2>"
+                    f"<p>Confirmamos tu pago por Wompi ({_html.escape(tx.reference)}).</p>"
+                    f"<p>Tu empresa <b>{_html.escape(emp.display_name)}</b> ya tiene activo el plan <b>{_html.escape(plan.nombre)}</b>.</p>"
+                    f"<p><a href='{_html.escape(login_url, quote=True)}'>Ingresar a FacCol</a></p>"
+                ),
+                fail_silently=True,
+            )
+
+        resumen_saas = (
+            f"Se aprobó suscripción Wompi al plan '{plan.nombre}' para '{emp.display_name}' "
+            f"(NIT {emp.nit}, Ref. {tx.reference}, contacto {email or 'no registrado'})."
+        )
+        bo_url = reverse("backoffice:empresas_lista")
+        notificar_usuarios_app(
+            f"Nueva venta SaaS Wompi: {plan.nombre}",
+            resumen_saas,
+            empresa=None,
+            roles=(),
+            superadmins=True,
+            nivel="success",
+            categoria="wompi",
+            url=bo_url,
+        )
+        notificar_evento_seguridad(
+            None,
+            f"Nueva suscripción pagada por Wompi: {plan.nombre}",
+            resumen_saas,
+            destinatarios=destinatarios_superadmins(),
+            action_url=f"{app_base}{bo_url}" if app_base else bo_url,
+            action_text="Ver Empresas en Backoffice",
+            categoria="wompi",
+            nivel="success",
+            registrar_in_app=False,
+        )
     return True
 
 

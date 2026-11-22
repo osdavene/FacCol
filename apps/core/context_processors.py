@@ -1,3 +1,5 @@
+from django.db.models import Q
+from apps.core.models import Notificacion
 from apps.empresas.models import Empresa
 
 
@@ -10,6 +12,9 @@ def global_context(request):
 
     todos_codigos = ['facturacion', 'pos', 'terceros', 'inventario', 'contabilidad', 'nomina', 'ia']
     modulos_activos = set(todos_codigos)
+
+    notificaciones_recientes = []
+    notificaciones_no_leidas_count = 0
 
     if request.user.is_authenticated:
         tema = getattr(request.user, 'tema', 'oscuro') or 'oscuro'
@@ -37,6 +42,12 @@ def global_context(request):
                         empresa.empresamodulo_set.filter(activo=True).values_list('modulo__codigo', flat=True)
                     )
 
+        qs_notif = Notificacion.objects.filter(usuario=request.user)
+        if not is_superadmin_user and empresa is not None:
+            qs_notif = qs_notif.filter(Q(empresa=empresa) | Q(empresa__isnull=True))
+        notificaciones_no_leidas_count = qs_notif.filter(leida=False).count()
+        notificaciones_recientes = list(qs_notif.order_by('-created_at')[:8])
+
     return {
         'empresa_activa': empresa,
         'todas_empresas': todas_empresas,
@@ -45,6 +56,8 @@ def global_context(request):
         'tema_actual': tema,
         'user_rol': user_rol,
         'is_superadmin_user': is_superadmin_user,
+        'notificaciones_recientes': notificaciones_recientes,
+        'notificaciones_no_leidas_count': notificaciones_no_leidas_count,
         'app_name': 'FacCol',
         'app_version': '3.0.0 (Python Edition)',
     }

@@ -12,7 +12,7 @@ from django.db import transaction
 from django.db.models import Sum
 from django.template.loader import render_to_string
 from django.urls import reverse
-from django.utils.html import strip_tags
+from django.utils.html import escape, strip_tags
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
@@ -33,6 +33,16 @@ from apps.facturacion.wompi_service import (
     verify_wompi_event_checksum,
 )
 from apps.core.audit import registrar_actividad
+from apps.core.mail import is_dummy_or_invalid_email
+from apps.core.mail_service import enviar_correo_sistema
+from apps.core.notifications import (
+    destinatarios_propietarios_empresa,
+    destinatarios_superadmins,
+    notificar_evento_seguridad,
+    notificar_stock_critico_si_aplica,
+    notificar_usuarios_app,
+    verificar_alertas_cupo_plan,
+)
 from apps.core.mail_service import enviar_correo_sistema
 from apps.contabilidad.services import (
     registrar_asiento_nota_credito,
@@ -87,6 +97,8 @@ def _mover_stock_documento(empresa, producto, cantidad, tipo_mov, motivo, refere
         motivo=motivo,
         referencia_documento=referencia,
     )
+    if tipo_mov == 'SALIDA':
+        notificar_stock_critico_si_aplica(empresa, producto)
 
 
 @login_required
@@ -242,6 +254,8 @@ def factura_crear(request):
             empresa=empresa,
             objeto=factura,
         )
+        if es_fiscal:
+            verificar_alertas_cupo_plan(empresa, request)
         messages.success(
             request,
             f"{factura.get_tipo_documento_display()} {factura.numero_completo} emitida exitosamente por ${factura.total:,.0f} COP."
@@ -575,6 +589,29 @@ def wompi_webhook(request):
         if wompi_status == 'VOIDED' and tx.status != 'VOIDED':
             tx.status = 'VOIDED'
             tx.save(update_fields=['status', 'updated_at'])
+            emp_notif = tx.empresa or tx.empresa_creada
+            dests = destinatarios_propietarios_empresa(emp_notif) if emp_notif else destinatarios_superadmins()
+            resumen_void = f"La transacción Wompi {tx.reference} cambió a estado ANULADA (VOIDED)."
+            notificar_usuarios_app(
+                f"Transacción Wompi anulada: {tx.reference}",
+                resumen_void,
+                empresa=emp_notif,
+                roles=('propietario', 'admin', 'contador') if emp_notif else (),
+                superadmins=not bool(emp_notif),
+                nivel='warning',
+                categoria='wompi',
+                url=reverse('facturacion:factura_detalle', args=[tx.factura_id]) if tx.factura_id else reverse('backoffice:empresas_lista'),
+            )
+            notificar_evento_seguridad(
+                request,
+                f"Pago Wompi anulado ({tx.reference})",
+                resumen_void,
+                destinatarios=dests,
+                empresa=emp_notif,
+                categoria='wompi',
+                nivel='warning',
+                registrar_in_app=False,
+            )
         return JsonResponse({'status': 'ok'}, status=200)
 
     if real_id and TransaccionWompi.objects.filter(wompi_transaction_id=real_id, activated_at__isnull=False).exclude(id=tx.id).exists():
@@ -593,6 +630,32 @@ def wompi_webhook(request):
         else:
             tx.status = 'AMOUNT_MISMATCH'
             tx.save()
+            emp_notif = tx.empresa or tx.empresa_creada
+            dests = destinatarios_propietarios_empresa(emp_notif) if emp_notif else destinatarios_superadmins()
+            resumen_mm = (
+                f"Anomalía en pago Wompi {tx.reference}: esperado {tx.amount_in_cents} {tx.currency}, "
+                f"recibido {paid_cents} {paid_currency}."
+            )
+            notificar_usuarios_app(
+                f"Anomalía en pago Wompi: {tx.reference}",
+                resumen_mm,
+                empresa=emp_notif,
+                roles=('propietario', 'admin') if emp_notif else (),
+                superadmins=not bool(emp_notif),
+                nivel='danger',
+                categoria='wompi',
+                url=reverse('facturacion:factura_detalle', args=[tx.factura_id]) if tx.factura_id else reverse('backoffice:empresas_lista'),
+            )
+            notificar_evento_seguridad(
+                request,
+                f"Alerta pago Wompi con monto inconsistente ({tx.reference})",
+                resumen_mm,
+                destinatarios=dests,
+                empresa=emp_notif,
+                categoria='wompi',
+                nivel='danger',
+                registrar_in_app=False,
+            )
     else:
         tx.status = wompi_status
         tx.save()
@@ -889,6 +952,49 @@ def factura_emitir_nota_credito(request, factura_id):
         empresa=empresa,
         objeto=nc,
     )
+    nc_url = reverse('facturacion:factura_detalle', args=[nc.id])
+    resumen_nc = (
+        f"Se emitió Nota Crédito {nc.numero_completo} por ${nc.total:,.0f} COP "
+        f"anulando {origen.numero_completo}. Motivo: {motivo}"
+    )
+    notificar_usuarios_app(
+        f"Nota Crédito {nc.numero_completo} (anulación)",
+        resumen_nc,
+        empresa=empresa,
+        roles=('propietario', 'admin', 'contador'),
+        nivel='warning',
+        categoria='facturacion',
+        url=nc_url,
+    )
+    notificar_evento_seguridad(
+        request,
+        f"Nota Crédito emitida: {nc.numero_completo}",
+        resumen_nc,
+        destinatarios=destinatarios_propietarios_empresa(
+            empresa, incluir_roles=('propietario', 'contador'), excluir_emails=[request.user.email]
+        ),
+        empresa=empresa,
+        action_url=request.build_absolute_uri(nc_url),
+        action_text="Ver Nota Crédito",
+        categoria='facturacion',
+        nivel='warning',
+        registrar_in_app=False,
+    )
+    correo_cli = (getattr(origen.tercero, 'email', '') or '').strip().lower()
+    if correo_cli and not is_dummy_or_invalid_email(correo_cli):
+        enviar_correo_sistema(
+            correo_cli,
+            f"Nota Crédito {nc.numero_completo} — {empresa.display_name}",
+            (
+                f"<h3>Notificación de Nota Crédito</h3>"
+                f"<p>Hola <b>{escape(origen.tercero.razon_social)}</b>,</p>"
+                f"<p>Informamos que se emitió la Nota Crédito <b>{escape(nc.numero_completo)}</b> "
+                f"anulando el documento <b>{escape(origen.numero_completo)}</b> por valor de <b>${nc.total:,.0f} COP</b>.</p>"
+                f"<p><b>Motivo:</b> {escape(motivo)}</p>"
+            ),
+            empresa=empresa,
+            fail_silently=True,
+        )
     messages.success(
         request,
         f"Nota Crédito {nc.numero_completo} emitida por ${nc.total:,.0f} COP. Documento {origen.numero_completo} anulado e inventario reversado."

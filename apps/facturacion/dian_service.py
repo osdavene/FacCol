@@ -257,6 +257,62 @@ def generar_xml_ubl(factura):
     return ET.tostring(root, encoding="utf-8", xml_declaration=True).decode("utf-8")
 
 
+def _notificar_fallo_dian(factura, asunto_corto: str, detalle: str, nivel: str = "danger"):
+    """Alerta en campanita y correo sobre rechazos o contingencias DIAN sin saturar duplicados recientes."""
+    from datetime import timedelta
+    from django.urls import reverse
+    from django.utils import timezone
+    from apps.core.config import mail_settings
+    from apps.core.models import Notificacion
+    from apps.core.notifications import (
+        destinatarios_propietarios_empresa,
+        notificar_evento_seguridad,
+        notificar_usuarios_app,
+    )
+
+    empresa = factura.empresa
+    titulo = f"DIAN {factura.estado_dian}: {factura.numero_completo} ({asunto_corto})"
+    reciente = Notificacion.objects.filter(
+        empresa=empresa,
+        categoria="dian",
+        titulo__icontains=asunto_corto,
+        created_at__gte=timezone.now() - timedelta(minutes=30),
+    ).exists()
+    if factura.estado_dian == "CONTINGENCIA" and reciente:
+        return
+
+    resumen = (
+        f"El documento {factura.numero_completo} de {empresa.display_name} pasó a estado "
+        f"{factura.estado_dian}. Detalle: {detalle}"
+    )
+    url_cola = reverse("facturacion:dian_cola")
+    app_base = (mail_settings.APP_URL or "").rstrip("/")
+    notificar_usuarios_app(
+        titulo,
+        resumen,
+        empresa=empresa,
+        roles=("propietario", "admin", "contador"),
+        nivel=nivel,
+        categoria="dian",
+        url=url_cola,
+    )
+    dests = destinatarios_propietarios_empresa(
+        empresa, incluir_roles=("propietario", "contador")
+    )
+    notificar_evento_seguridad(
+        None,
+        titulo,
+        resumen,
+        destinatarios=dests,
+        empresa=empresa,
+        action_url=f"{app_base}{url_cola}" if app_base else url_cola,
+        action_text="Revisar Cola DIAN",
+        categoria="dian",
+        nivel=nivel,
+        registrar_in_app=False,
+    )
+
+
 def transmitir_documento_dian(factura):
     """
     Valida requisitos de Resolución DIAN, construye XML UBL 2.1 y registra
@@ -282,6 +338,7 @@ def transmitir_documento_dian(factura):
         factura.estado_dian = "CONTINGENCIA"
         factura.dian_mensaje = "Faltan credenciales DIAN: " + ", ".join(faltantes)
         factura.save(update_fields=["estado_dian", "dian_mensaje"])
+        _notificar_fallo_dian(factura, "Faltan credenciales DIAN", factura.dian_mensaje, nivel="warning")
         return False, factura.dian_mensaje
 
     if not factura.cufe:
@@ -331,11 +388,13 @@ def transmitir_documento_dian(factura):
             factura.estado_dian = "RECHAZADA"
             factura.dian_mensaje = str(data.get("error") or f"Rechazo Proveedor Tecnológico (HTTP {resp.status_code})")
             factura.save(update_fields=["estado_dian", "dian_mensaje"])
+            _notificar_fallo_dian(factura, "Documento rechazado", factura.dian_mensaje, nivel="danger")
             return False, factura.dian_mensaje
         except Exception as exc:
             factura.estado_dian = "CONTINGENCIA"
             factura.dian_mensaje = f"Error de red con Proveedor Tecnológico DIAN: {exc}"
             factura.save(update_fields=["estado_dian", "dian_mensaje"])
+            _notificar_fallo_dian(factura, "Error de red Proveedor Tecnológico", factura.dian_mensaje, nivel="warning")
             return False, factura.dian_mensaje
 
     modo = "PROD" if empresa.modo_dian == "PRODUCCION" else "HAB"

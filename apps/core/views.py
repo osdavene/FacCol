@@ -25,10 +25,11 @@ from apps.facturacion.wompi_service import (
 from apps.core.audit import registrar_actividad
 from apps.core.campaigns import get_tenant_banner
 from apps.core.mail_service import enviar_correo_sistema, get_mail_runtime_config
-from apps.core.models import RegistroActividad
+from apps.core.models import Notificacion, RegistroActividad
 from apps.core.notifications import (
     destinatarios_propietarios_empresa,
     notificar_evento_seguridad,
+    notificar_usuarios_app,
 )
 from apps.core.platform_settings import encrypt_secret
 from apps.inventario.models import Producto, MovimientoInventario
@@ -600,6 +601,16 @@ def solicitar_cambio_plan(request):
         estado='PENDIENTE',
     )
     registrar_actividad(request, 'planes', 'SOLICITAR_PLAN', f"Solicitó cambiar plan de {empresa.display_name} a '{plan.nombre}'.", empresa=empresa, objeto=sol)
+    notificar_usuarios_app(
+        f"Solicitud de plan: {empresa.display_name}",
+        f"{empresa.display_name} solicitó cambiar al plan '{plan.nombre}'.",
+        empresa=empresa,
+        roles=(),
+        superadmins=True,
+        nivel='info',
+        categoria='plan',
+        url=reverse('backoffice:planes_lista'),
+    )
 
     superadmins = list(
         User.objects.filter(Q(is_superadmin=True) | Q(is_superuser=True), is_active=True)
@@ -636,3 +647,31 @@ def solicitar_cambio_plan(request):
         f"Solicitud registrada para cambiar de '{plan_actual}' a '{plan.nombre}'. {aviso_envio}",
     )
     return redirect('core:mi_plan')
+
+
+@login_required
+@require_POST
+def notificacion_marcar_leida(request, notif_id):
+    notif = get_object_or_404(Notificacion, id=notif_id, usuario=request.user)
+    if not notif.leida:
+        notif.leida = True
+        notif.save(update_fields=['leida'])
+    destino = (notif.url or '').strip()
+    if destino.startswith('/'):
+        return redirect(destino)
+    referer = request.META.get('HTTP_REFERER')
+    return redirect(referer or reverse('core:dashboard'))
+
+
+@login_required
+@require_POST
+def notificaciones_marcar_todas_leidas(request):
+    qs = Notificacion.objects.filter(usuario=request.user, leida=False)
+    is_sa = bool(request.user.es_superadmin_user())
+    empresa = getattr(request, 'empresa_activa', None)
+    if not is_sa and empresa is not None:
+        qs = qs.filter(Q(empresa=empresa) | Q(empresa__isnull=True))
+    qs.update(leida=True)
+    if request.headers.get('X-Requested-With') == 'XMLHttpRequest':
+        return JsonResponse({'ok': True})
+    return redirect(request.META.get('HTTP_REFERER') or reverse('core:dashboard'))

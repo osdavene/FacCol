@@ -515,6 +515,69 @@
                         <span class="hidden sm:inline">FacCol IA</span>
                     </a>
 
+                    <!-- Centro de Notificaciones (Campanita In-App) -->
+                    <div class="relative" x-data="{ openNotifs: false }">
+                        <button type="button" @click="openNotifs = !openNotifs" title="Notificaciones"
+                                class="relative flex items-center justify-center w-9 h-9 rounded-xl bg-[#1a2337] border border-[#1e2d47] text-slate-300 hover:text-amber-400 hover:border-amber-500/40 transition">
+                            <i class="fas fa-bell text-sm"></i>
+                            {% if notificaciones_no_leidas_count %}
+                            <span class="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[10px] font-black flex items-center justify-center shadow">
+                                {{ notificaciones_no_leidas_count }}
+                            </span>
+                            {% endif %}
+                        </button>
+
+                        <div x-show="openNotifs" x-cloak @click.away="openNotifs = false"
+                             class="absolute right-0 top-full mt-2 w-80 sm:w-96 bg-[#141c2e] border border-[#1e2d47] rounded-2xl shadow-2xl overflow-hidden z-50">
+                            <div class="px-4 py-3 border-b border-[#1e2d47] flex items-center justify-between bg-[#0f1625]">
+                                <div class="text-xs font-extrabold uppercase tracking-wider text-slate-200 flex items-center gap-2">
+                                    <i class="fas fa-bell text-amber-400"></i>
+                                    <span>Notificaciones</span>
+                                    {% if notificaciones_no_leidas_count %}
+                                    <span class="px-1.5 py-0.5 rounded-full bg-red-500/20 text-red-300 text-[10px]">{{ notificaciones_no_leidas_count }} nuevas</span>
+                                    {% endif %}
+                                </div>
+                                {% if notificaciones_no_leidas_count %}
+                                <form method="post" action="{% url 'core:notificaciones_marcar_todas_leidas' %}">
+                                    {% csrf_token %}
+                                    <button type="submit" class="text-[11px] font-semibold text-cyan-400 hover:text-cyan-300 transition">
+                                        Marcar todas leídas
+                                    </button>
+                                </form>
+                                {% endif %}
+                            </div>
+                            <div class="max-h-80 overflow-y-auto divide-y divide-[#1e2d47]/60">
+                                {% for n in notificaciones_recientes %}
+                                <form method="post" action="{% url 'core:notificacion_marcar_leida' n.id %}">
+                                    {% csrf_token %}
+                                    <button type="submit"
+                                            class="w-full text-left px-4 py-3 hover:bg-[#1a2337] transition flex items-start gap-3 {% if not n.leida %}bg-amber-500/5{% endif %}">
+                                        <span class="mt-0.5 w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 text-xs
+                                            {% if n.nivel == 'danger' %}bg-red-500/15 text-red-400
+                                            {% elif n.nivel == 'warning' %}bg-amber-500/15 text-amber-400
+                                            {% elif n.nivel == 'success' %}bg-emerald-500/15 text-emerald-400
+                                            {% else %}bg-cyan-500/15 text-cyan-400{% endif %}">
+                                            <i class="fas {% if n.nivel == 'danger' %}fa-triangle-exclamation{% elif n.nivel == 'warning' %}fa-circle-exclamation{% elif n.nivel == 'success' %}fa-circle-check{% else %}fa-circle-info{% endif %}"></i>
+                                        </span>
+                                        <div class="min-w-0 flex-1">
+                                            <div class="flex items-center justify-between gap-2">
+                                                <span class="text-xs font-bold {% if not n.leida %}text-white{% else %}text-slate-300{% endif %} truncate">{{ n.titulo }}</span>
+                                                {% if not n.leida %}<span class="w-2 h-2 rounded-full bg-amber-400 flex-shrink-0"></span>{% endif %}
+                                            </div>
+                                            <p class="text-[11px] text-slate-400 mt-0.5 line-clamp-2">{{ n.mensaje }}</p>
+                                            <div class="text-[10px] text-slate-500 mt-1">Hace {{ n.created_at|timesince }}</div>
+                                        </div>
+                                    </button>
+                                </form>
+                                {% empty %}
+                                <div class="px-4 py-8 text-center text-xs text-slate-500">
+                                    No tienes notificaciones recientes.
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- Selector de Tema -->
                     <div class="flex items-center bg-[#1a2337] border border-[#1e2d47] rounded-xl p-0.5">
                         <a href="{% url 'core:cambiar_tema' 'oscuro' %}" title="Tema Oscuro" class="px-2 py-1 rounded-lg text-xs {% if tema_actual == 'oscuro' %}bg-[#111827] text-amber-400{% else %}text-slate-400 hover:text-white{% endif %}">

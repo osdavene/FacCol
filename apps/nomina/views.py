@@ -1,16 +1,26 @@
 import calendar
+import html as _html
+import time
 from decimal import Decimal
 from datetime import date
+from django.conf import settings
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.db import transaction
 from django.http import HttpResponse
+from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from apps.contabilidad.services import registrar_asiento_nomina
 from apps.core.audit import registrar_actividad
+from apps.core.mail import is_dummy_or_invalid_email
 from apps.core.mail_service import enviar_correo_sistema
+from apps.core.notifications import (
+    destinatarios_propietarios_empresa,
+    notificar_evento_seguridad,
+    notificar_usuarios_app,
+)
 from apps.nomina.dian_nomina_service import calcular_cune_nomina, generar_xml_nomina_individual
 from apps.nomina.models import Empleado, Nomina, NominaEmpleado
 from apps.usuarios.decorators import requiere_nomina
@@ -193,6 +203,34 @@ def nomina_liquidar(request):
             registrar_asiento_nomina(nomina)
 
         registrar_actividad(request, 'nomina', 'LIQUIDAR_NOMINA', f"Liquidó nómina {mes}/{ano} para {empleados.count()} empleados (${total_net:,.0f}).", empresa=empresa, objeto=nomina)
+        nom_url = reverse('nomina:nomina_detalle', args=[nomina.id])
+        resumen_nom = (
+            f"Nómina {mes}/{ano} de {empresa.display_name} liquidada para {empleados.count()} empleados. "
+            f"Devengado: ${total_dev:,.0f} | Deducciones: ${total_ded:,.0f} | Neto a pagar: ${total_net:,.0f} COP."
+        )
+        notificar_usuarios_app(
+            f"Nómina liquidada {mes}/{ano}",
+            resumen_nom,
+            empresa=empresa,
+            roles=('propietario', 'admin', 'contador'),
+            nivel='success',
+            categoria='nomina',
+            url=nom_url,
+        )
+        notificar_evento_seguridad(
+            request,
+            f"Nómina {mes}/{ano} liquidada",
+            resumen_nom,
+            destinatarios=destinatarios_propietarios_empresa(
+                empresa, incluir_roles=('propietario', 'contador')
+            ),
+            empresa=empresa,
+            action_url=request.build_absolute_uri(nom_url),
+            action_text="Ver Detalle y Colillas",
+            categoria='nomina',
+            nivel='success',
+            registrar_in_app=False,
+        )
         messages.success(request, f"Nómina de {mes}/{ano} liquidada exitosamente para {empleados.count()} empleados. Total neto: ${total_net:,.0f} COP.")
         return redirect('nomina:nomina_detalle', nomina_id=nomina.id)
 
@@ -252,6 +290,34 @@ def nomina_desprendible(request, detalle_id):
     })
 
 
+def _enviar_colilla_detalle(empresa, detalle):
+    """Genera XML CUNE y envía el desprendible de nómina electrónica al empleado."""
+    correo = (detalle.empleado.email or '').strip().lower()
+    if not correo or is_dummy_or_invalid_email(correo):
+        return False, None, "Sin correo válido"
+
+    num_ne, cune, _ = calcular_cune_nomina(detalle)
+    xml_str = generar_xml_nomina_individual(detalle)
+    html = (
+        f"<h2>Desprendible de Nómina Electrónica {_html.escape(num_ne)}</h2>"
+        f"<p><b>Empresa:</b> {_html.escape(empresa.razon_social)} (NIT {_html.escape(empresa.nit_completo)})</p>"
+        f"<p><b>Empleado:</b> {_html.escape(detalle.empleado.nombre_completo)} ({_html.escape(detalle.empleado.numero_documento)})</p>"
+        f"<p><b>Total Devengado:</b> ${detalle.total_devengado:,.0f} COP<br>"
+        f"<b>Deducciones:</b> -${detalle.total_deducciones:,.0f} COP<br>"
+        f"<b>Neto Pagado:</b> <b>${detalle.neto_a_pagar:,.0f} COP</b></p>"
+        f"<p style='font-size:11px;color:#64748b'>CUNE DIAN: {_html.escape(cune)}</p>"
+    )
+    enviar_correo_sistema(
+        correo,
+        f"Desprendible Nómina {detalle.nomina.periodo_mes}/{detalle.nomina.periodo_ano} - {empresa.display_name}",
+        html,
+        attachments=[(f"{num_ne}.xml", xml_str.encode('utf-8'), 'application/xml')],
+        empresa=empresa,
+        fail_silently=False,
+    )
+    return True, num_ne, correo
+
+
 @login_required
 @requiere_nomina
 @require_POST
@@ -266,33 +332,65 @@ def nomina_enviar_colilla(request, detalle_id):
         nomina__empresa=empresa,
     )
     correo = (detalle.empleado.email or '').strip()
-    if not correo:
-        messages.error(request, f"El empleado {detalle.empleado.nombre_completo} no tiene correo registrado.")
+    if not correo or is_dummy_or_invalid_email(correo):
+        messages.error(request, f"El empleado {detalle.empleado.nombre_completo} no tiene un correo válido registrado.")
         return redirect('nomina:nomina_detalle', nomina_id=detalle.nomina_id)
 
-    num_ne, cune, _ = calcular_cune_nomina(detalle)
-    xml_str = generar_xml_nomina_individual(detalle)
-    html = (
-        f"<h2>Desprendible de Nómina Electrónica {num_ne}</h2>"
-        f"<p><b>Empresa:</b> {empresa.razon_social} (NIT {empresa.nit_completo})</p>"
-        f"<p><b>Empleado:</b> {detalle.empleado.nombre_completo} ({detalle.empleado.numero_documento})</p>"
-        f"<p><b>Total Devengado:</b> ${detalle.total_devengado:,.0f} COP<br>"
-        f"<b>Deducciones:</b> -${detalle.total_deducciones:,.0f} COP<br>"
-        f"<b>Neto Pagado:</b> <b>${detalle.neto_a_pagar:,.0f} COP</b></p>"
-        f"<p style='font-size:11px;color:#64748b'>CUNE DIAN: {cune}</p>"
-    )
     try:
-        enviar_correo_sistema(
-            correo,
-            f"Desprendible Nómina {detalle.nomina.periodo_mes}/{detalle.nomina.periodo_ano} - {empresa.display_name}",
-            html,
-            attachments=[(f"{num_ne}.xml", xml_str.encode('utf-8'), 'application/xml')],
-            empresa=empresa,
-            fail_silently=False,
-        )
-        registrar_actividad(request, 'nomina', 'ENVIAR_COLILLA', f"Envió colilla {num_ne} a {correo}.", empresa=empresa, objeto=detalle)
-        messages.success(request, f"Colilla {num_ne} enviada a {correo}.")
+        _, num_ne, dest = _enviar_colilla_detalle(empresa, detalle)
+        registrar_actividad(request, 'nomina', 'ENVIAR_COLILLA', f"Envió colilla {num_ne} a {dest}.", empresa=empresa, objeto=detalle)
+        messages.success(request, f"Colilla {num_ne} enviada a {dest}.")
     except Exception as exc:
         messages.error(request, f"No se pudo enviar la colilla: {exc}")
 
     return redirect('nomina:nomina_detalle', nomina_id=detalle.nomina_id)
+
+
+@login_required
+@requiere_nomina
+@require_POST
+def nomina_enviar_todas_colillas(request, nomina_id):
+    """Envía las colillas de nómina electrónica por lote respetando pausa anti-ráfaga de Resend."""
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+    nomina = get_object_or_404(Nomina, id=nomina_id, empresa=empresa)
+    detalles = list(nomina.detalles.select_related('empleado', 'nomina'))
+
+    is_locmem = 'locmem' in getattr(settings, 'EMAIL_BACKEND', '').lower()
+    enviados = 0
+    omitidos = 0
+    errores = 0
+    for idx, det in enumerate(detalles):
+        correo = (det.empleado.email or '').strip().lower()
+        if not correo or is_dummy_or_invalid_email(correo):
+            omitidos += 1
+            continue
+        try:
+            ok, _, _ = _enviar_colilla_detalle(empresa, det)
+            if ok:
+                enviados += 1
+            if not is_locmem and idx < len(detalles) - 1:
+                time.sleep(0.52)
+        except Exception:
+            errores += 1
+
+    registrar_actividad(
+        request,
+        'nomina',
+        'ENVIAR_COLILLAS_LOTE',
+        f"Envío masivo de colillas nómina {nomina.periodo_mes}/{nomina.periodo_ano}: {enviados} enviadas, {omitidos} sin correo válido, {errores} errores.",
+        empresa=empresa,
+        objeto=nomina,
+    )
+    if enviados:
+        messages.success(
+            request,
+            f"Se enviaron {enviados} desprendibles por correo ({omitidos} sin correo válido, {errores} errores)."
+        )
+    else:
+        messages.warning(
+            request,
+            f"No se enviaron desprendibles ({omitidos} empleados sin correo válido, {errores} errores)."
+        )
+    return redirect('nomina:nomina_detalle', nomina_id=nomina.id)

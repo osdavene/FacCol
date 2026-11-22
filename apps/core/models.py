@@ -87,3 +87,46 @@ class RegistroActividad(models.Model):
 
     def __str__(self):
         return f"[{self.modulo}] {self.usuario_nombre}: {self.accion}"
+
+
+class Notificacion(models.Model):
+    """Centro de notificaciones in-app por usuario y empresa (campanita en barra superior)."""
+
+    NIVEL_CHOICES = [
+        ('info', 'Informativa'),
+        ('success', 'Éxito / Pago'),
+        ('warning', 'Advertencia'),
+        ('danger', 'Crítica / Seguridad'),
+    ]
+
+    empresa = models.ForeignKey(
+        'empresas.Empresa',
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        related_name='notificaciones',
+    )
+    usuario = models.ForeignKey(
+        'usuarios.User',
+        on_delete=models.CASCADE,
+        related_name='notificaciones',
+    )
+    categoria = models.CharField(max_length=40, default='sistema', db_index=True)
+    nivel = models.CharField(max_length=20, choices=NIVEL_CHOICES, default='info')
+    titulo = models.CharField(max_length=180)
+    mensaje = models.TextField()
+    url = models.CharField(max_length=255, blank=True, default='')
+    leida = models.BooleanField(default=False, db_index=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['usuario', 'leida', '-created_at']),
+            models.Index(fields=['empresa', 'categoria', '-created_at']),
+        ]
+        verbose_name = "Notificación"
+        verbose_name_plural = "Notificaciones"
+
+    def __str__(self):
+        return f"[{self.nivel}] {self.usuario_id}: {self.titulo}"
