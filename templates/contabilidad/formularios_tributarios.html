@@ -1,0 +1,36 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% block title %}Borradores Tributarios 300 / 350 — FacCol{% endblock %}
+{% block content %}
+<div class="max-w-5xl mx-auto space-y-6">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+            <h1 class="text-2xl font-display font-black text-white">Borradores Declaraciones DIAN (Form. 300 IVA &amp; Form. 350 ReteFuente)</h1>
+            <p class="text-xs text-slate-400">Cálculo automático desde tus facturas y movimientos PUC del período {{ ano }}-{{ mes|stringformat:"02d" }}.</p>
+        </div>
+        <form method="GET" class="flex gap-2 text-xs">
+            <input type="number" name="ano" value="{{ ano }}" class="w-24 bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+            <input type="number" name="mes" min="1" max="12" value="{{ mes }}" class="w-16 bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+            <button type="submit" class="px-4 py-2 rounded-xl bg-amber-500 text-black font-black uppercase">Calcular</button>
+        </form>
+    </div>
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
+        <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 space-y-3">
+            <h2 class="text-sm font-bold text-amber-400 uppercase">Formulario 300 — Declaración de IVA (Borrador)</h2>
+            <div class="flex justify-between py-2 border-b border-[#1e2d47]/50"><span>Ingresos brutos gravados/no gravados</span><b class="text-white">${{ form_300.ingresos_brutos|floatformat:0|intcomma }}</b></div>
+            <div class="flex justify-between py-2 border-b border-[#1e2d47]/50"><span>(-) Devoluciones en ventas (NC)</span><b class="text-rose-300">${{ form_300.devoluciones|floatformat:0|intcomma }}</b></div>
+            <div class="flex justify-between py-2 border-b border-[#1e2d47]/50"><span>IVA generado neto</span><b class="text-cyan-300">${{ form_300.iva_generado|floatformat:0|intcomma }}</b></div>
+            <div class="flex justify-between py-2 border-b border-[#1e2d47]/50"><span>(-) IVA descontable (240805)</span><b class="text-emerald-300">${{ form_300.iva_descontable|floatformat:0|intcomma }}</b></div>
+            <div class="flex justify-between pt-2 text-base font-black"><span>Saldo estimado a pagar IVA</span><b class="text-amber-400">${{ form_300.saldo_pagar|floatformat:0|intcomma }} COP</b></div>
+        </div>
+        <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 space-y-3">
+            <h2 class="text-sm font-bold text-emerald-400 uppercase">Formulario 350 — Retención en la Fuente Mensual (Borrador)</h2>
+            <p class="text-slate-400">Consolidado neto de cuentas auxiliares PUC <code>2365*</code> practicadas en el mes.</p>
+            <div class="flex justify-between pt-4 text-base font-black border-t border-[#1e2d47]">
+                <span>Total Retenciones a Declarar y Pagar</span>
+                <b class="text-emerald-400">${{ form_350.retefuente_practicada|floatformat:0|intcomma }} COP</b>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

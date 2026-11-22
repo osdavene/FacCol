@@ -14,9 +14,10 @@ from django.urls import reverse
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
-from apps.empresas.models import Empresa, Plan, SolicitudCambioPlan
+from apps.empresas.models import Empresa, Plan, ResolucionDIAN, SolicitudCambioPlan
 from apps.usuarios.models import User, EmpresaUsuario
 from apps.usuarios.decorators import requiere_admin
+from apps.facturacion.dian_service import validar_y_cargar_p12
 from apps.facturacion.models import Factura, ReciboCaja, TransaccionWompi
 from apps.facturacion.wompi_service import (
     build_integrity_signature,
@@ -27,7 +28,7 @@ from apps.facturacion.wompi_service import (
 from apps.core.audit import registrar_actividad
 from apps.core.campaigns import get_tenant_banner
 from apps.core.mail_service import enviar_correo_sistema, get_mail_runtime_config
-from apps.core.models import Notificacion, RegistroActividad
+from apps.core.models import ApiTokenEmpresa, Notificacion, RegistroActividad
 from apps.core.notifications import (
     CATEGORIAS_PREFERENCIAS,
     destinatarios_propietarios_empresa,
@@ -240,6 +241,85 @@ def configuracion_empresa(request):
             )
             messages.success(request, "Configuración de correo de tu empresa actualizada.")
 
+        elif seccion == 'certificado_p12':
+            archivo_p12 = request.FILES.get('archivo_p12')
+            pwd_p12 = request.POST.get('password_p12', '')
+            if 'clear_p12' in request.POST:
+                empresa.dian_certificado_p12_enc = ''
+                empresa.dian_certificado_password = ''
+                empresa.dian_certificado_sujeto = ''
+                empresa.dian_certificado_vence = None
+                empresa.save()
+                messages.success(request, "Certificado digital DIAN eliminado.")
+            elif archivo_p12:
+                try:
+                    import base64
+                    raw_p12 = archivo_p12.read()
+                    _, _, _, sujeto, vence = validar_y_cargar_p12(raw_p12, pwd_p12)
+                    empresa.dian_certificado_p12_enc = encrypt_secret(base64.b64encode(raw_p12).decode('ascii'))
+                    empresa.dian_certificado_password = encrypt_secret(pwd_p12) if pwd_p12 else ''
+                    empresa.dian_certificado_sujeto = sujeto
+                    empresa.dian_certificado_vence = vence
+                    empresa.save()
+                    registrar_actividad(request, 'configuracion', 'CARGAR_CERTIFICADO_DIAN', f"Cargó certificado .p12 DIAN ({sujeto}, vence {vence}).", empresa=empresa, objeto=empresa)
+                    alerta_cfg = ("Certificado digital DIAN actualizado", f"Se cargó el certificado .p12 para {empresa.display_name} (vence {vence}).")
+                    messages.success(request, f"Certificado .p12 válido y guardado cifrado (Titular: {sujeto}, vence {vence}).")
+                except Exception as exc:
+                    messages.error(request, f"No se pudo validar el certificado .p12: {exc}")
+
+        elif seccion == 'resolucion_dian':
+            tipo_doc = request.POST.get('tipo_documento', 'FACTURA')
+            pref = (request.POST.get('prefijo', 'FE') or 'FE').strip().upper()
+            num_res = request.POST.get('numero_resolucion', '').strip()
+            r_desde = int(request.POST.get('rango_desde', 1) or 1)
+            r_hasta = int(request.POST.get('rango_hasta', 5000) or 5000)
+            cons_act = int(request.POST.get('consecutivo_actual', r_desde) or r_desde)
+            predet = 'predeterminada' in request.POST
+            if not num_res:
+                messages.error(request, "El número de resolución DIAN es obligatorio.")
+            else:
+                if predet:
+                    ResolucionDIAN.objects.filter(empresa=empresa, tipo_documento=tipo_doc).update(predeterminada=False)
+                ResolucionDIAN.objects.update_or_create(
+                    empresa=empresa,
+                    tipo_documento=tipo_doc,
+                    prefijo=pref,
+                    numero_resolucion=num_res,
+                    defaults={
+                        'rango_desde': r_desde,
+                        'rango_hasta': r_hasta,
+                        'consecutivo_actual': cons_act,
+                        'fecha_resolucion': request.POST.get('fecha_resolucion') or None,
+                        'fecha_vigencia_hasta': request.POST.get('fecha_vigencia_hasta') or None,
+                        'clave_tecnica': request.POST.get('clave_tecnica', '').strip(),
+                        'activa': True,
+                        'predeterminada': predet,
+                    },
+                )
+                registrar_actividad(request, 'configuracion', 'CREAR_RESOLUCION_DIAN', f"Configuró resolución DIAN {num_res} ({tipo_doc} {pref}).", empresa=empresa)
+                messages.success(request, f"Resolución DIAN {num_res} ({pref}) guardada.")
+
+        elif seccion == 'api_token':
+            rev_id = request.POST.get('revocar_token_id')
+            if rev_id:
+                ApiTokenEmpresa.objects.filter(id=rev_id, empresa=empresa).update(activo=False)
+                messages.success(request, "Token API revocado.")
+            else:
+                import hashlib
+                nombre_tok = request.POST.get('nombre_token', '').strip() or "Integración API"
+                raw_tok = f"fc_live_{secrets.token_urlsafe(24)}"
+                tok_hash = hashlib.sha256(raw_tok.encode('utf-8')).hexdigest()
+                ApiTokenEmpresa.objects.create(
+                    empresa=empresa,
+                    nombre=nombre_tok,
+                    prefijo=raw_tok[:12],
+                    token_hash=tok_hash,
+                    creado_por=request.user,
+                )
+                request.session['ultimo_api_token_plano'] = raw_tok
+                registrar_actividad(request, 'configuracion', 'CREAR_API_TOKEN', f"Generó token API REST '{nombre_tok}'.", empresa=empresa)
+                messages.success(request, "Token API generado. Cópialo ahora; no volverá a mostrarse completo.")
+
         if alerta_cfg:
             notificar_evento_seguridad(
                 request,
@@ -256,11 +336,17 @@ def configuracion_empresa(request):
     wompi_cfg = get_wompi_runtime_config(empresa)
     mail_cfg = get_mail_runtime_config(empresa)
     webhook_url = request.build_absolute_uri(reverse('facturacion:wompi_webhook'))
+    resoluciones = ResolucionDIAN.objects.filter(empresa=empresa)
+    api_tokens = ApiTokenEmpresa.objects.filter(empresa=empresa, activo=True)
+    nuevo_token_plano = request.session.pop('ultimo_api_token_plano', '')
     return render(request, 'core/configuracion_empresa.html', {
         'empresa': empresa,
         'wompi_cfg': wompi_cfg,
         'mail_cfg': mail_cfg,
         'webhook_url': webhook_url,
+        'resoluciones': resoluciones,
+        'api_tokens': api_tokens,
+        'nuevo_token_plano': nuevo_token_plano,
     })
 
 

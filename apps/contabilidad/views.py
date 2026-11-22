@@ -14,21 +14,29 @@ from reportlab.lib.pagesizes import letter
 from reportlab.pdfgen import canvas
 
 from apps.contabilidad.models import (
+    ActivoFijo,
     AsientoContable,
     AsientoLinea,
+    CentroCosto,
     ComprobanteEgreso,
+    CuentaBancaria,
     GastoOperativo,
+    MovimientoExtractoBancario,
     PeriodoContableCerrado,
     PlanCuenta,
 )
 from apps.contabilidad.services import (
+    calcular_borradores_tributarios,
     ejecutar_cierre_anual_resultados,
+    ejecutar_depreciacion_activos,
+    generar_xml_exogena_prevalidador,
     periodo_esta_cerrado,
     registrar_asiento_egreso,
     registrar_asiento_gasto,
 )
 from apps.core.audit import registrar_actividad
 from apps.core.importers import leer_filas_archivo
+from apps.core.pdf_extractors import extraer_datos_factura_pdf
 from apps.inventario.models import CompraProveedor
 from apps.terceros.models import Tercero
 from apps.usuarios.decorators import requiere_contador
@@ -666,3 +674,175 @@ def puc_importar(request):
             messages.error(request, f"Error importando PUC: {exc}")
 
     return render(request, 'contabilidad/puc_importar.html')
+
+
+@login_required
+@requiere_contador
+def centros_costos_lista(request):
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+    if request.method == 'POST':
+        cod = (request.POST.get('codigo') or '').strip().upper()
+        nom = (request.POST.get('nombre') or '').strip()
+        if cod and nom:
+            CentroCosto.objects.update_or_create(empresa=empresa, codigo=cod[:20], defaults={'nombre': nom[:120], 'activa': True})
+            messages.success(request, f"Centro de costos {cod} - {nom} guardado.")
+        return redirect('contabilidad:centros_costos')
+    return render(request, 'contabilidad/centros_costos.html', {
+        'centros': CentroCosto.objects.filter(empresa=empresa),
+    })
+
+
+@login_required
+@requiere_contador
+def conciliacion_bancaria_view(request):
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+    if request.method == 'POST':
+        accion = request.POST.get('accion', '')
+        if accion == 'crear_cuenta':
+            cta_puc = get_object_or_404(PlanCuenta, id=request.POST.get('cuenta_contable'), empresa=empresa)
+            CuentaBancaria.objects.create(
+                empresa=empresa,
+                nombre=(request.POST.get('nombre') or '').strip()[:120],
+                banco=(request.POST.get('banco') or '').strip()[:100],
+                numero_cuenta=(request.POST.get('numero_cuenta') or '').strip()[:60],
+                tipo_cuenta=request.POST.get('tipo_cuenta', 'AHORROS'),
+                cuenta_contable=cta_puc,
+                saldo_inicial=Decimal(request.POST.get('saldo_inicial') or '0'),
+            )
+            messages.success(request, "Cuenta bancaria/caja registrada.")
+        elif accion == 'importar_extracto' and request.FILES.get('archivo'):
+            cb = get_object_or_404(CuentaBancaria, id=request.POST.get('cuenta_bancaria'), empresa=empresa)
+            try:
+                _, filas = leer_filas_archivo(request.FILES['archivo'])
+                creados = 0
+                for fila in filas:
+                    val = Decimal((fila.get('valor') or fila.get('monto') or '0').replace(',', '.'))
+                    if val == 0:
+                        continue
+                    f_raw = (fila.get('fecha') or '')[:10]
+                    try:
+                        f_mov = datetime.strptime(f_raw, '%Y-%m-%d').date() if f_raw else date.today()
+                    except Exception:
+                        f_mov = date.today()
+                    mov = MovimientoExtractoBancario.objects.create(
+                        empresa=empresa,
+                        cuenta_bancaria=cb,
+                        fecha=f_mov,
+                        descripcion=(fila.get('descripcion') or fila.get('concepto') or 'Movimiento extracto')[:255],
+                        referencia=(fila.get('referencia') or '')[:100],
+                        valor=val,
+                    )
+                    # Auto-conciliar contra línea contable exacta pendiente si coincide
+                    abs_val = abs(val)
+                    linea_match = AsientoLinea.objects.filter(
+                        asiento__empresa=empresa,
+                        cuenta=cb.cuenta_contable,
+                        conciliaciones__isnull=True,
+                        debito=abs_val if val > 0 else Decimal('0.00'),
+                        credito=abs_val if val < 0 else Decimal('0.00'),
+                    ).first()
+                    if linea_match:
+                        mov.conciliado = True
+                        mov.asiento_linea = linea_match
+                        mov.save(update_fields=['conciliado', 'asiento_linea'])
+                    creados += 1
+                messages.success(request, f"Extracto importado: {creados} movimientos procesados.")
+            except Exception as exc:
+                messages.error(request, f"Error leyendo extracto: {exc}")
+        elif accion == 'conciliar_manual':
+            mov = get_object_or_404(MovimientoExtractoBancario, id=request.POST.get('movimiento_id'), empresa=empresa)
+            mov.conciliado = True
+            mov.save(update_fields=['conciliado'])
+            messages.success(request, "Movimiento marcado como conciliado.")
+        return redirect('contabilidad:conciliacion_bancaria')
+
+    return render(request, 'contabilidad/conciliacion_bancaria.html', {
+        'cuentas_banco': CuentaBancaria.objects.filter(empresa=empresa, activa=True).select_related('cuenta_contable'),
+        'cuentas_puc': PlanCuenta.objects.filter(empresa=empresa, codigo__startswith='11', activa=True),
+        'movimientos': MovimientoExtractoBancario.objects.filter(empresa=empresa).select_related('cuenta_bancaria', 'asiento_linea')[:100],
+    })
+
+
+@login_required
+@requiere_contador
+def activos_fijos_lista(request):
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+    if request.method == 'POST':
+        accion = request.POST.get('accion', 'crear')
+        if accion == 'depreciar':
+            ano = int(request.POST.get('ano') or date.today().year)
+            mes = int(request.POST.get('mes') or date.today().month)
+            _as, _cnt, _tot, msg = ejecutar_depreciacion_activos(empresa, ano, mes)
+            messages.success(request, msg)
+        else:
+            ActivoFijo.objects.update_or_create(
+                empresa=empresa,
+                codigo=(request.POST.get('codigo') or '').strip().upper()[:30],
+                defaults={
+                    'nombre': (request.POST.get('nombre') or '').strip()[:180],
+                    'fecha_compra': request.POST.get('fecha_compra') or date.today(),
+                    'valor_compra': Decimal(request.POST.get('valor_compra') or '0'),
+                    'valor_residual': Decimal(request.POST.get('valor_residual') or '0'),
+                    'vida_util_meses': int(request.POST.get('vida_util_meses') or 60),
+                    'activo': True,
+                },
+            )
+            messages.success(request, "Activo fijo guardado.")
+        return redirect('contabilidad:activos_fijos')
+
+    return render(request, 'contabilidad/activos_fijos.html', {
+        'activos': ActivoFijo.objects.filter(empresa=empresa),
+        'hoy_ano': date.today().year,
+        'hoy_mes': date.today().month,
+    })
+
+
+@login_required
+@requiere_contador
+def formularios_tributarios_view(request):
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+    ano = int(request.GET.get('ano') or date.today().year)
+    mes = int(request.GET.get('mes') or date.today().month)
+    datos = calcular_borradores_tributarios(empresa, ano, mes)
+    return render(request, 'contabilidad/formularios_tributarios.html', datos)
+
+
+@login_required
+@requiere_contador
+def exogena_xml_descargar(request):
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+    ano = int(request.GET.get('ano') or date.today().year)
+    formato = request.GET.get('formato', '1001')
+    xml_out = generar_xml_exogena_prevalidador(empresa, ano, formato)
+    resp = HttpResponse(xml_out, content_type='application/xml; charset=utf-8')
+    resp['Content-Disposition'] = f'attachment; filename="Dmuisca_0{formato}_{ano}_{empresa.nit}.xml"'
+    return resp
+
+
+@login_required
+@requiere_contador
+def gasto_extraer_pdf(request):
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+    extraido = None
+    if request.method == 'POST' and request.FILES.get('archivo_pdf'):
+        try:
+            extraido = extraer_datos_factura_pdf(request.FILES['archivo_pdf'].read())
+        except Exception as exc:
+            messages.error(request, f"No se pudo leer el PDF: {exc}")
+    return render(request, 'contabilidad/gasto_pdf.html', {
+        'extraido': extraido,
+        'terceros': Tercero.objects.filter(empresa=empresa, activo=True),
+        'cuentas': PlanCuenta.objects.filter(empresa=empresa, codigo__startswith='5', permite_movimiento=True),
+    })

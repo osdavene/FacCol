@@ -7,6 +7,7 @@ from django.views.decorators.http import require_POST
 
 from apps.core.audit import registrar_actividad
 from apps.core.importers import leer_filas_archivo
+from apps.core.pdf_extractors import extraer_datos_rut_pdf
 from apps.terceros.models import Tercero
 from apps.empresas.models import Departamento, Municipio
 
@@ -240,3 +241,48 @@ def terceros_importar(request):
             messages.error(request, f"Error importando archivo: {exc}")
 
     return render(request, 'terceros/importar.html')
+
+
+@login_required
+def tercero_importar_rut_pdf(request):
+    """Lee el PDF oficial del RUT DIAN para crear o actualizar un tercero en 1 clic."""
+    if request.user.es_superadmin_user():
+        return redirect('core:dashboard')
+    empresa = request.empresa_activa
+    if not empresa or not _tiene_permiso_terceros(request.user, empresa):
+        messages.warning(request, "No tienes permisos para importar RUT.")
+        return redirect('core:dashboard')
+
+    if request.method == 'POST' and request.FILES.get('archivo_rut'):
+        try:
+            datos = extraer_datos_rut_pdf(request.FILES['archivo_rut'].read())
+            nit = request.POST.get('nit_manual', '').strip() or datos['nit']
+            raz = request.POST.get('razon_manual', '').strip() or datos['razon_social']
+            if not nit or not raz:
+                messages.warning(request, "No se pudo leer NIT o Razón Social en el PDF. Verifica que no sea un escaneo sin texto.")
+                return render(request, 'terceros/importar_rut.html', {'datos_rut': datos})
+            tercero, created = Tercero.objects.update_or_create(
+                empresa=empresa,
+                numero_documento=nit[:30],
+                defaults={
+                    'tipo_documento': 'NIT',
+                    'tipo_persona': datos['tipo_persona'],
+                    'dv': datos['dv'][:1],
+                    'razon_social': raz[:200],
+                    'direccion': datos['direccion'][:200],
+                    'telefono': datos['telefono'][:50],
+                    'email': datos['email'][:254],
+                    'regimen': datos['regimen'],
+                    'responsabilidades_fiscales': datos['responsabilidades'][:150],
+                    'es_cliente': 'es_cliente' in request.POST or 'es_proveedor' not in request.POST,
+                    'es_proveedor': 'es_proveedor' in request.POST,
+                    'activo': True,
+                },
+            )
+            registrar_actividad(request, 'terceros', 'IMPORTAR_RUT_PDF', f"Importó RUT PDF para {tercero.razon_social} ({tercero.numero_documento}).", empresa=empresa, objeto=tercero)
+            messages.success(request, f"Tercero {'creado' if created else 'actualizado'} desde RUT PDF: {tercero.razon_social}.")
+            return redirect('terceros:detalle', tercero_id=tercero.id)
+        except Exception as exc:
+            messages.error(request, f"Error leyendo RUT PDF: {exc}")
+
+    return render(request, 'terceros/importar_rut.html')

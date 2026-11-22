@@ -23,6 +23,13 @@ from apps.usuarios.decorators import requiere_admin
 from apps.core.audit import _extraer_ip, registrar_actividad
 from apps.core.config import mail_settings
 from apps.core.models import RegistroActividad
+from apps.core.platform_settings import decrypt_secret, encrypt_secret
+from apps.usuarios.totp import (
+    generar_qr_data_uri,
+    generar_secreto_totp,
+    generar_uri_otpauth,
+    verificar_codigo_totp,
+)
 from apps.core.notifications import (
     CATEGORIAS_PREFERENCIAS,
     destinatarios_propietarios_empresa,
@@ -183,6 +190,13 @@ def login_view(request):
                 registrar_actividad(request, 'auth', 'LOGIN_BLOQUEADO', f"Intento de ingreso con cuenta inactiva ({user.username}).", user=user)
                 return render(request, 'usuarios/login.html')
 
+            if user.totp_enabled and user.totp_secret:
+                raw_next = request.POST.get('next') or request.GET.get('next') or ''
+                request.session['pre_2fa_user_id'] = user.id
+                request.session['pre_2fa_next'] = _safe_next_url(request, raw_next)
+                request.session['pre_2fa_ts'] = timezone.now().timestamp()
+                return redirect('usuarios:verificar_2fa')
+
             login(request, user)
             emp_default = None if user.es_superadmin_user() else (user.empresas_activas()[0] if user.empresas_activas() else None)
             registrar_actividad(request, 'auth', 'LOGIN', f"Inicio de sesión exitoso ({user.username}).", empresa=emp_default, user=user)
@@ -324,7 +338,91 @@ def perfil_view(request):
         (cat_val, cat_lbl, usuario_quiere_correo(user, cat_val))
         for cat_val, cat_lbl in CATEGORIAS_PREFERENCIAS
     ]
-    return render(request, 'usuarios/perfil.html', {'prefs_notificaciones': prefs_notificaciones})
+    pending_totp = request.session.get('pending_totp_secret', '')
+    totp_qr = ''
+    if pending_totp and not user.totp_enabled:
+        uri = generar_uri_otpauth(pending_totp, user.email or user.username)
+        totp_qr = generar_qr_data_uri(uri)
+
+    return render(request, 'usuarios/perfil.html', {
+        'prefs_notificaciones': prefs_notificaciones,
+        'pending_totp_secret': pending_totp,
+        'totp_qr_uri': totp_qr,
+    })
+
+
+def verificar_2fa_view(request):
+    """Segundo paso de autenticación TOTP de 6 dígitos tras validar contraseña."""
+    if request.user.is_authenticated:
+        return redirect('core:dashboard')
+
+    uid = request.session.get('pre_2fa_user_id')
+    ts = request.session.get('pre_2fa_ts') or 0
+    if not uid or (timezone.now().timestamp() - float(ts)) > 300:
+        for k in ('pre_2fa_user_id', 'pre_2fa_next', 'pre_2fa_ts'):
+            request.session.pop(k, None)
+        messages.warning(request, "Tu sesión temporal de verificación 2FA expiró. Inicia sesión nuevamente.")
+        return redirect('usuarios:login')
+
+    user = User.objects.filter(pk=uid, activo=True).first()
+    if not user or not user.totp_enabled or not user.totp_secret:
+        return redirect('usuarios:login')
+
+    if request.method == 'POST':
+        codigo = request.POST.get('codigo', '').strip()
+        secret = decrypt_secret(user.totp_secret)
+        if verificar_codigo_totp(secret, codigo):
+            next_dest = request.session.get('pre_2fa_next') or 'core:dashboard'
+            for k in ('pre_2fa_user_id', 'pre_2fa_next', 'pre_2fa_ts'):
+                request.session.pop(k, None)
+            login(request, user)
+            emp_default = None if user.es_superadmin_user() else (user.empresas_activas()[0] if user.empresas_activas() else None)
+            registrar_actividad(request, 'auth', 'LOGIN_2FA', f"Acceso validado con 2FA TOTP ({user.username}).", empresa=emp_default, user=user)
+            messages.success(request, f"¡Bienvenido de nuevo, {user.first_name or user.username}!")
+            return redirect(_safe_next_url(request, next_dest))
+
+        registrar_actividad(request, 'auth', 'LOGIN_2FA_FALLIDO', f"Código TOTP 2FA incorrecto ({user.username}).", user=user)
+        messages.error(request, "Código de verificación 2FA inválido o expirado.")
+
+    return render(request, 'usuarios/verificar_2fa.html', {'usuario_email': user.email or user.username})
+
+
+@login_required
+@require_POST
+def perfil_2fa_config(request):
+    """Genera secreto QR, activa o desactiva autenticación de dos factores (TOTP) del usuario."""
+    user = request.user
+    accion = request.POST.get('accion', '')
+
+    if accion == 'iniciar':
+        request.session['pending_totp_secret'] = generar_secreto_totp()
+        messages.info(request, "Escanea el código QR en tu app autenticadora y confirma el código de 6 dígitos.")
+    elif accion == 'activar':
+        pending = request.session.get('pending_totp_secret', '')
+        codigo = request.POST.get('codigo', '').strip()
+        if not pending:
+            messages.error(request, "Primero genera un nuevo código QR de configuración.")
+        elif verificar_codigo_totp(pending, codigo):
+            user.totp_secret = encrypt_secret(pending)
+            user.totp_enabled = True
+            user.save(update_fields=['totp_secret', 'totp_enabled'])
+            request.session.pop('pending_totp_secret', None)
+            registrar_actividad(request, 'auth', 'ACTIVAR_2FA', f"Activó autenticación 2FA TOTP ({user.username}).", user=user, objeto=user)
+            messages.success(request, "Autenticación de dos factores (2FA) activada correctamente.")
+        else:
+            messages.error(request, "El código de 6 dígitos no coincide. Verifica la hora de tu dispositivo.")
+    elif accion == 'desactivar':
+        pwd = request.POST.get('password_confirm', '')
+        if not user.check_password(pwd):
+            messages.error(request, "Contraseña actual incorrecta. No se desactivó el 2FA.")
+        else:
+            user.totp_enabled = False
+            user.totp_secret = ''
+            user.save(update_fields=['totp_enabled', 'totp_secret'])
+            request.session.pop('pending_totp_secret', None)
+            registrar_actividad(request, 'auth', 'DESACTIVAR_2FA', f"Desactivó autenticación 2FA ({user.username}).", user=user, objeto=user)
+            messages.success(request, "Autenticación 2FA desactivada.")
+    return redirect('usuarios:perfil')
 
 
 @login_required

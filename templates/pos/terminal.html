@@ -192,6 +192,17 @@
                 <span class="font-display font-black text-2xl text-amber-400">$<span x-text="format(total)"></span></span>
             </div>
 
+            <div class="flex items-center justify-between text-[11px] px-1">
+                <span class="inline-flex items-center gap-1.5" :class="enLinea ? 'text-emerald-400' : 'text-amber-400 font-bold'">
+                    <i class="fas fa-circle text-[7px]"></i>
+                    <span x-text="enLinea ? 'En línea' : 'Modo Offline (Cola local)'"></span>
+                </span>
+                <button type="button" x-show="pendientesOffline > 0" @click="sincronizarColaOffline()"
+                        class="text-amber-300 hover:underline font-bold">
+                    Sincronizar (<span x-text="pendientesOffline"></span>)
+                </button>
+            </div>
+
             <button type="button" @click="procesarCobro()" :disabled="carrito.length === 0 || procesando"
                     class="w-full py-3 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed text-black font-black text-sm uppercase tracking-wider rounded-2xl shadow-xl shadow-emerald-500/20 transition flex items-center justify-center gap-2">
                 <span x-show="!procesando">
@@ -251,6 +262,61 @@ function posApp() {
         carrito: [],
         procesando: false,
         ultimaVenta: null,
+        enLinea: navigator.onLine,
+        pendientesOffline: 0,
+
+        init() {
+            window.addEventListener('online', () => { this.enLinea = true; this.sincronizarColaOffline(); });
+            window.addEventListener('offline', () => { this.enLinea = false; });
+            this.contarPendientesOffline();
+        },
+        _abrirDB() {
+            return new Promise((resolve, reject) => {
+                const req = indexedDB.open('faccol_pos_offline', 1);
+                req.onupgradeneeded = () => req.result.createObjectStore('ventas', { keyPath: 'id', autoIncrement: true });
+                req.onsuccess = () => resolve(req.result);
+                req.onerror = () => reject(req.error);
+            });
+        },
+        async contarPendientesOffline() {
+            try {
+                const db = await this._abrirDB();
+                const tx = db.transaction('ventas', 'readonly');
+                const cntReq = tx.objectStore('ventas').count();
+                cntReq.onsuccess = () => { this.pendientesOffline = cntReq.result || 0; };
+            } catch (e) {}
+        },
+        async guardarVentaOffline(payload) {
+            const db = await this._abrirDB();
+            return new Promise((resolve, reject) => {
+                const tx = db.transaction('ventas', 'readwrite');
+                tx.objectStore('ventas').add({ payload, created_at: new Date().toISOString() });
+                tx.oncomplete = () => { this.contarPendientesOffline(); resolve(); };
+                tx.onerror = () => reject(tx.error);
+            });
+        },
+        async sincronizarColaOffline() {
+            if (!navigator.onLine) return;
+            try {
+                const db = await this._abrirDB();
+                const rows = await new Promise((res) => {
+                    const r = db.transaction('ventas', 'readonly').objectStore('ventas').getAll();
+                    r.onsuccess = () => res(r.result || []);
+                });
+                for (const row of rows) {
+                    const resp = await fetch("{% url 'pos:pos_procesar_venta' %}", {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json', 'X-CSRFToken': '{{ csrf_token }}' },
+                        body: JSON.stringify(row.payload),
+                    });
+                    if (resp.ok) {
+                        const delTx = db.transaction('ventas', 'readwrite');
+                        delTx.objectStore('ventas').delete(row.id);
+                    }
+                }
+                await this.contarPendientesOffline();
+            } catch (e) {}
+        },
 
         agregarAlCarrito(id, nombre, precio, codigo, permiteFraccion) {
             const index = this.carrito.findIndex(i => i.producto_id === id);
@@ -352,7 +418,15 @@ function posApp() {
                     alert('Error: ' + (data.error || 'No se pudo procesar la venta.'));
                 }
             } catch (err) {
-                alert('Error al comunicar con el servidor: ' + err);
+                const payload = {
+                    tercero_id: this.clienteId,
+                    tipo_documento: this.tipoDocumento,
+                    metodo_pago: this.metodoPago,
+                    items: this.carrito,
+                };
+                await this.guardarVentaOffline(payload);
+                this.vaciarCarrito();
+                alert('Sin conexión: venta guardada en cola offline local (IndexedDB). Se sincronizará automáticamente al volver internet.');
             } finally {
                 this.procesando = false;
             }

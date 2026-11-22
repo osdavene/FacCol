@@ -51,6 +51,14 @@ class Tercero(EmpresaTenantModel):
     tarifa_retefuente = models.DecimalField(max_digits=5, decimal_places=2, default=0)
     aplica_reteica = models.BooleanField(default=False)
     tarifa_reteica = models.DecimalField(max_digits=5, decimal_places=2, default=0)
+    lista_precio = models.ForeignKey(
+        'inventario.ListaPrecio',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='clientes',
+        verbose_name="Lista de Precios Asignada",
+    )
 
     activo = models.BooleanField(default=True, verbose_name="Activo")
     observaciones = models.TextField(blank=True, verbose_name="Observaciones")

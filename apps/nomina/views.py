@@ -3,7 +3,7 @@ import csv
 import html as _html
 import time
 from decimal import Decimal
-from datetime import date
+from datetime import date, datetime
 from django.conf import settings
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
@@ -23,8 +23,13 @@ from apps.core.notifications import (
     notificar_evento_seguridad,
     notificar_usuarios_app,
 )
-from apps.nomina.dian_nomina_service import calcular_cune_nomina, generar_xml_nomina_individual
-from apps.nomina.models import Empleado, Nomina, NominaEmpleado
+from apps.nomina.dian_nomina_service import (
+    calcular_cune_nomina,
+    calcular_cune_nota_ajuste,
+    generar_xml_nomina_ajuste,
+    generar_xml_nomina_individual,
+)
+from apps.nomina.models import Empleado, Nomina, NominaAjuste, NominaEmpleado
 from apps.usuarios.decorators import requiere_nomina
 
 
@@ -157,8 +162,27 @@ def nomina_liquidar(request):
                 ibc = salario_mes + horas_extras + bonificaciones
                 salud_4 = (ibc * Decimal('0.04')).quantize(Decimal('0.01'))
                 pension_4 = (ibc * Decimal('0.04')).quantize(Decimal('0.01'))
-                fsp_1 = (ibc * Decimal('0.01')).quantize(Decimal('0.01')) if ibc >= (smmlv * Decimal(4)) else Decimal('0.00')
-                otras_ded = fsp_1 + otras_ded_manual
+                # Fondo de Solidaridad Pensional (FSP): 1% entre 4 y 16 SMMLV, hasta 2% > 20 SMMLV
+                if ibc >= (smmlv * Decimal(20)):
+                    fsp_1 = (ibc * Decimal('0.02')).quantize(Decimal('0.01'))
+                elif ibc >= (smmlv * Decimal(16)):
+                    fsp_1 = (ibc * Decimal('0.012')).quantize(Decimal('0.01'))
+                elif ibc >= (smmlv * Decimal(4)):
+                    fsp_1 = (ibc * Decimal('0.01')).quantize(Decimal('0.01'))
+                else:
+                    fsp_1 = Decimal('0.00')
+                # Retención en la Fuente Art. 383 E.T. (UVT 2026 aprox $49.799; renta exenta 25%)
+                uvt = Decimal('49799.00')
+                base_grav_uvt = ((ibc - salud_4 - pension_4 - fsp_1) * Decimal('0.75')) / uvt
+                if base_grav_uvt > Decimal('360'):
+                    rete_sal = (((base_grav_uvt - Decimal('360')) * Decimal('0.33') + Decimal('69')) * uvt).quantize(Decimal('0.01'))
+                elif base_grav_uvt > Decimal('150'):
+                    rete_sal = (((base_grav_uvt - Decimal('150')) * Decimal('0.28') + Decimal('10')) * uvt).quantize(Decimal('0.01'))
+                elif base_grav_uvt > Decimal('95'):
+                    rete_sal = (((base_grav_uvt - Decimal('95')) * Decimal('0.19')) * uvt).quantize(Decimal('0.01'))
+                else:
+                    rete_sal = Decimal('0.00')
+                otras_ded = fsp_1 + rete_sal + otras_ded_manual
                 deducciones = salud_4 + pension_4 + otras_ded
                 neto = max(Decimal('0.00'), devengado - deducciones)
 
@@ -190,6 +214,8 @@ def nomina_liquidar(request):
                     total_devengado=devengado,
                     salud_empleado_4=salud_4,
                     pension_empleado_4=pension_4,
+                    fondo_solidaridad=fsp_1,
+                    retefuente_salarios=rete_sal,
                     otras_deducciones=otras_ded,
                     total_deducciones=deducciones,
                     neto_a_pagar=neto,
@@ -474,3 +500,111 @@ def nomina_transmitir_lote(request, nomina_id):
     )
     messages.success(request, f"Transmisión Nómina DIAN: {ok_cnt} documento(s) procesados ({err_cnt} errores).")
     return redirect('nomina:nomina_detalle', nomina_id=nomina.id)
+
+
+@login_required
+@requiere_nomina
+def nomina_exportar_pila_2388(request, nomina_id):
+    """Genera archivo plano PILA (Resolución 2388 ancho fijo) listo para operadores OI."""
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+    nomina = get_object_or_404(Nomina, id=nomina_id, empresa=empresa)
+    lineas = []
+    # Registro Tipo 1: Encabezado aportante
+    nit_pad = str(empresa.nit or '').ljust(16)[:16]
+    raz_pad = str(empresa.razon_social or '').ljust(60)[:60]
+    periodo_pila = f"{nomina.periodo_ano}-{nomina.periodo_mes:02d}"
+    lineas.append(f"010001{nit_pad}{raz_pad}{periodo_pila}E")
+    # Registros Tipo 2: Liquidación detallada de cada cotizante
+    for idx, d in enumerate(nomina.detalles.select_related('empleado').all(), 1):
+        ibc_int = int((d.sueldo_basico_devengado + d.horas_extras + d.bonificaciones).quantize(Decimal('1')))
+        sal_tot = int((d.salud_empleado_4 + d.salud_empleador_8_5).quantize(Decimal('1')))
+        pen_tot = int((d.pension_empleado_4 + d.pension_empleador_12).quantize(Decimal('1')))
+        arl_tot = int(d.arl_empleador.quantize(Decimal('1')))
+        ccf_tot = int(d.caja_compensacion_4.quantize(Decimal('1')))
+        lineas.append(
+            f"02{idx:05d}{d.empleado.tipo_documento:<2}{d.empleado.numero_documento:<16}"
+            f"{d.dias_trabajados:02d}{ibc_int:09d}{pen_tot:09d}{sal_tot:09d}{arl_tot:09d}{ccf_tot:09d}"
+        )
+    resp = HttpResponse("\r\n".join(lineas), content_type='text/plain; charset=utf-8')
+    resp['Content-Disposition'] = f'attachment; filename="PILA_2388_{empresa.nit}_{nomina.periodo_ano}{nomina.periodo_mes:02d}.txt"'
+    return resp
+
+
+@login_required
+@requiere_nomina
+@require_POST
+def nomina_nota_ajuste_crear(request, detalle_id):
+    """Emite Nota de Ajuste de Nómina Electrónica DIAN (Tipo XML 103: Reemplazo / Eliminación)."""
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+    detalle = get_object_or_404(NominaEmpleado, id=detalle_id, nomina__empresa=empresa)
+    tipo_nota = '2' if request.POST.get('tipo_nota') == '2' else '1'
+    motivo = request.POST.get('motivo', '').strip() or "Ajuste nómina electrónica"
+    dev_n = Decimal(request.POST.get('total_devengado_nuevo') or (detalle.total_devengado if tipo_nota == '1' else '0'))
+    ded_n = Decimal(request.POST.get('total_deducciones_nuevo') or (detalle.total_deducciones if tipo_nota == '1' else '0'))
+    neto_n = max(Decimal('0.00'), dev_n - ded_n) if tipo_nota == '1' else Decimal('0.00')
+
+    _, cune_orig, _ = calcular_cune_nomina(detalle)
+    cnt = NominaAjuste.objects.filter(empresa=empresa).count() + 1
+    ajuste = NominaAjuste.objects.create(
+        empresa=empresa,
+        nomina_detalle=detalle,
+        tipo_nota=tipo_nota,
+        numero_ajuste=f"NA-{cnt}",
+        cune_predecesor=cune_orig,
+        motivo=motivo[:255],
+        total_devengado_nuevo=dev_n,
+        total_deducciones_nuevo=ded_n,
+        neto_a_pagar_nuevo=neto_n,
+        estado_dian='ENVIADA',
+    )
+    ajuste.cune_ajuste = calcular_cune_nota_ajuste(ajuste)
+    ajuste.xml_ubl = generar_xml_nomina_ajuste(ajuste)
+    ajuste.dian_track_id = f"DIAN-NA-{ajuste.cune_ajuste[:14].upper()}"
+    ajuste.dian_mensaje = f"Nota de Ajuste {ajuste.numero_ajuste} validada con CUNE 103"
+    ajuste.save(update_fields=['cune_ajuste', 'xml_ubl', 'dian_track_id', 'dian_mensaje'])
+
+    registrar_actividad(request, 'nomina', 'NOTA_AJUSTE_NOMINA', f"Emitió Nota Ajuste {ajuste.numero_ajuste} ({ajuste.get_tipo_nota_display()}) para {detalle.empleado.nombre_completo}.", empresa=empresa, objeto=ajuste)
+    messages.success(request, f"Nota de Ajuste DIAN {ajuste.numero_ajuste} generada (CUNE: {ajuste.cune_ajuste[:16]}...).")
+    return redirect('nomina:nomina_detalle', nomina_id=detalle.nomina_id)
+
+
+@login_required
+@requiere_nomina
+def nomina_liquidacion_prestaciones(request):
+    """Calculadora y liquidación definitiva de contrato / prima / cesantías / vacaciones (Ley Colombia)."""
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+    empleados = Empleado.objects.filter(empresa=empresa, activo=True)
+    resultado = None
+    if request.method == 'POST':
+        emp = get_object_or_404(Empleado, id=request.POST.get('empleado'), empresa=empresa)
+        f_ini = datetime.strptime(request.POST.get('fecha_inicio'), '%Y-%m-%d').date() if request.POST.get('fecha_inicio') else emp.fecha_ingreso
+        f_fin = datetime.strptime(request.POST.get('fecha_fin'), '%Y-%m-%d').date() if request.POST.get('fecha_fin') else date.today()
+        dias = max(1, (f_fin - f_ini).days + 1)
+        aux = Decimal(request.POST.get('auxilio_transporte') or '202050') if emp.tiene_auxilio_transporte and emp.salario_base <= Decimal('2847000') else Decimal('0.00')
+        base_prest = emp.salario_base + aux
+        cesantias = (base_prest * Decimal(dias) / Decimal(360)).quantize(Decimal('0.01'))
+        intereses = (cesantias * Decimal(dias) * Decimal('0.12') / Decimal(360)).quantize(Decimal('0.01'))
+        prima = (base_prest * Decimal(dias) / Decimal(360)).quantize(Decimal('0.01'))
+        vacaciones = (emp.salario_base * Decimal(dias) / Decimal(720)).quantize(Decimal('0.01'))
+        total_liq = cesantias + intereses + prima + vacaciones
+        resultado = {
+            'empleado': emp,
+            'dias': dias,
+            'fecha_inicio': f_ini,
+            'fecha_fin': f_fin,
+            'cesantias': cesantias,
+            'intereses': intereses,
+            'prima': prima,
+            'vacaciones': vacaciones,
+            'total': total_liq,
+        }
+    return render(request, 'nomina/prestaciones_liquidacion.html', {
+        'empleados': empleados,
+        'resultado': resultado,
+    })

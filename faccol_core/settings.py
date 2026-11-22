@@ -210,3 +210,18 @@ WOMPI_PUBLIC_KEY = os.getenv('WOMPI_PUBLIC_KEY', '')
 WOMPI_PRIVATE_KEY = os.getenv('WOMPI_PRIVATE_KEY', '')
 WOMPI_EVENTS_SECRET = os.getenv('WOMPI_EVENTS_SECRET', '')
 WOMPI_SANDBOX = os.getenv('WOMPI_SANDBOX', 'True').lower() in ('true', '1', 't')
+
+# Observabilidad opcional (Sentry)
+SENTRY_DSN = os.getenv('SENTRY_DSN', '').strip()
+if SENTRY_DSN and not DEBUG:
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.django import DjangoIntegration
+        sentry_sdk.init(
+            dsn=SENTRY_DSN,
+            integrations=[DjangoIntegration()],
+            traces_sample_rate=0.1,
+            send_default_pii=False,
+        )
+    except Exception:
+        pass

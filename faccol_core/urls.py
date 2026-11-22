@@ -2,10 +2,16 @@ from django.contrib import admin
 from django.urls import path, include
 from django.conf import settings
 from django.conf.urls.static import static
+from apps.core import api_views
 from apps.facturacion import views as facturacion_views
 
 urlpatterns = [
     path('admin/', admin.site.urls),
+    path('api/v1/openapi.json', api_views.api_v1_openapi, name='api_v1_openapi'),
+    path('api/v1/resumen/', api_views.api_v1_resumen, name='api_v1_resumen'),
+    path('api/v1/facturas/', api_views.api_v1_facturas, name='api_v1_facturas'),
+    path('api/v1/terceros/', api_views.api_v1_terceros, name='api_v1_terceros'),
+    path('api/v1/productos/', api_views.api_v1_productos, name='api_v1_productos'),
     path('', include('apps.core.urls')),
     path('portal/<str:token>/', facturacion_views.portal_factura_ver, name='portal_factura_ver'),
     path('portal/<str:token>/pdf/', facturacion_views.portal_factura_pdf, name='portal_factura_pdf'),

@@ -19,4 +19,10 @@ urlpatterns = [
     path('unidades/', views.unidades_lista, name='unidades_lista'),
     path('bodegas/', views.bodegas_lista, name='bodegas_lista'),
     path('bodegas/traslado/', views.bodega_traslado, name='bodega_traslado'),
+    path('ordenes-compra/', views.ordenes_compra_lista, name='ordenes_compra_lista'),
+    path('ordenes-compra/<int:orden_id>/convertir/', views.orden_compra_convertir, name='orden_compra_convertir'),
+    path('lotes/', views.lotes_lista, name='lotes_lista'),
+    path('listas-precios/', views.listas_precios_lista, name='listas_precios_lista'),
+    path('compras/importar-xml/', views.compra_importar_xml, name='compra_importar_xml'),
+    path('compras/<int:compra_id>/radian/', views.compra_evento_radian, name='compra_evento_radian'),
 ]

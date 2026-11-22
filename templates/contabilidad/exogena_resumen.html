@@ -16,6 +16,12 @@
             <a href="?ano={{ ano }}&export=xlsx" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold">
                 <i class="fas fa-file-excel mr-1"></i> Exportar Excel (.xlsx)
             </a>
+            <a href="{% url 'contabilidad:exogena_xml' %}?ano={{ ano }}&formato=1001" class="px-3 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold">
+                XML 1001
+            </a>
+            <a href="{% url 'contabilidad:exogena_xml' %}?ano={{ ano }}&formato=1007" class="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold">
+                XML 1007
+            </a>
         </div>
     </div>
 

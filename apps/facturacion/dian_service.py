@@ -266,7 +266,8 @@ def generar_xml_ubl(factura):
         line.append(price_el)
         root.append(line)
 
-    return ET.tostring(root, encoding="utf-8", xml_declaration=True).decode("utf-8")
+    xml_out = ET.tostring(root, encoding="utf-8", xml_declaration=True).decode("utf-8")
+    return firmar_xml_empresa_si_certificado(xml_out, empresa)
 
 
 def _notificar_fallo_dian(factura, asunto_corto: str, detalle: str, nivel: str = "danger"):
@@ -513,7 +514,8 @@ def generar_attached_document_xml(factura) -> str:
     pl.append(dr)
     root.append(pl)
 
-    return ET.tostring(root, encoding="utf-8", xml_declaration=True).decode("utf-8")
+    xml_out = ET.tostring(root, encoding="utf-8", xml_declaration=True).decode("utf-8")
+    return firmar_xml_empresa_si_certificado(xml_out, empresa)
 
 
 def verificar_alertas_resolucion_dian(empresa, request=None) -> bool:
@@ -646,3 +648,264 @@ def transmitir_nomina_dian(detalle):
             return True, f"Nómina {num_ne} transmitida vía Proveedor Tecnológico."
         return False, f"Rechazo PT Nómina (HTTP {resp.status_code})"
     return True, f"Nómina {num_ne} validada con CUNE {cune[:16]}."
+
+
+def validar_y_cargar_p12(p12_bytes: bytes, password: str):
+    """Carga y valida un certificado PKCS#12 (.p12/.pfx) para firma electrónica DIAN."""
+    from cryptography.hazmat.primitives.serialization import pkcs12
+
+    pwd_bytes = password.encode("utf-8") if password else None
+    private_key, certificate, chain = pkcs12.load_key_and_certificates(p12_bytes, pwd_bytes)
+    if private_key is None or certificate is None:
+        raise ValueError("El archivo .p12 no contiene llave privada ni certificado X.509 válido.")
+
+    sujeto = certificate.subject.rfc4514_string()
+    vence = certificate.not_valid_after_utc.date()
+    return private_key, certificate, chain or [], sujeto[:250], vence
+
+
+def firmar_xml_xades_rsa(xml_str: str, private_key, certificate) -> str:
+    """
+    Adjunta bloque ds:Signature + XAdES-EPES SHA-256 firmado con la llave privada RSA del .p12.
+    """
+    import base64
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import padding
+
+    xml_bytes = xml_str.encode("utf-8")
+    digest_b64 = base64.b64encode(hashlib.sha256(xml_bytes).digest()).decode("ascii")
+    cert_der = certificate.public_bytes(serialization.Encoding.DER)
+    cert_b64 = base64.b64encode(cert_der).decode("ascii")
+    cert_digest_b64 = base64.b64encode(hashlib.sha256(cert_der).digest()).decode("ascii")
+
+    signed_info_xml = (
+        '<ds:SignedInfo xmlns:ds="http://www.w3.org/2000/09/xmldsig#">'
+        '<ds:CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>'
+        '<ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/>'
+        '<ds:Reference URI="">'
+        '<ds:Transforms><ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/></ds:Transforms>'
+        '<ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>'
+        f"<ds:DigestValue>{digest_b64}</ds:DigestValue>"
+        "</ds:Reference></ds:SignedInfo>"
+    )
+    signature_bytes = private_key.sign(
+        signed_info_xml.encode("utf-8"),
+        padding.PKCS1v15(),
+        hashes.SHA256(),
+    )
+    sig_b64 = base64.b64encode(signature_bytes).decode("ascii")
+
+    root = ET.fromstring(xml_str)
+    ds_ns = "http://www.w3.org/2000/09/xmldsig#"
+    xades_ns = "http://uri.etsi.org/01903/v1.3.2#"
+    ET.register_namespace("ds", ds_ns)
+    ET.register_namespace("xades", xades_ns)
+
+    sig_el = ET.Element(f"{{{ds_ns}}}Signature", Id="FacCol-XAdES-Signature")
+    sig_el.append(ET.fromstring(signed_info_xml))
+    sv = ET.SubElement(sig_el, f"{{{ds_ns}}}SignatureValue")
+    sv.text = sig_b64
+    ki = ET.SubElement(sig_el, f"{{{ds_ns}}}KeyInfo")
+    x509d = ET.SubElement(ki, f"{{{ds_ns}}}X509Data")
+    x509c = ET.SubElement(x509d, f"{{{ds_ns}}}X509Certificate")
+    x509c.text = cert_b64
+
+    obj = ET.SubElement(sig_el, f"{{{ds_ns}}}Object")
+    qp = ET.SubElement(obj, f"{{{xades_ns}}}QualifyingProperties", Target="#FacCol-XAdES-Signature")
+    sp = ET.SubElement(qp, f"{{{xades_ns}}}SignedProperties")
+    ssp = ET.SubElement(sp, f"{{{xades_ns}}}SignedSignatureProperties")
+    st = ET.SubElement(ssp, f"{{{xades_ns}}}SigningTime")
+    st.text = datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%S-05:00")
+    sc = ET.SubElement(ssp, f"{{{xades_ns}}}SigningCertificate")
+    c_node = ET.SubElement(sc, f"{{{xades_ns}}}Cert")
+    cd_node = ET.SubElement(c_node, f"{{{xades_ns}}}CertDigest")
+    dm_node = ET.SubElement(cd_node, f"{{{ds_ns}}}DigestMethod", Algorithm="http://www.w3.org/2001/04/xmlenc#sha256")
+    _ = dm_node
+    dv_node = ET.SubElement(cd_node, f"{{{ds_ns}}}DigestValue")
+    dv_node.text = cert_digest_b64
+
+    root.append(sig_el)
+    return ET.tostring(root, encoding="utf-8", xml_declaration=True).decode("utf-8")
+
+
+def firmar_xml_empresa_si_certificado(xml_str: str, empresa) -> str:
+    """Firma el XML con el certificado .p12 cifrado de la empresa si está cargado."""
+    enc_b64 = (getattr(empresa, "dian_certificado_p12_enc", "") or "").strip()
+    if not enc_b64:
+        return xml_str
+    import base64
+    from apps.core.platform_settings import decrypt_secret
+
+    raw_b64 = decrypt_secret(enc_b64)
+    if not raw_b64:
+        return xml_str
+    p12_bytes = base64.b64decode(raw_b64.encode("ascii"))
+    pwd = decrypt_secret(getattr(empresa, "dian_certificado_password", "") or "")
+    key, cert, _, _, _ = validar_y_cargar_p12(p12_bytes, pwd)
+    return firmar_xml_xades_rsa(xml_str, key, cert)
+
+
+def construir_sobre_soap_dian(zip_b64: str, filename: str, modo: str = "PRUEBAS", action: str = "SendBillSync") -> str:
+    """Construye sobre SOAP 1.2 compatible con WebService DIAN Colombia."""
+    endpoint = (
+        "https://vpfe.dian.gov.co/WcfDianCustomerServices.svc"
+        if modo == "PRODUCCION"
+        else "https://vpfe-hab.dian.gov.co/WcfDianCustomerServices.svc"
+    )
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<soap:Envelope xmlns:soap="http://www.w3.org/2003/05/soap-envelope" '
+        'xmlns:wcf="http://wcf.dian.colombia" xmlns:wsa="http://www.w3.org/2005/08/addressing">'
+        "<soap:Header>"
+        f"<wsa:Action>http://wcf.dian.colombia/IWcfDianCustomerServices/{action}</wsa:Action>"
+        f"<wsa:To>{endpoint}</wsa:To>"
+        "</soap:Header>"
+        "<soap:Body>"
+        f"<wcf:{action}>"
+        f"<wcf:fileName>{_xml_escape(filename)}</wcf:fileName>"
+        f"<wcf:contentFile>{zip_b64}</wcf:contentFile>"
+        f"</wcf:{action}>"
+        "</soap:Body></soap:Envelope>"
+    )
+
+
+def _xml_escape(val: str) -> str:
+    return (
+        str(val or "")
+        .replace("&", "&amp;")
+        .replace("<", "&lt;")
+        .replace(">", "&gt;")
+        .replace('"', "&quot;")
+    )
+
+
+def parsear_attached_document_o_invoice(raw_bytes: bytes) -> dict:
+    """
+    Lee de forma segura (sin XXE) un XML UBL 2.1 AttachedDocument/Invoice o ZIP recibido de un proveedor.
+    """
+    import io
+    import zipfile
+
+    xml_bytes = raw_bytes
+    if raw_bytes[:2] == b"PK":
+        with zipfile.ZipFile(io.BytesIO(raw_bytes)) as zf:
+            xml_names = [n for n in zf.namelist() if n.lower().endswith(".xml")]
+            if not xml_names:
+                raise ValueError("El archivo ZIP no contiene ningún documento XML.")
+            xml_bytes = zf.read(xml_names[0])
+
+    upper_head = xml_bytes[:2048].upper()
+    if b"<!DOCTYPE" in upper_head or b"<!ENTITY" in upper_head:
+        raise ValueError("XML rechazado por política de seguridad (DOCTYPE/ENTITY prohibido).")
+
+    root = ET.fromstring(xml_bytes.decode("utf-8", errors="replace"))
+    # Si es AttachedDocument, buscar el Invoice embebido en cbc:Description
+    for elem in root.iter():
+        tag_local = elem.tag.split("}")[-1]
+        if tag_local == "Description" and elem.text and "<Invoice" in elem.text:
+            inner_txt = elem.text.strip()
+            if "<!DOCTYPE" in inner_txt[:2048].upper() or "<!ENTITY" in inner_txt[:2048].upper():
+                raise ValueError("XML embebido rechazado por política de seguridad.")
+            root = ET.fromstring(inner_txt)
+            break
+
+    def _find_first(node, path_tags):
+        cur = node
+        for target in path_tags:
+            found = None
+            for child in cur:
+                if child.tag.split("}")[-1] == target:
+                    found = child
+                    break
+            if found is None:
+                return None
+            cur = found
+        return cur
+
+    def _text(node, path_tags, default=""):
+        el = _find_first(node, path_tags)
+        return (el.text or "").strip() if el is not None else default
+
+    numero = _text(root, ["ID"])
+    fecha_txt = _text(root, ["IssueDate"])
+    cufe = _text(root, ["UUID"])
+    nit_prov = _text(root, ["AccountingSupplierParty", "Party", "PartyTaxScheme", "CompanyID"])
+    nombre_prov = _text(root, ["AccountingSupplierParty", "Party", "PartyTaxScheme", "RegistrationName"])
+    if not nombre_prov:
+        nombre_prov = _text(root, ["AccountingSupplierParty", "Party", "PartyLegalEntity", "RegistrationName"])
+
+    subtotal = Decimal(_text(root, ["LegalMonetaryTotal", "LineExtensionAmount"], "0") or "0")
+    total = Decimal(_text(root, ["LegalMonetaryTotal", "PayableAmount"], "0") or "0")
+    iva = Decimal(_text(root, ["TaxTotal", "TaxAmount"], "0") or "0")
+
+    lineas = []
+    for child in root:
+        if child.tag.split("}")[-1] == "InvoiceLine":
+            desc = _text(child, ["Item", "Description"], "Ítem XML")
+            qty = Decimal(_text(child, ["InvoicedQuantity"], "1") or "1")
+            line_ext = Decimal(_text(child, ["LineExtensionAmount"], "0") or "0")
+            unit = (line_ext / qty).quantize(Decimal("0.01")) if qty > 0 else line_ext
+            lineas.append({
+                "descripcion": desc[:200],
+                "cantidad": qty,
+                "costo_unitario": unit,
+                "subtotal": line_ext,
+            })
+
+    return {
+        "numero_factura": numero[:80],
+        "fecha": fecha_txt[:10],
+        "cufe": cufe[:200],
+        "nit_proveedor": nit_prov[:30],
+        "nombre_proveedor": nombre_prov[:200] or "Proveedor XML",
+        "subtotal": subtotal,
+        "iva": iva,
+        "total": total,
+        "lineas": lineas,
+        "xml_raw": xml_bytes.decode("utf-8", errors="replace"),
+    }
+
+
+def generar_application_response_radian(compra, codigo_evento: str, empresa) -> str:
+    """Genera XML ApplicationResponse UBL 2.1 para eventos RADIAN sobre compras recibidas (030-033)."""
+    ns_ar = "urn:oasis:names:specification:ubl:schema:xsd:ApplicationResponse-2"
+    ns_cac = "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+    ns_cbc = "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
+    ET.register_namespace("", ns_ar)
+    ET.register_namespace("cac", ns_cac)
+    ET.register_namespace("cbc", ns_cbc)
+
+    nombres = {
+        "030": "Acuse de recibo de Factura Electrónica de Venta",
+        "031": "Reclamo de Factura Electrónica de Venta",
+        "032": "Recibo del bien y/o prestación del servicio",
+        "033": "Aceptación expresa de Factura Electrónica",
+    }
+    desc = nombres.get(codigo_evento, "Evento RADIAN")
+    root = ET.Element(f"{{{ns_ar}}}ApplicationResponse")
+    for k, v in (
+        ("UBLVersionID", "UBL 2.1"),
+        ("CustomizationID", "1"),
+        ("ProfileID", "DIAN 2.1: ApplicationResponse de la Factura Electrónica de Venta"),
+        ("ID", f"EV-{codigo_evento}-{compra.id}"),
+        ("IssueDate", datetime.now().strftime("%Y-%m-%d")),
+        ("Note", desc),
+    ):
+        el = ET.SubElement(root, f"{{{ns_cbc}}}{k}")
+        el.text = v
+
+    sp = ET.SubElement(root, f"{{{ns_cac}}}SenderParty")
+    sp_tax = ET.SubElement(sp, f"{{{ns_cac}}}PartyTaxScheme")
+    ET.SubElement(sp_tax, f"{{{ns_cbc}}}RegistrationName").text = empresa.razon_social
+    ET.SubElement(sp_tax, f"{{{ns_cbc}}}CompanyID").text = empresa.nit
+
+    dr = ET.SubElement(root, f"{{{ns_cac}}}DocumentResponse")
+    resp = ET.SubElement(dr, f"{{{ns_cac}}}Response")
+    ET.SubElement(resp, f"{{{ns_cbc}}}ResponseCode").text = codigo_evento
+    ET.SubElement(resp, f"{{{ns_cbc}}}Description").text = desc
+    doc_ref = ET.SubElement(dr, f"{{{ns_cac}}}DocumentReference")
+    ET.SubElement(doc_ref, f"{{{ns_cbc}}}ID").text = compra.numero_factura_proveedor or compra.numero_completo
+    ET.SubElement(doc_ref, f"{{{ns_cbc}}}UUID").text = compra.cufe_proveedor or ""
+
+    xml_out = ET.tostring(root, encoding="utf-8", xml_declaration=True).decode("utf-8")
+    return firmar_xml_empresa_si_certificado(xml_out, empresa)

@@ -1,6 +1,6 @@
 import hashlib
 import xml.etree.ElementTree as ET
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 
 
@@ -112,4 +112,69 @@ def generar_xml_nomina_individual(detalle):
     el("DeduccionesTotal", root, text=_fmt_dec(detalle.total_deducciones))
     el("ComprobanteTotal", root, text=_fmt_dec(detalle.neto_a_pagar))
 
+    return ET.tostring(root, encoding="utf-8", xml_declaration=True).decode("utf-8")
+
+
+def calcular_cune_nota_ajuste(ajuste):
+    """Calcula CUNE SHA-384 para Nota de Ajuste de Nómina Electrónica (TipoXML 103)."""
+    detalle = ajuste.nomina_detalle
+    nomina = detalle.nomina
+    empresa = nomina.empresa
+    empleado = detalle.empleado
+    fecha_gen = date.today().strftime("%Y-%m-%d")
+    hora_gen = "12:00:00-05:00"
+    pin_soft = (empresa.get_dian_pin() or empresa.dian_software_id or "FACCOL-NE-PIN").strip()
+    tipo_amb = "1" if empresa.modo_dian == "PRODUCCION" else "2"
+    cadena = (
+        f"{ajuste.numero_ajuste}{fecha_gen}{hora_gen}"
+        f"{_fmt_dec(ajuste.total_devengado_nuevo)}{_fmt_dec(ajuste.total_deducciones_nuevo)}{_fmt_dec(ajuste.neto_a_pagar_nuevo)}"
+        f"{(empresa.nit or '').strip()}{(empleado.numero_documento or '').strip()}103{pin_soft}{tipo_amb}"
+    )
+    return hashlib.sha384(cadena.encode("utf-8")).hexdigest()
+
+
+def generar_xml_nomina_ajuste(ajuste):
+    """Genera XML DIAN NominaIndividualDeAjuste (Tipo XML 103: 1=Reemplazar, 2=Eliminar)."""
+    detalle = ajuste.nomina_detalle
+    nomina = detalle.nomina
+    empresa = nomina.empresa
+    empleado = detalle.empleado
+    cune = ajuste.cune_ajuste or calcular_cune_nota_ajuste(ajuste)
+    tipo_amb = "1" if empresa.modo_dian == "PRODUCCION" else "2"
+
+    ns = "dian:gov:co:facturaelectronica:NominaIndividualDeAjuste"
+    ET.register_namespace("", ns)
+
+    def el(tag, parent=None, text=None, **attrs):
+        node = ET.Element(f"{{{ns}}}{tag}", {k: str(v) for k, v in attrs.items()})
+        if text is not None:
+            node.text = str(text)
+        if parent is not None:
+            parent.append(node)
+        return node
+
+    root = el("NominaIndividualDeAjuste")
+    el("TipoNota", root, text=str(ajuste.tipo_nota))
+    el("NumeroSecuenciaXML", root, Prefijo="NA", Consecutivo=str(ajuste.id or 1), Numero=ajuste.numero_ajuste)
+    el("InformacionGeneral", root,
+       Version="V1.0: Nota de Ajuste de Documento Soporte de Pago de Nómina Electrónica",
+       Ambiente=tipo_amb,
+       TipoXML="103",
+       CUNE=cune,
+       EncripCUNE="CUNE-SHA384",
+       FechaGen=date.today().strftime("%Y-%m-%d"),
+       TipoMoneda="COP")
+    el("Predecesor", root,
+       NumeroPred=f"NE{nomina.periodo_ano}{nomina.periodo_mes:02d}{detalle.id}",
+       CUNEPred=ajuste.cune_predecesor or "",
+       FechaGenPred=nomina.fecha_fin.strftime("%Y-%m-%d"))
+    el("Empleador", root, RazonSocial=empresa.razon_social, NIT=empresa.nit, DV=empresa.dv or "0", Pais="CO")
+    el("Trabajador", root,
+       NumeroDocumento=empleado.numero_documento,
+       PrimerApellido=empleado.apellidos,
+       PrimerNombre=empleado.nombres,
+       Sueldo=_fmt_dec(empleado.salario_base))
+    el("DevengadosTotal", root, text=_fmt_dec(ajuste.total_devengado_nuevo))
+    el("DeduccionesTotal", root, text=_fmt_dec(ajuste.total_deducciones_nuevo))
+    el("ComprobanteTotal", root, text=_fmt_dec(ajuste.neto_a_pagar_nuevo))
     return ET.tostring(root, encoding="utf-8", xml_declaration=True).decode("utf-8")

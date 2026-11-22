@@ -18,4 +18,10 @@ urlpatterns = [
     path('cierres/', views.cierres_lista, name='cierres_lista'),
     path('certificados-retencion/', views.certificados_retencion_view, name='certificados_retencion'),
     path('exogena/', views.exogena_resumen_view, name='exogena_resumen'),
+    path('exogena/xml/', views.exogena_xml_descargar, name='exogena_xml'),
+    path('centros-costos/', views.centros_costos_lista, name='centros_costos'),
+    path('conciliacion-bancaria/', views.conciliacion_bancaria_view, name='conciliacion_bancaria'),
+    path('activos-fijos/', views.activos_fijos_lista, name='activos_fijos'),
+    path('formularios-tributarios/', views.formularios_tributarios_view, name='formularios_tributarios'),
+    path('gastos/extraer-pdf/', views.gasto_extraer_pdf, name='gasto_extraer_pdf'),
 ]

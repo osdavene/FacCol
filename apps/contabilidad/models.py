@@ -63,10 +63,27 @@ class AsientoContable(EmpresaTenantModel):
         return abs(self.total_debito - self.total_credito) < Decimal('0.01')
 
 
+class CentroCosto(EmpresaTenantModel):
+    """Centros de costos y proyectos para analizar rentabilidad por área/sucursal."""
+    codigo = models.CharField(max_length=20)
+    nombre = models.CharField(max_length=120)
+    activa = models.BooleanField(default=True)
+
+    class Meta:
+        unique_together = ('empresa', 'codigo')
+        ordering = ['codigo']
+        verbose_name = "Centro de Costos"
+        verbose_name_plural = "Centros de Costos"
+
+    def __str__(self):
+        return f"{self.codigo} - {self.nombre}"
+
+
 class AsientoLinea(models.Model):
     asiento = models.ForeignKey(AsientoContable, on_delete=models.CASCADE, related_name='lineas')
     cuenta = models.ForeignKey(PlanCuenta, on_delete=models.PROTECT, related_name='movimientos')
     tercero = models.ForeignKey('terceros.Tercero', on_delete=models.SET_NULL, null=True, blank=True)
+    centro_costo = models.ForeignKey(CentroCosto, on_delete=models.SET_NULL, null=True, blank=True, related_name='movimientos')
     descripcion = models.CharField(max_length=255, blank=True)
     debito = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal('0.00'))
     credito = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal('0.00'))
@@ -150,6 +167,7 @@ class GastoOperativo(EmpresaTenantModel):
     retencion_ica = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal('0.00'))
     total_pagar = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal('0.00'))
     metodo_pago = models.CharField(max_length=20, choices=METODO_PAGO_CHOICES, default='CONTADO')
+    centro_costo = models.ForeignKey(CentroCosto, on_delete=models.SET_NULL, null=True, blank=True, related_name='gastos')
 
     class Meta:
         unique_together = ('empresa', 'consecutivo')
@@ -163,3 +181,78 @@ class GastoOperativo(EmpresaTenantModel):
 
     def __str__(self):
         return f"{self.numero_completo} - {self.concepto} (${self.total_pagar:,.0f})"
+
+
+class CuentaBancaria(EmpresaTenantModel):
+    """Cuentas bancarias y cajas menores vinculadas al PUC para conciliación bancaria."""
+    TIPO_CHOICES = [
+        ('CORRIENTE', 'Cuenta Corriente'),
+        ('AHORROS', 'Cuenta de Ahorros'),
+        ('CAJA_MENOR', 'Caja Menor / Efectivo'),
+        ('BILLETERA', 'Billetera Digital (Nequi / Daviplata)'),
+    ]
+
+    nombre = models.CharField(max_length=120)
+    banco = models.CharField(max_length=100, blank=True)
+    numero_cuenta = models.CharField(max_length=60, blank=True)
+    tipo_cuenta = models.CharField(max_length=20, choices=TIPO_CHOICES, default='AHORROS')
+    cuenta_contable = models.ForeignKey(PlanCuenta, on_delete=models.PROTECT, related_name='cuentas_bancarias')
+    saldo_inicial = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal('0.00'))
+    activa = models.BooleanField(default=True)
+
+    class Meta:
+        ordering = ['nombre']
+        verbose_name = "Cuenta Bancaria / Tesorería"
+        verbose_name_plural = "Cuentas Bancarias y Cajas"
+
+    def __str__(self):
+        return f"{self.nombre} ({self.banco or self.get_tipo_cuenta_display()})"
+
+
+class MovimientoExtractoBancario(EmpresaTenantModel):
+    """Movimientos importados desde extractos bancarios para conciliación contra asientos PUC."""
+    cuenta_bancaria = models.ForeignKey(CuentaBancaria, on_delete=models.CASCADE, related_name='extractos')
+    fecha = models.DateField()
+    descripcion = models.CharField(max_length=255)
+    referencia = models.CharField(max_length=100, blank=True)
+    valor = models.DecimalField(max_digits=16, decimal_places=2, help_text="Positivo=Ingreso/Abono, Negativo=Retiro/Pago")
+    conciliado = models.BooleanField(default=False)
+    asiento_linea = models.ForeignKey(AsientoLinea, on_delete=models.SET_NULL, null=True, blank=True, related_name='conciliaciones')
+
+    class Meta:
+        ordering = ['-fecha', '-id']
+        verbose_name = "Movimiento de Extracto Bancario"
+        verbose_name_plural = "Movimientos de Extractos Bancarios"
+
+
+class ActivoFijo(EmpresaTenantModel):
+    """Activos fijos de propiedad, planta y equipo con depreciación mensual NIIF."""
+    codigo = models.CharField(max_length=30)
+    nombre = models.CharField(max_length=180)
+    fecha_compra = models.DateField()
+    valor_compra = models.DecimalField(max_digits=16, decimal_places=2)
+    valor_residual = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal('0.00'))
+    vida_util_meses = models.IntegerField(default=60)
+    depreciacion_acumulada = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal('0.00'))
+    ultima_depreciacion = models.DateField(null=True, blank=True)
+    activo = models.BooleanField(default=True)
+
+    class Meta:
+        unique_together = ('empresa', 'codigo')
+        ordering = ['codigo']
+        verbose_name = "Activo Fijo"
+        verbose_name_plural = "Activos Fijos"
+
+    @property
+    def cuota_depreciacion_mensual(self):
+        base = max(Decimal('0.00'), self.valor_compra - self.valor_residual)
+        if self.vida_util_meses <= 0:
+            return Decimal('0.00')
+        return (base / Decimal(self.vida_util_meses)).quantize(Decimal('0.01'))
+
+    @property
+    def valor_neto_libros(self):
+        return max(Decimal('0.00'), self.valor_compra - self.depreciacion_acumulada)
+
+    def __str__(self):
+        return f"[{self.codigo}] {self.nombre}"

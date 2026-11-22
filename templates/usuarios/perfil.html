@@ -78,5 +78,66 @@
             </button>
         </div>
     </form>
+
+    <!-- Seguridad 2FA TOTP -->
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 sm:p-8 shadow-xl space-y-4 text-xs mt-6">
+        <div class="flex items-center justify-between border-b border-[#1e2d47] pb-3">
+            <div>
+                <h2 class="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+                    <i class="fas fa-shield-halved text-emerald-400"></i>
+                    <span>Autenticación de Dos Factores (2FA / TOTP)</span>
+                </h2>
+                <p class="text-slate-400 mt-1">Protege tu acceso con Google Authenticator, Authy o Microsoft Authenticator.</p>
+            </div>
+            {% if user.totp_enabled %}
+            <span class="px-3 py-1 rounded-full bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 font-bold">Activo</span>
+            {% else %}
+            <span class="px-3 py-1 rounded-full bg-slate-700/40 text-slate-300 border border-slate-600/40 font-bold">Inactivo</span>
+            {% endif %}
+        </div>
+
+        {% if user.totp_enabled %}
+        <form method="POST" action="{% url 'usuarios:perfil_2fa' %}" class="flex flex-col sm:flex-row gap-3 items-end">
+            {% csrf_token %}
+            <input type="hidden" name="accion" value="desactivar">
+            <div class="flex-1 w-full">
+                <label class="block text-slate-300 font-semibold mb-1">Contraseña actual para desactivar 2FA</label>
+                <input type="password" name="password_confirm" required placeholder="••••••••" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+            </div>
+            <button type="submit" class="px-4 py-2.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 border border-rose-500/40 text-rose-200 font-bold">
+                Desactivar 2FA
+            </button>
+        </form>
+        {% elif totp_qr_uri %}
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
+            <div class="bg-white p-3 rounded-2xl inline-block w-fit">
+                <img src="{{ totp_qr_uri }}" alt="QR 2FA" class="w-40 h-40">
+            </div>
+            <form method="POST" action="{% url 'usuarios:perfil_2fa' %}" class="space-y-3">
+                {% csrf_token %}
+                <input type="hidden" name="accion" value="activar">
+                <div>
+                    <div class="text-slate-400">Clave manual:</div>
+                    <code class="text-amber-300 font-mono text-[11px] select-all">{{ pending_totp_secret }}</code>
+                </div>
+                <div>
+                    <label class="block text-slate-300 font-semibold mb-1">Código de 6 dígitos</label>
+                    <input type="text" name="codigo" maxlength="6" required placeholder="123456" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                </div>
+                <button type="submit" class="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-black uppercase">
+                    Confirmar y Activar 2FA
+                </button>
+            </form>
+        </div>
+        {% else %}
+        <form method="POST" action="{% url 'usuarios:perfil_2fa' %}">
+            {% csrf_token %}
+            <input type="hidden" name="accion" value="iniciar">
+            <button type="submit" class="px-4 py-2.5 rounded-xl bg-cyan-500 hover:bg-cyan-400 text-black font-black uppercase">
+                <i class="fas fa-qrcode mr-1"></i> Configurar 2FA con Código QR
+            </button>
+        </form>
+        {% endif %}
+    </div>
 </div>
 {% endblock %}

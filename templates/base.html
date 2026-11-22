@@ -281,6 +281,7 @@
                         <a href="{% url 'pos:cajas_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-amber-400 hover:bg-[#162034] transition">Control de Cajas & Turnos</a>
                         <a href="{% url 'facturacion:recibos_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-amber-400 hover:bg-[#162034] transition">Recibos de Caja (Abonos)</a>
                         {% if not es_perfil_tienda %}
+                        <a href="{% url 'facturacion:recurrentes_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-amber-400 hover:bg-[#162034] transition">Facturación Recurrente</a>
                         <a href="{% url 'facturacion:cotizaciones_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-amber-400 hover:bg-[#162034] transition">Cotizaciones</a>
                         <a href="{% url 'facturacion:remisiones_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-amber-400 hover:bg-[#162034] transition">Remisiones</a>
                         <a href="{% url 'facturacion:notas_credito_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-amber-400 hover:bg-[#162034] transition">Notas de Crédito</a>
@@ -303,6 +304,7 @@
                         <a href="{% url 'terceros:lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-purple-400 hover:bg-[#162034] transition">Todos los Terceros</a>
                         <a href="{% url 'terceros:lista' %}?tipo=clientes" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-purple-400 hover:bg-[#162034] transition">Clientes</a>
                         <a href="{% url 'terceros:lista' %}?tipo=proveedores" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-purple-400 hover:bg-[#162034] transition">Proveedores</a>
+                        <a href="{% url 'terceros:importar_rut' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-cyan-400 hover:bg-[#162034] transition">Crear desde RUT PDF</a>
                         <a href="{% url 'terceros:importar' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-amber-400 hover:bg-[#162034] transition">Importar Excel/CSV</a>
                     </div>
                 </div>
@@ -321,7 +323,11 @@
                         <a href="{% url 'inventario:productos_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-sky-400 hover:bg-[#162034] transition">Productos & Precios</a>
                         <a href="{% url 'inventario:productos_importar' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-amber-400 hover:bg-[#162034] transition">Importar Catálogo</a>
                         <a href="{% url 'inventario:bodegas_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-cyan-400 hover:bg-[#162034] transition">Bodegas &amp; Traslados</a>
-                        <a href="{% url 'inventario:compras_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-amber-400 hover:bg-[#162034] transition">Compras & Doc. Soporte</a>
+                        <a href="{% url 'inventario:ordenes_compra_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-amber-400 hover:bg-[#162034] transition">Órdenes de Compra</a>
+                        <a href="{% url 'inventario:compras_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-amber-400 hover:bg-[#162034] transition">Compras &amp; Doc. Soporte</a>
+                        <a href="{% url 'inventario:compra_importar_xml' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-cyan-400 hover:bg-[#162034] transition">Recepción XML Compra / RADIAN</a>
+                        <a href="{% url 'inventario:lotes_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-sky-400 hover:bg-[#162034] transition">Lotes y Vencimientos</a>
+                        <a href="{% url 'inventario:listas_precios_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-sky-400 hover:bg-[#162034] transition">Listas de Precios</a>
                         <a href="{% url 'inventario:ajuste_crear' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-sky-400 hover:bg-[#162034] transition">Ajustes de Kardex</a>
                         <a href="{% url 'inventario:kardex' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-sky-400 hover:bg-[#162034] transition">Kardex de Movimientos</a>
                         <a href="{% url 'inventario:categorias_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-sky-400 hover:bg-[#162034] transition">Categorías</a>
@@ -343,7 +349,12 @@
                         <a href="{% url 'contabilidad:asientos_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-emerald-400 hover:bg-[#162034] transition">Libro Diario (Asientos)</a>
                         <a href="{% url 'contabilidad:egresos_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-emerald-400 hover:bg-[#162034] transition">Egresos &amp; CxP</a>
                         <a href="{% url 'contabilidad:gastos_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-emerald-400 hover:bg-[#162034] transition">Gastos Operativos</a>
+                        <a href="{% url 'contabilidad:gasto_extraer_pdf' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-cyan-400 hover:bg-[#162034] transition">Extraer Gasto desde PDF</a>
+                        <a href="{% url 'contabilidad:conciliacion_bancaria' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-emerald-400 hover:bg-[#162034] transition">Bancos &amp; Conciliación</a>
+                        <a href="{% url 'contabilidad:centros_costos' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-emerald-400 hover:bg-[#162034] transition">Centros de Costos</a>
+                        <a href="{% url 'contabilidad:activos_fijos' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-emerald-400 hover:bg-[#162034] transition">Activos Fijos &amp; Depreciación</a>
                         <a href="{% url 'contabilidad:estados_financieros' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-emerald-400 hover:bg-[#162034] transition">Balance y Estados (P&amp;G)</a>
+                        <a href="{% url 'contabilidad:formularios_tributarios' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-amber-400 hover:bg-[#162034] transition">Borrador Form. 300 / 350</a>
                         <a href="{% url 'contabilidad:auxiliar_terceros' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-emerald-400 hover:bg-[#162034] transition">Auxiliar por Tercero</a>
                         <a href="{% url 'contabilidad:certificados_retencion' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-amber-400 hover:bg-[#162034] transition">Certificados Retención</a>
                         <a href="{% url 'contabilidad:exogena_resumen' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-cyan-400 hover:bg-[#162034] transition">Exógena DIAN</a>
@@ -366,6 +377,7 @@
                     <div x-show="open" class="pl-7 pr-2 space-y-1 mt-1">
                         <a href="{% url 'nomina:nominas_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-violet-400 hover:bg-[#162034] transition">Liquidaciones de Nómina</a>
                         <a href="{% url 'nomina:nomina_liquidar' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-violet-400 hover:bg-[#162034] transition">Liquidar Período</a>
+                        <a href="{% url 'nomina:liquidacion_prestaciones' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-violet-400 hover:bg-[#162034] transition">Prestaciones / Contrato</a>
                         <a href="{% url 'nomina:empleados_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-violet-400 hover:bg-[#162034] transition">Ficha de Empleados</a>
                     </div>
                 </div>
@@ -460,9 +472,9 @@
                         <i class="fas fa-bars text-lg"></i>
                     </button>
 
-                    <!-- Buscador Global Rápido -->
+                    <!-- Buscador Global Rápido (Ctrl+K) -->
                     <div class="relative hidden sm:block w-72">
-                        <input type="text" placeholder="{% if is_superadmin_user %}Buscar inquilinos, usuarios SaaS...{% else %}Buscar clientes, productos, facturas...{% endif %}" 
+                        <input id="faccolGlobalSearchInput" type="text" placeholder="{% if is_superadmin_user %}Buscar inquilinos, usuarios SaaS... (Ctrl+K){% else %}Buscar clientes, productos, facturas... (Ctrl+K){% endif %}"
                                @focus="searchOpen = true"
                                class="w-full bg-[#1a2337] border border-[#1e2d47] rounded-xl pl-9 pr-3 py-1.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-amber-500/50">
                         <i class="fas fa-search absolute left-3 top-2.5 text-slate-500 text-xs"></i>
@@ -644,6 +656,14 @@
 
     </div>
 
+    <script>
+        document.addEventListener('keydown', function (e) {
+            if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+                const el = document.getElementById('faccolGlobalSearchInput');
+                if (el) { e.preventDefault(); el.focus(); el.select(); }
+            }
+        });
+    </script>
     {% block extra_scripts %}{% endblock %}
 </body>
 </html>

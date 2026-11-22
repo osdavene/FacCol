@@ -130,3 +130,32 @@ class Notificacion(models.Model):
 
     def __str__(self):
         return f"[{self.nivel}] {self.usuario_id}: {self.titulo}"
+
+
+class ApiTokenEmpresa(TimestampedModel):
+    """Tokens REST Bearer por empresa (hash SHA-256) para integraciones ERP/e-commerce."""
+    empresa = models.ForeignKey(
+        'empresas.Empresa',
+        on_delete=models.CASCADE,
+        related_name='api_tokens',
+    )
+    nombre = models.CharField(max_length=100)
+    prefijo = models.CharField(max_length=16, db_index=True)
+    token_hash = models.CharField(max_length=64, unique=True, db_index=True)
+    activo = models.BooleanField(default=True)
+    ultimo_uso_at = models.DateTimeField(null=True, blank=True)
+    creado_por = models.ForeignKey(
+        'usuarios.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='api_tokens_creados',
+    )
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = "Token API Empresarial"
+        verbose_name_plural = "Tokens API Empresariales"
+
+    def __str__(self):
+        return f"{self.empresa.display_name} - {self.nombre} ({self.prefijo}...)"

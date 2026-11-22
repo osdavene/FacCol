@@ -229,3 +229,31 @@ class TransaccionWompi(TimestampedModel):
 
     def __str__(self):
         return f"{self.reference} ({self.status}) - ${self.amount_in_cents // 100:,.0f} COP"
+
+
+class FacturaRecurrente(EmpresaTenantModel):
+    """Contratos de facturación periódica automática (mensual, bimestral, anual)."""
+    FRECUENCIA_CHOICES = [
+        ('MENSUAL', 'Mensual'),
+        ('BIMESTRAL', 'Bimestral'),
+        ('ANUAL', 'Anual'),
+    ]
+
+    tercero = models.ForeignKey('terceros.Tercero', on_delete=models.PROTECT, related_name='facturas_recurrentes')
+    nombre_contrato = models.CharField(max_length=160)
+    frecuencia = models.CharField(max_length=20, choices=FRECUENCIA_CHOICES, default='MENSUAL')
+    dia_emision = models.IntegerField(default=1)
+    proxima_fecha = models.DateField(db_index=True)
+    ultima_emision = models.DateField(null=True, blank=True)
+    metodo_pago = models.CharField(max_length=20, choices=Factura.METODO_PAGO_CHOICES, default='CREDITO')
+    enviar_email_cliente = models.BooleanField(default=True)
+    activa = models.BooleanField(default=True)
+    items_json = models.JSONField(default=list, blank=True)
+
+    class Meta:
+        ordering = ['proxima_fecha', '-id']
+        verbose_name = "Factura Recurrente"
+        verbose_name_plural = "Facturas Recurrentes"
+
+    def __str__(self):
+        return f"{self.nombre_contrato} - {self.tercero.razon_social}"

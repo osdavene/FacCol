@@ -1,0 +1,43 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% block title %}Liquidación de Prestaciones y Contrato — FacCol{% endblock %}
+{% block content %}
+<div class="max-w-4xl mx-auto space-y-6">
+    <div>
+        <h1 class="text-2xl font-display font-black text-white">Liquidación de Prestaciones Sociales y Contrato</h1>
+        <p class="text-xs text-slate-400">Calcula Prima, Cesantías, Intereses a las Cesantías (12%) y Vacaciones proporcionales conforme a la Ley laboral colombiana.</p>
+    </div>
+    <form method="POST" class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 grid grid-cols-1 sm:grid-cols-4 gap-3 text-xs items-end">
+        {% csrf_token %}
+        <div>
+            <label class="block text-slate-300 mb-1">Empleado</label>
+            <select name="empleado" required class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                {% for e in empleados %}<option value="{{ e.id }}">{{ e.nombre_completo }}</option>{% endfor %}
+            </select>
+        </div>
+        <div>
+            <label class="block text-slate-300 mb-1">Desde</label>
+            <input type="date" name="fecha_inicio" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+        </div>
+        <div>
+            <label class="block text-slate-300 mb-1">Hasta</label>
+            <input type="date" name="fecha_fin" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+        </div>
+        <button type="submit" class="px-4 py-2.5 rounded-xl bg-amber-500 text-black font-black uppercase">Calcular Liquidación</button>
+    </form>
+    {% if resultado %}
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 space-y-3 text-xs">
+        <div class="text-sm font-bold text-white">{{ resultado.empleado.nombre_completo }} · {{ resultado.dias }} días ({{ resultado.fecha_inicio|date:"Y-m-d" }} a {{ resultado.fecha_fin|date:"Y-m-d" }})</div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div class="p-3 rounded-xl bg-[#162034]">Prima de Servicios<br><b class="text-white text-sm">${{ resultado.prima|floatformat:0|intcomma }}</b></div>
+            <div class="p-3 rounded-xl bg-[#162034]">Cesantías<br><b class="text-white text-sm">${{ resultado.cesantias|floatformat:0|intcomma }}</b></div>
+            <div class="p-3 rounded-xl bg-[#162034]">Intereses Cesantías<br><b class="text-white text-sm">${{ resultado.intereses|floatformat:0|intcomma }}</b></div>
+            <div class="p-3 rounded-xl bg-[#162034]">Vacaciones<br><b class="text-white text-sm">${{ resultado.vacaciones|floatformat:0|intcomma }}</b></div>
+        </div>
+        <div class="text-right text-lg font-black text-emerald-400 pt-2 border-t border-[#1e2d47]">
+            Total Liquidación: ${{ resultado.total|floatformat:0|intcomma }} COP
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,70 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% block title %}Conciliación Bancaria — FacCol{% endblock %}
+{% block content %}
+<div class="max-w-6xl mx-auto space-y-6">
+    <div>
+        <h1 class="text-2xl font-display font-black text-white">Bancos, Cajas y Conciliación Bancaria</h1>
+        <p class="text-xs text-slate-400">Registra cuentas bancarias vinculadas al PUC e importa extractos CSV/Excel para cruce automático.</p>
+    </div>
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 text-xs">
+        <form method="POST" class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-5 space-y-3">
+            {% csrf_token %}
+            <input type="hidden" name="accion" value="crear_cuenta">
+            <div class="font-bold text-white uppercase">1. Nueva Cuenta Bancaria / Caja</div>
+            <div class="grid grid-cols-2 gap-2">
+                <input type="text" name="nombre" required placeholder="Nombre (Ej. Bancolombia Ahorros)" class="bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                <input type="text" name="banco" placeholder="Banco (Ej. Bancolombia)" class="bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                <input type="text" name="numero_cuenta" placeholder="No. Cuenta" class="bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                <select name="cuenta_contable" required class="bg-[#162034] border border-[#1e2d47] rounded-xl px-2 py-2 text-white">
+                    {% for c in cuentas_puc %}<option value="{{ c.id }}">{{ c.codigo }} - {{ c.nombre }}</option>{% endfor %}
+                </select>
+            </div>
+            <button type="submit" class="px-4 py-2 rounded-xl bg-amber-500 text-black font-black uppercase">Registrar Cuenta</button>
+        </form>
+        <form method="POST" enctype="multipart/form-data" class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-5 space-y-3">
+            {% csrf_token %}
+            <input type="hidden" name="accion" value="importar_extracto">
+            <div class="font-bold text-cyan-400 uppercase">2. Importar Extracto Bancario (.xlsx / .csv)</div>
+            <div class="text-[11px] text-slate-400">Columnas esperadas: <code>fecha</code>, <code>descripcion</code>, <code>referencia</code>, <code>valor</code>.</div>
+            <div class="flex flex-wrap gap-2 items-center">
+                <select name="cuenta_bancaria" required class="bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                    {% for cb in cuentas_banco %}<option value="{{ cb.id }}">{{ cb.nombre }}</option>{% endfor %}
+                </select>
+                <input type="file" name="archivo" accept=".xlsx,.csv" required class="text-slate-300">
+                <button type="submit" class="px-4 py-2 rounded-xl bg-emerald-500 text-black font-black uppercase">Importar y Conciliar</button>
+            </div>
+        </form>
+    </div>
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl overflow-hidden text-xs">
+        <table class="w-full text-left">
+            <thead class="bg-[#162034] text-slate-400 uppercase text-[10px]">
+                <tr><th class="p-3">Fecha</th><th>Cuenta</th><th>Descripción</th><th>Valor</th><th>Estado</th><th class="p-3 text-right">Acción</th></tr>
+            </thead>
+            <tbody>
+                {% for m in movimientos %}
+                <tr class="border-t border-[#1e2d47]">
+                    <td class="p-3">{{ m.fecha|date:"Y-m-d" }}</td>
+                    <td>{{ m.cuenta_bancaria.nombre }}</td>
+                    <td class="text-white">{{ m.descripcion }}</td>
+                    <td class="font-bold {% if m.valor >= 0 %}text-emerald-400{% else %}text-rose-400{% endif %}">${{ m.valor|floatformat:0|intcomma }}</td>
+                    <td>{% if m.conciliado %}<span class="text-emerald-400 font-bold">Conciliado</span>{% else %}<span class="text-amber-300">Pendiente</span>{% endif %}</td>
+                    <td class="p-3 text-right">
+                        {% if not m.conciliado %}
+                        <form method="POST">
+                            {% csrf_token %}
+                            <input type="hidden" name="accion" value="conciliar_manual">
+                            <input type="hidden" name="movimiento_id" value="{{ m.id }}">
+                            <button type="submit" class="px-2.5 py-1 rounded-lg bg-[#162034] text-cyan-300 border border-[#1e2d47] font-bold">Conciliar</button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="6" class="p-6 text-center text-slate-400">Sin movimientos de extracto importados.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

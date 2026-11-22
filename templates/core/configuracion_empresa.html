@@ -241,5 +241,117 @@
             </div>
         </form>
     </div>
+
+    <!-- 4. Certificado Digital .p12 DIAN (Cifrado en BD) -->
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 sm:p-8 shadow-xl space-y-4 text-xs">
+        <h2 class="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
+            <i class="fas fa-certificate"></i>
+            <span>4. Certificado Digital DIAN (.p12 / .pfx — Firma XAdES-EPES)</span>
+        </h2>
+        {% if empresa.dian_certificado_p12_enc %}
+        <div class="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300">
+            Certificado cargado y cifrado: <strong>{{ empresa.dian_certificado_sujeto|default:"X.509" }}</strong>
+            {% if empresa.dian_certificado_vence %} · Vence: <strong>{{ empresa.dian_certificado_vence|date:"Y-m-d" }}</strong>{% endif %}
+        </div>
+        {% endif %}
+        <form method="POST" enctype="multipart/form-data" class="grid grid-cols-1 sm:grid-cols-3 gap-4 items-end">
+            {% csrf_token %}
+            <input type="hidden" name="seccion" value="certificado_p12">
+            <div>
+                <label class="block font-semibold text-slate-300 mb-1">Archivo .p12 / .pfx</label>
+                <input type="file" name="archivo_p12" accept=".p12,.pfx" class="w-full text-slate-300">
+            </div>
+            <div>
+                <label class="block font-semibold text-slate-300 mb-1">Contraseña del Certificado</label>
+                <input type="password" name="password_p12" placeholder="••••••••" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+            </div>
+            <div class="flex gap-2 items-center">
+                <button type="submit" class="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black uppercase">Cargar .p12</button>
+                {% if empresa.dian_certificado_p12_enc %}
+                <button type="submit" name="clear_p12" value="1" class="px-3 py-2.5 rounded-xl bg-rose-500/20 text-rose-300 border border-rose-500/30 font-bold">Eliminar</button>
+                {% endif %}
+            </div>
+        </form>
+    </div>
+
+    <!-- 5. Multi-Resolución DIAN (1-a-N) -->
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 sm:p-8 shadow-xl space-y-4 text-xs">
+        <h2 class="text-sm font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-2">
+            <i class="fas fa-list-ol"></i>
+            <span>5. Resoluciones DIAN por Tipo de Documento</span>
+        </h2>
+        <form method="POST" class="grid grid-cols-2 sm:grid-cols-6 gap-3 items-end">
+            {% csrf_token %}
+            <input type="hidden" name="seccion" value="resolucion_dian">
+            <select name="tipo_documento" class="bg-[#162034] border border-[#1e2d47] rounded-xl px-2 py-2 text-white">
+                <option value="FACTURA">Factura FE</option>
+                <option value="POS_ELECTRONICO">DEE POS</option>
+                <option value="DOCUMENTO_SOPORTE">Doc. Soporte</option>
+                <option value="NOTA_CREDITO">Nota Crédito</option>
+                <option value="NOTA_DEBITO">Nota Débito</option>
+            </select>
+            <input type="text" name="prefijo" value="FE" placeholder="Prefijo" class="bg-[#162034] border border-[#1e2d47] rounded-xl px-2 py-2 text-white font-mono">
+            <input type="text" name="numero_resolucion" placeholder="No. Resolución" required class="bg-[#162034] border border-[#1e2d47] rounded-xl px-2 py-2 text-white font-mono">
+            <input type="number" name="rango_desde" value="1" placeholder="Desde" class="bg-[#162034] border border-[#1e2d47] rounded-xl px-2 py-2 text-white">
+            <input type="number" name="rango_hasta" value="5000" placeholder="Hasta" class="bg-[#162034] border border-[#1e2d47] rounded-xl px-2 py-2 text-white">
+            <div class="flex items-center gap-2">
+                <label class="text-[11px] text-slate-300 flex items-center gap-1"><input type="checkbox" name="predeterminada" checked> Activa</label>
+                <button type="submit" class="px-3 py-2 rounded-xl bg-indigo-500 hover:bg-indigo-400 text-white font-bold">Agregar</button>
+            </div>
+        </form>
+        {% if resoluciones %}
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-t border-[#1e2d47]">
+                <thead class="text-slate-400 uppercase text-[10px]">
+                    <tr><th class="py-2">Tipo</th><th>Prefijo</th><th>Resolución</th><th>Rango</th><th>Actual</th><th>Estado</th></tr>
+                </thead>
+                <tbody>
+                    {% for r in resoluciones %}
+                    <tr class="border-t border-[#1e2d47]/50">
+                        <td class="py-1.5">{{ r.get_tipo_documento_display }}</td>
+                        <td class="font-mono">{{ r.prefijo }}</td>
+                        <td class="font-mono">{{ r.numero_resolucion }}</td>
+                        <td>{{ r.rango_desde }} - {{ r.rango_hasta }}</td>
+                        <td class="font-bold text-amber-300">{{ r.consecutivo_actual }}</td>
+                        <td>{% if r.predeterminada %}<span class="text-emerald-400 font-bold">Predeterminada</span>{% else %}Secundaria{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+    </div>
+
+    <!-- 6. API REST v1 Tokens -->
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 sm:p-8 shadow-xl space-y-4 text-xs">
+        <div class="flex items-center justify-between">
+            <h2 class="text-sm font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-2">
+                <i class="fas fa-key"></i>
+                <span>6. Tokens API REST v1 (Integraciones Externas)</span>
+            </h2>
+            <a href="{% url 'api_v1_openapi' %}" target="_blank" class="text-cyan-400 hover:underline font-mono">OpenAPI JSON</a>
+        </div>
+        {% if nuevo_token_plano %}
+        <div class="p-3 rounded-xl bg-amber-500/15 border border-amber-500/40 text-amber-200 font-mono">
+            Nuevo Token (cópialo ahora): <strong class="select-all">{{ nuevo_token_plano }}</strong>
+        </div>
+        {% endif %}
+        <form method="POST" class="flex gap-3">
+            {% csrf_token %}
+            <input type="hidden" name="seccion" value="api_token">
+            <input type="text" name="nombre_token" placeholder="Nombre integración (ej. WooCommerce / Zapier)" class="flex-1 bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+            <button type="submit" class="px-4 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-black uppercase">Generar Token</button>
+        </form>
+        {% for t in api_tokens %}
+        <div class="flex items-center justify-between py-2 border-t border-[#1e2d47]/50">
+            <div><strong class="text-white">{{ t.nombre }}</strong> · <code class="text-slate-400">{{ t.prefijo }}...</code></div>
+            <form method="POST">
+                {% csrf_token %}
+                <input type="hidden" name="seccion" value="api_token">
+                <button type="submit" name="revocar_token_id" value="{{ t.id }}" class="text-rose-400 hover:underline font-bold">Revocar</button>
+            </form>
+        </div>
+        {% endfor %}
+    </div>
 </div>
 {% endblock %}

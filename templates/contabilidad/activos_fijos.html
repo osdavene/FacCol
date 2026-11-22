@@ -1,0 +1,53 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% block title %}Activos Fijos y Depreciación — FacCol{% endblock %}
+{% block content %}
+<div class="max-w-6xl mx-auto space-y-6">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+        <div>
+            <h1 class="text-2xl font-display font-black text-white">Activos Fijos y Depreciación NIIF</h1>
+            <p class="text-xs text-slate-400">Control de propiedad, planta y equipo con causación automática mensual (516005 vs 159205).</p>
+        </div>
+        <form method="POST" class="flex items-center gap-2 text-xs">
+            {% csrf_token %}
+            <input type="hidden" name="accion" value="depreciar">
+            <input type="number" name="ano" value="{{ hoy_ano }}" class="w-20 bg-[#162034] border border-[#1e2d47] rounded-xl px-2 py-2 text-white">
+            <input type="number" name="mes" min="1" max="12" value="{{ hoy_mes }}" class="w-16 bg-[#162034] border border-[#1e2d47] rounded-xl px-2 py-2 text-white">
+            <button type="submit" class="px-4 py-2 rounded-xl bg-emerald-500 text-black font-black uppercase">Ejecutar Depreciación Mes</button>
+        </form>
+    </div>
+    <form method="POST" class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 grid grid-cols-1 sm:grid-cols-6 gap-3 text-xs items-end">
+        {% csrf_token %}
+        <input type="text" name="codigo" required placeholder="Código AF-01" class="bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+        <input type="text" name="nombre" required placeholder="Nombre equipo/vehículo" class="sm:col-span-2 bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+        <input type="date" name="fecha_compra" required class="bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+        <input type="number" step="0.01" name="valor_compra" required placeholder="Valor Compra" class="bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+        <div class="flex gap-2">
+            <input type="number" name="vida_util_meses" value="60" placeholder="Meses" class="w-20 bg-[#162034] border border-[#1e2d47] rounded-xl px-2 py-2 text-white">
+            <button type="submit" class="px-4 py-2 rounded-xl bg-amber-500 text-black font-black uppercase">Agregar</button>
+        </div>
+    </form>
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl overflow-hidden text-xs">
+        <table class="w-full text-left">
+            <thead class="bg-[#162034] text-slate-400 uppercase text-[10px]">
+                <tr><th class="p-3">Código</th><th>Activo</th><th>Compra</th><th>Valor Compra</th><th>Dep. Mensual</th><th>Dep. Acumulada</th><th>Valor Neto</th></tr>
+            </thead>
+            <tbody>
+                {% for a in activos %}
+                <tr class="border-t border-[#1e2d47]">
+                    <td class="p-3 font-mono text-amber-300 font-bold">{{ a.codigo }}</td>
+                    <td class="text-white font-bold">{{ a.nombre }}</td>
+                    <td>{{ a.fecha_compra|date:"Y-m-d" }}</td>
+                    <td>${{ a.valor_compra|floatformat:0|intcomma }}</td>
+                    <td class="text-cyan-400">${{ a.cuota_depreciacion_mensual|floatformat:0|intcomma }}</td>
+                    <td class="text-rose-300">${{ a.depreciacion_acumulada|floatformat:0|intcomma }}</td>
+                    <td class="text-emerald-400 font-bold">${{ a.valor_neto_libros|floatformat:0|intcomma }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="7" class="p-6 text-center text-slate-400">No hay activos fijos registrados.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

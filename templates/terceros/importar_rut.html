@@ -1,0 +1,22 @@
+{% extends 'base.html' %}
+{% block title %}Importar Tercero desde RUT PDF — FacCol{% endblock %}
+{% block content %}
+<div class="max-w-3xl mx-auto space-y-6">
+    <div>
+        <h1 class="text-2xl font-display font-black text-white">Crear Tercero desde PDF del RUT DIAN</h1>
+        <p class="text-xs text-slate-400">Extrae NIT, DV, razón social, dirección, correo y responsabilidades automáticamente desde el PDF oficial.</p>
+    </div>
+    <form method="POST" enctype="multipart/form-data" class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 space-y-4 text-xs">
+        {% csrf_token %}
+        <div>
+            <label class="block font-semibold text-slate-300 mb-1">Archivo PDF del RUT (Formulario 001)</label>
+            <input type="file" name="archivo_rut" accept=".pdf" required class="w-full text-slate-300">
+        </div>
+        <div class="flex gap-4">
+            <label class="flex items-center gap-2"><input type="checkbox" name="es_cliente" checked> Cliente</label>
+            <label class="flex items-center gap-2"><input type="checkbox" name="es_proveedor"> Proveedor</label>
+        </div>
+        <button type="submit" class="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black uppercase">Extraer y Guardar Tercero</button>
+    </form>
+</div>
+{% endblock %}

@@ -321,6 +321,47 @@ def registrar_asiento_nomina(nomina):
                 asiento=asiento, cuenta=cta_por_pagar, descripcion=f"Neto salarios por pagar {ref}",
                 debito=Decimal("0.00"), credito=nomina.total_neto
             )
+
+        # Provisiones de prestaciones sociales (Prima, Cesantías, Intereses, Vacaciones)
+        tot_prima = sum((d.provision_prima for d in detalles), Decimal("0.00"))
+        tot_ces = sum((d.provision_cesantias for d in detalles), Decimal("0.00"))
+        tot_int = sum((d.provision_intereses for d in detalles), Decimal("0.00"))
+        tot_vac = sum((d.provision_vacaciones for d in detalles), Decimal("0.00"))
+        tot_prov = tot_prima + tot_ces + tot_int + tot_vac
+        if tot_prov > 0:
+            cta_gasto_prov = _asegurar_cuenta(empresa, "510530", "Cesantías y Prestaciones Sociales", "DEBITO")
+            cta_pasivo_prov = _asegurar_cuenta(empresa, "261005", "Para Obligaciones Laborales (Provisiones)", "CREDITO")
+            AsientoLinea.objects.create(
+                asiento=asiento, cuenta=cta_gasto_prov,
+                descripcion=f"Provisión prestaciones (Prima/Ces/Int/Vac) {ref}",
+                debito=tot_prov, credito=Decimal("0.00"),
+            )
+            AsientoLinea.objects.create(
+                asiento=asiento, cuenta=cta_pasivo_prov,
+                descripcion=f"Pasivo estimado prestaciones {ref}",
+                debito=Decimal("0.00"), credito=tot_prov,
+            )
+
+        # Seguridad social patronal + Parafiscales
+        tot_sal_pat = sum((d.salud_empleador_8_5 for d in detalles), Decimal("0.00"))
+        tot_pen_pat = sum((d.pension_empleador_12 for d in detalles), Decimal("0.00"))
+        tot_arl = sum((d.arl_empleador for d in detalles), Decimal("0.00"))
+        tot_caja = sum((d.caja_compensacion_4 for d in detalles), Decimal("0.00"))
+        tot_sena_icbf = sum((d.sena_2 + d.icbf_3 for d in detalles), Decimal("0.00"))
+        tot_patronal = tot_sal_pat + tot_pen_pat + tot_arl + tot_caja + tot_sena_icbf
+        if tot_patronal > 0:
+            cta_gasto_seg = _asegurar_cuenta(empresa, "510568", "Aportes Patronales Seguridad Social y Parafiscales", "DEBITO")
+            cta_pasivo_par = _asegurar_cuenta(empresa, "237010", "Aportes ARL, ICBF, SENA y Caja Compensación", "CREDITO")
+            AsientoLinea.objects.create(
+                asiento=asiento, cuenta=cta_gasto_seg,
+                descripcion=f"Aportes patronales seguridad social y parafiscales {ref}",
+                debito=tot_patronal, credito=Decimal("0.00"),
+            )
+            AsientoLinea.objects.create(
+                asiento=asiento, cuenta=cta_pasivo_par,
+                descripcion=f"Aportes patronales por pagar {ref}",
+                debito=Decimal("0.00"), credito=tot_patronal,
+            )
         return asiento
 
 
@@ -528,3 +569,190 @@ def ejecutar_cierre_anual_resultados(empresa, ano: int, usuario=None):
             defaults={"cerrado": True, "cerrado_por": usuario, "observaciones": f"Cierre anual {ano}"},
         )
         return asiento, f"Cierre anual {ano} ejecutado correctamente (Resultado neto: ${resultado_neto:,.0f} COP)."
+
+
+def ejecutar_depreciacion_activos(empresa, ano: int, mes: int):
+    """Calcula y contabiliza la depreciación mensual NIIF (516005 vs 159205) de activos fijos activos."""
+    import calendar
+    from apps.contabilidad.models import ActivoFijo
+
+    fecha_dep = date(ano, mes, calendar.monthrange(ano, mes)[1])
+    if periodo_esta_cerrado(empresa, fecha_dep):
+        return None, 0, Decimal("0.00"), f"El período {ano}-{mes:02d} está cerrado."
+    ref = f"DEP-{ano}{mes:02d}"
+    if AsientoContable.objects.filter(empresa=empresa, referencia_origen=ref).exists():
+        return None, 0, Decimal("0.00"), f"La depreciación del período {ano}-{mes:02d} ya fue ejecutada."
+
+    activos = list(ActivoFijo.objects.filter(empresa=empresa, activo=True, fecha_compra__lte=fecha_dep))
+    total_dep = Decimal("0.00")
+    procesados = []
+    for act in activos:
+        saldo_depreciable = max(Decimal("0.00"), (act.valor_compra - act.valor_residual) - act.depreciacion_acumulada)
+        if saldo_depreciable <= Decimal("0.00"):
+            continue
+        cuota = min(act.cuota_depreciacion_mensual, saldo_depreciable)
+        if cuota > Decimal("0.00"):
+            procesados.append((act, cuota))
+            total_dep += cuota
+
+    if not procesados:
+        return None, 0, Decimal("0.00"), "No hay activos pendientes por depreciar para el período."
+
+    with transaction.atomic():
+        cta_gasto = _asegurar_cuenta(empresa, "516005", "Depreciación Propiedad Planta y Equipo", "DEBITO")
+        cta_acum = _asegurar_cuenta(empresa, "159205", "Depreciación Acumulada", "CREDITO")
+        asiento = AsientoContable.objects.create(
+            empresa=empresa,
+            numero_comprobante=ref,
+            fecha=fecha_dep,
+            tipo="GENERAL",
+            concepto=f"Depreciación mensual activos fijos {ano}-{mes:02d}",
+            referencia_origen=ref,
+        )
+        for act, cuota in procesados:
+            AsientoLinea.objects.create(
+                asiento=asiento, cuenta=cta_gasto,
+                descripcion=f"Depreciación {act.codigo} - {act.nombre}",
+                debito=cuota, credito=Decimal("0.00"),
+            )
+            AsientoLinea.objects.create(
+                asiento=asiento, cuenta=cta_acum,
+                descripcion=f"Depreciación acumulada {act.codigo}",
+                debito=Decimal("0.00"), credito=cuota,
+            )
+            act.depreciacion_acumulada += cuota
+            act.ultima_depreciacion = fecha_dep
+            act.save(update_fields=["depreciacion_acumulada", "ultima_depreciacion"])
+    return asiento, len(procesados), total_dep, f"Depreciación {ano}-{mes:02d} contabilizada ({len(procesados)} activos, ${total_dep:,.0f})."
+
+
+def calcular_borradores_tributarios(empresa, ano: int, mes: int):
+    """Calcula borradores informativos de Formulario 300 (IVA) y Formulario 350 (ReteFuente)."""
+    from apps.facturacion.models import Factura
+
+    qs_vta = Factura.objects.filter(
+        empresa=empresa,
+        fecha_emision__year=ano,
+        fecha_emision__month=mes,
+        tipo_documento__in=("FACTURA", "POS_ELECTRONICO", "NOTA_DEBITO"),
+    ).exclude(estado="ANULADA")
+    qs_nc = Factura.objects.filter(
+        empresa=empresa,
+        fecha_emision__year=ano,
+        fecha_emision__month=mes,
+        tipo_documento="NOTA_CREDITO",
+    ).exclude(estado="ANULADA")
+
+    ingresos_brutos = sum((f.subtotal for f in qs_vta), Decimal("0.00"))
+    devoluciones_vta = sum((f.subtotal for f in qs_nc), Decimal("0.00"))
+    iva_generado = sum((f.iva for f in qs_vta), Decimal("0.00")) - sum((f.iva for f in qs_nc), Decimal("0.00"))
+
+    mov_iva_desc = AsientoLinea.objects.filter(
+        asiento__empresa=empresa,
+        asiento__fecha__year=ano,
+        asiento__fecha__month=mes,
+        cuenta__codigo__startswith="240805",
+    ).aggregate(deb=Sum("debito"), cred=Sum("credito"))
+    iva_descontable = (mov_iva_desc["deb"] or Decimal("0.00")) - (mov_iva_desc["cred"] or Decimal("0.00"))
+    saldo_pagar_iva = max(Decimal("0.00"), iva_generado - max(Decimal("0.00"), iva_descontable))
+
+    mov_rte = AsientoLinea.objects.filter(
+        asiento__empresa=empresa,
+        asiento__fecha__year=ano,
+        asiento__fecha__month=mes,
+        cuenta__codigo__startswith="2365",
+    ).aggregate(deb=Sum("debito"), cred=Sum("credito"))
+    retefuente_pagar = max(Decimal("0.00"), (mov_rte["cred"] or Decimal("0.00")) - (mov_rte["deb"] or Decimal("0.00")))
+
+    return {
+        "ano": ano,
+        "mes": mes,
+        "form_300": {
+            "ingresos_brutos": ingresos_brutos,
+            "devoluciones": devoluciones_vta,
+            "iva_generado": max(Decimal("0.00"), iva_generado),
+            "iva_descontable": max(Decimal("0.00"), iva_descontable),
+            "saldo_pagar": saldo_pagar_iva,
+        },
+        "form_350": {
+            "retefuente_practicada": retefuente_pagar,
+        },
+    }
+
+
+def generar_xml_exogena_prevalidador(empresa, ano: int, formato: str = "1001") -> str:
+    """Genera XML compatible con Prevalidador DIAN de Información Exógena (Formatos 1001 y 1007)."""
+    import xml.etree.ElementTree as ET
+    from apps.facturacion.models import Factura
+    from apps.contabilidad.models import ComprobanteEgreso, GastoOperativo
+
+    fmt = "1007" if str(formato) == "1007" else "1001"
+    root = ET.Element("mas")
+    cab = ET.SubElement(root, "Cab")
+    for k, v in (
+        ("Ano", str(ano)),
+        ("CodCpt", "1"),
+        ("Formato", fmt),
+        ("Version", "10" if fmt == "1001" else "9"),
+        ("NumEnvio", "1"),
+        ("FecEnvio", f"{date.today().strftime('%Y-%m-%d')}T08:00:00"),
+        ("FecInicial", f"{ano}-01-01"),
+        ("FecFinal", f"{ano}-12-31"),
+        ("ValorTotal", "0"),
+        ("CantReg", "0"),
+    ):
+        ET.SubElement(cab, k).text = v
+
+    registros = []
+    if fmt == "1007":
+        qs = (
+            Factura.objects.filter(
+                empresa=empresa,
+                fecha_emision__year=ano,
+                tipo_documento__in=("FACTURA", "POS_ELECTRONICO"),
+            )
+            .exclude(estado="ANULADA")
+            .values("tercero__tipo_documento", "tercero__numero_documento", "tercero__razon_social")
+            .annotate(base=Sum("subtotal"), iva=Sum("iva"))
+        )
+        for row in qs:
+            registros.append({
+                "tdoc": "31" if row["tercero__tipo_documento"] == "NIT" else "13",
+                "nid": row["tercero__numero_documento"] or "",
+                "raz": row["tercero__razon_social"] or "",
+                "val": int((row["base"] or Decimal("0")).quantize(Decimal("1"))),
+                "iva": int((row["iva"] or Decimal("0")).quantize(Decimal("1"))),
+            })
+    else:
+        qs_g = (
+            GastoOperativo.objects.filter(empresa=empresa, fecha__year=ano)
+            .values("tercero__tipo_documento", "tercero__numero_documento", "tercero__razon_social")
+            .annotate(base=Sum("subtotal"), rte=Sum("retencion_fuente"))
+        )
+        for row in qs_g:
+            registros.append({
+                "tdoc": "31" if row["tercero__tipo_documento"] == "NIT" else "13",
+                "nid": row["tercero__numero_documento"] or "",
+                "raz": row["tercero__razon_social"] or "",
+                "val": int((row["base"] or Decimal("0")).quantize(Decimal("1"))),
+                "rte": int((row["rte"] or Decimal("0")).quantize(Decimal("1"))),
+            })
+
+    total_sum = sum(r["val"] for r in registros)
+    cab.find("ValorTotal").text = str(total_sum)
+    cab.find("CantReg").text = str(len(registros))
+
+    tag_item = "ingresos" if fmt == "1007" else "pagos"
+    for r in registros:
+        attrs = {
+            "cpt": "4001" if fmt == "1007" else "5016",
+            "tdoc": r["tdoc"],
+            "nid": r["nid"],
+            "raz": r["raz"][:120],
+            "pago" if fmt == "1001" else "vbr": str(r["val"]),
+        }
+        if fmt == "1001":
+            attrs["ret"] = str(r.get("rte", 0))
+        ET.SubElement(root, tag_item, attrs)
+
+    return ET.tostring(root, encoding="utf-8", xml_declaration=True).decode("utf-8")

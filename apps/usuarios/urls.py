@@ -5,11 +5,13 @@ app_name = 'usuarios'
 
 urlpatterns = [
     path('login/', views.login_view, name='login'),
+    path('login/verificar-2fa/', views.verificar_2fa_view, name='verificar_2fa'),
     path('verificar/<uidb64>/<token>/', views.verificar_email_view, name='verificar_email'),
     path('logout/', views.logout_view, name='logout'),
     path('password-reset/', views.password_reset_request_view, name='password_reset'),
     path('password-reset/<uidb64>/<token>/', views.password_reset_confirm_view, name='password_reset_confirm'),
     path('perfil/', views.perfil_view, name='perfil'),
+    path('perfil/2fa/', views.perfil_2fa_config, name='perfil_2fa'),
     path('equipo/', views.usuarios_lista, name='lista'),
     path('equipo/nuevo/', views.usuario_crear, name='crear'),
     path('equipo/<int:asignacion_id>/rol/', views.usuario_cambiar_rol, name='cambiar_rol'),

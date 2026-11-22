@@ -1,0 +1,26 @@
+{% extends 'base.html' %}
+{% block title %}Extraer Gasto desde PDF — FacCol{% endblock %}
+{% block content %}
+<div class="max-w-3xl mx-auto space-y-6">
+    <div>
+        <h1 class="text-2xl font-display font-black text-white">Pre-cargar Gasto Operativo desde PDF</h1>
+        <p class="text-xs text-slate-400">Lee NIT, número de factura, subtotal, IVA, total y sugiere automáticamente la cuenta PUC del gasto.</p>
+    </div>
+    <form method="POST" enctype="multipart/form-data" class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 space-y-4 text-xs">
+        {% csrf_token %}
+        <input type="file" name="archivo_pdf" accept=".pdf" required class="w-full text-slate-300">
+        <button type="submit" class="px-5 py-2.5 rounded-xl bg-amber-500 text-black font-black uppercase">Analizar PDF</button>
+    </form>
+    {% if extraido %}
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 text-xs space-y-2">
+        <div class="font-bold text-emerald-400 uppercase">Datos Detectados</div>
+        <div>NIT: <b>{{ extraido.nit|default:"No detectado" }}</b> · Soporte: <b>{{ extraido.numero_soporte|default:"—" }}</b></div>
+        <div>Subtotal: <b>${{ extraido.subtotal }}</b> · IVA: <b>${{ extraido.iva }}</b> · Total: <b>${{ extraido.total }}</b></div>
+        <div>Cuenta PUC sugerida: <code>{{ extraido.puc_sugerida }}</code> · Concepto: <b>{{ extraido.concepto }}</b></div>
+        <div class="pt-2">
+            <a href="{% url 'contabilidad:gasto_crear' %}" class="px-4 py-2 rounded-xl bg-cyan-500 text-black font-black uppercase inline-block">Ir a Causar Gasto</a>
+        </div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

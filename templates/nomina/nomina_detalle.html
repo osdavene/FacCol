@@ -18,7 +18,11 @@
         <div class="flex flex-wrap items-center gap-2">
             <a href="{% url 'nomina:nomina_exportar_pila' nomina.id %}"
                class="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-2 transition">
-                <i class="fas fa-file-csv"></i> Exportar PILA
+                <i class="fas fa-file-csv"></i> Exportar PILA CSV
+            </a>
+            <a href="{% url 'nomina:nomina_exportar_pila_2388' nomina.id %}"
+               class="px-4 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs flex items-center gap-2 transition">
+                <i class="fas fa-file-lines"></i> PILA Res. 2388 (.txt)
             </a>
             <form method="POST" action="{% url 'nomina:nomina_transmitir_lote' nomina.id %}">
                 {% csrf_token %}
@@ -67,6 +71,12 @@
                         <td class="p-4 text-right space-x-1 whitespace-nowrap">
                             <a href="{% url 'nomina:nomina_desprendible' d.id %}" class="px-2.5 py-1.5 rounded-xl bg-[#162034] text-amber-400 font-bold text-[11px]">Colilla</a>
                             <a href="{% url 'nomina:nomina_xml_empleado' d.id %}" class="px-2.5 py-1.5 rounded-xl bg-[#162034] text-cyan-400 font-bold text-[11px]">XML CUNE</a>
+                            <form method="POST" action="{% url 'nomina:nomina_nota_ajuste_crear' d.id %}" class="inline">
+                                {% csrf_token %}
+                                <input type="hidden" name="tipo_nota" value="1">
+                                <input type="hidden" name="motivo" value="Ajuste nómina electrónica">
+                                <button type="submit" class="px-2.5 py-1.5 rounded-xl bg-[#162034] text-amber-300 font-bold text-[11px]">Nota Ajuste 103</button>
+                            </form>
                             {% if d.empleado.email %}
                             <form method="POST" action="{% url 'nomina:nomina_enviar_colilla' d.id %}" class="inline">
                                 {% csrf_token %}

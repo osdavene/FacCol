@@ -19,10 +19,11 @@ from django.utils.html import escape, strip_tags
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
 
-from apps.facturacion.models import Factura, FacturaItem, ReciboCaja, TransaccionWompi
+from apps.facturacion.models import Factura, FacturaItem, FacturaRecurrente, ReciboCaja, TransaccionWompi
 from apps.facturacion.pdf_service import generar_pdf_factura, generar_pdf_tirilla, generar_qr_base64
 from apps.facturacion.dian_service import (
     desglosar_impuestos_item,
+    encolar_documento_dian,
     generar_attached_document_xml,
     generar_xml_ubl,
     procesar_cola_dian,
@@ -60,11 +61,16 @@ from apps.usuarios.decorators import requiere_facturacion
 
 
 def _obtener_prefijo_y_consecutivo(empresa, tipo_documento):
-    """Obtiene el prefijo y siguiente consecutivo según el tipo de documento."""
+    """Obtiene el prefijo y siguiente consecutivo con bloqueo atómico según el tipo de documento."""
     if tipo_documento == 'POS_ELECTRONICO':
-        return empresa.prefijo_pos_electronico, empresa.obtener_siguiente_consecutivo_pos()
+        res = empresa.obtener_resolucion_activa('POS_ELECTRONICO')
+        return (res.prefijo if res else empresa.prefijo_pos_electronico), empresa.obtener_siguiente_consecutivo_pos()
     if tipo_documento == 'FACTURA':
-        return empresa.prefijo_factura, empresa.obtener_siguiente_consecutivo()
+        res = empresa.obtener_resolucion_activa('FACTURA')
+        return (res.prefijo if res else empresa.prefijo_factura), empresa.obtener_siguiente_consecutivo()
+    if tipo_documento in ('NOTA_CREDITO', 'NOTA_DEBITO') and empresa.obtener_resolucion_activa(tipo_documento):
+        res = empresa.obtener_resolucion_activa(tipo_documento)
+        return res.prefijo, empresa.obtener_siguiente_consecutivo(tipo_documento)
 
     prefijos = {
         'COTIZACION': 'COT',
@@ -74,7 +80,8 @@ def _obtener_prefijo_y_consecutivo(empresa, tipo_documento):
     }
     prefijo = prefijos.get(tipo_documento, 'DOC')
     ultimo = (
-        Factura.objects.filter(empresa=empresa, tipo_documento=tipo_documento, prefijo=prefijo)
+        Factura.objects.select_for_update()
+        .filter(empresa=empresa, tipo_documento=tipo_documento, prefijo=prefijo)
         .order_by('-consecutivo')
         .first()
     )
@@ -82,22 +89,24 @@ def _obtener_prefijo_y_consecutivo(empresa, tipo_documento):
 
 
 def _mover_stock_documento(empresa, producto, cantidad, tipo_mov, motivo, referencia):
-    """Registra una salida o reversión de inventario de forma uniforme."""
+    """Registra una salida o reversión de inventario con bloqueo de fila (select_for_update)."""
     if not producto or not producto.maneja_inventario:
         return
-    saldo_anterior = producto.stock_actual
+    prod_locked = Producto.objects.select_for_update().get(pk=producto.pk)
+    saldo_anterior = prod_locked.stock_actual
     if tipo_mov == 'SALIDA':
         saldo_nuevo = max(Decimal('0.00'), saldo_anterior - cantidad)
     else:
         saldo_nuevo = saldo_anterior + cantidad
+    prod_locked.stock_actual = saldo_nuevo
+    prod_locked.save(update_fields=['stock_actual'])
     producto.stock_actual = saldo_nuevo
-    producto.save(update_fields=['stock_actual'])
     MovimientoInventario.objects.create(
         empresa=empresa,
-        producto=producto,
+        producto=prod_locked,
         tipo=tipo_mov,
         cantidad=cantidad,
-        costo_unitario=producto.costo_unitario,
+        costo_unitario=prod_locked.costo_unitario,
         saldo_anterior=saldo_anterior,
         saldo_nuevo=saldo_nuevo,
         motivo=motivo,
@@ -211,7 +220,13 @@ def factura_crear(request):
                 prod = Producto.objects.filter(id=it.get('producto_id'), empresa=empresa).first()
                 desc = it.get('descripcion') or (prod.nombre if prod else "Producto / Servicio")
                 cant = Decimal(str(it.get('cantidad', 1)))
-                precio_base, iva, otro_imp = desglosar_impuestos_item(prod, it.get('precio_unitario', 0), empresa)
+                precio_in = Decimal(str(it.get('precio_unitario') or 0))
+                if prod and getattr(tercero, 'lista_precio_id', None) and (precio_in <= 0 or precio_in == prod.precio_venta):
+                    from apps.inventario.models import PrecioProducto
+                    pp = PrecioProducto.objects.filter(lista_id=tercero.lista_precio_id, producto=prod).first()
+                    if pp:
+                        precio_in = pp.precio
+                precio_base, iva, otro_imp = desglosar_impuestos_item(prod, precio_in, empresa)
                 porc_desc = Decimal(str(it.get('descuento', 0)))
 
                 FacturaItem.objects.create(
@@ -1495,3 +1510,116 @@ def portal_factura_pagar_wompi(request, token):
         'redirect-url': redirect_url,
     }
     return redirect(f"https://checkout.wompi.co/p/?{urlencode(params)}")
+
+
+def _ejecutar_contrato_recurrente(contrato: FacturaRecurrente):
+    """Genera una factura automática para un contrato de facturación recurrente y avanza la próxima fecha."""
+    empresa = contrato.empresa
+    hoy = date.today()
+    with transaction.atomic():
+        prefijo, consecutivo = _obtener_prefijo_y_consecutivo(empresa, 'FACTURA')
+        fac = Factura.objects.create(
+            empresa=empresa,
+            tipo_documento='FACTURA',
+            prefijo=prefijo,
+            consecutivo=consecutivo,
+            tercero=contrato.tercero,
+            fecha_emision=hoy,
+            fecha_vencimiento=hoy + timedelta(days=empresa.dias_vencimiento or 30),
+            estado='EMITIDA',
+            metodo_pago=contrato.metodo_pago,
+            es_fiado=(contrato.metodo_pago == 'CREDITO'),
+            estado_dian='PENDIENTE',
+            observaciones=f"Facturación recurrente: {contrato.nombre_contrato}",
+        )
+        for it in (contrato.items_json or []):
+            prod = Producto.objects.filter(id=it.get('producto_id'), empresa=empresa).first()
+            precio_base, iva, otro_imp = desglosar_impuestos_item(prod, it.get('precio_unitario', 0), empresa)
+            cant = Decimal(str(it.get('cantidad', 1)))
+            FacturaItem.objects.create(
+                factura=fac,
+                producto=prod,
+                descripcion=it.get('descripcion') or (prod.nombre if prod else contrato.nombre_contrato),
+                cantidad=cant,
+                precio_unitario=precio_base,
+                porcentaje_iva=iva,
+                porcentaje_otro_impuesto=otro_imp,
+            )
+            if prod and prod.maneja_inventario:
+                _mover_stock_documento(empresa, prod, cant, 'SALIDA', f"Recurrente {fac.numero_completo}", fac.numero_completo)
+        fac.recalcular_totales()
+        encolar_documento_dian(fac)
+        registrar_asiento_venta(fac)
+
+        delta_dias = 365 if contrato.frecuencia == 'ANUAL' else (60 if contrato.frecuencia == 'BIMESTRAL' else 30)
+        contrato.ultima_emision = hoy
+        contrato.proxima_fecha = hoy + timedelta(days=delta_dias)
+        contrato.save(update_fields=['ultima_emision', 'proxima_fecha'])
+    return fac
+
+
+@login_required
+@requiere_facturacion
+def facturas_recurrentes_lista(request):
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+    contratos = FacturaRecurrente.objects.filter(empresa=empresa).select_related('tercero')
+    terceros = Tercero.objects.filter(empresa=empresa, activo=True, es_cliente=True).order_by('razon_social')
+    productos = Producto.objects.filter(empresa=empresa, activo=True).order_by('nombre')
+    return render(request, 'facturacion/recurrentes_lista.html', {
+        'contratos': contratos,
+        'terceros': terceros,
+        'productos': productos,
+    })
+
+
+@login_required
+@requiere_facturacion
+@require_POST
+def factura_recurrente_crear(request):
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+    tercero = get_object_or_404(Tercero, id=request.POST.get('tercero'), empresa=empresa)
+    nombre = request.POST.get('nombre_contrato', '').strip() or f"Suscripción {tercero.razon_social}"
+    frecuencia = request.POST.get('frecuencia', 'MENSUAL')
+    proxima_fecha = request.POST.get('proxima_fecha') or date.today()
+    prod_id = request.POST.get('producto_id')
+    cantidad = request.POST.get('cantidad', '1') or '1'
+    precio = request.POST.get('precio_unitario', '0') or '0'
+    prod = Producto.objects.filter(id=prod_id, empresa=empresa).first() if prod_id else None
+    if prod and Decimal(str(precio)) <= 0:
+        precio = str(prod.precio_venta)
+
+    contrato = FacturaRecurrente.objects.create(
+        empresa=empresa,
+        tercero=tercero,
+        nombre_contrato=nombre,
+        frecuencia=frecuencia,
+        proxima_fecha=proxima_fecha,
+        metodo_pago=request.POST.get('metodo_pago', 'CREDITO'),
+        items_json=[{
+            'producto_id': prod.id if prod else None,
+            'descripcion': prod.nombre if prod else nombre,
+            'cantidad': cantidad,
+            'precio_unitario': precio,
+        }],
+    )
+    registrar_actividad(request, 'facturacion', 'CREAR_RECURRENTE', f"Creó contrato recurrente '{nombre}'.", empresa=empresa, objeto=contrato)
+    messages.success(request, f"Contrato de facturación recurrente '{nombre}' creado.")
+    return redirect('facturacion:recurrentes_lista')
+
+
+@login_required
+@requiere_facturacion
+@require_POST
+def factura_recurrente_ejecutar(request, contrato_id):
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+    contrato = get_object_or_404(FacturaRecurrente, id=contrato_id, empresa=empresa)
+    fac = _ejecutar_contrato_recurrente(contrato)
+    registrar_actividad(request, 'facturacion', 'EJECUTAR_RECURRENTE', f"Generó factura {fac.numero_completo} desde contrato '{contrato.nombre_contrato}'.", empresa=empresa, objeto=fac)
+    messages.success(request, f"Factura recurrente {fac.numero_completo} generada (${fac.total:,.0f} COP).")
+    return redirect('facturacion:factura_detalle', factura_id=fac.id)

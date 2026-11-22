@@ -1,4 +1,4 @@
-from django.db import models
+from django.db import models, transaction
 
 
 class Departamento(models.Model):
@@ -152,6 +152,10 @@ class Empresa(models.Model):
     dian_software_id = models.CharField(max_length=120, blank=True, verbose_name="Software ID DIAN")
     dian_pin = models.CharField(max_length=255, blank=True, verbose_name="PIN Software DIAN")
     dian_test_set_id = models.CharField(max_length=120, blank=True, verbose_name="TestSetId Habilitación DIAN")
+    dian_certificado_p12_enc = models.TextField(blank=True, verbose_name="Certificado Digital .p12 DIAN (cifrado)")
+    dian_certificado_password = models.CharField(max_length=255, blank=True, verbose_name="Clave Certificado .p12 (cifrada)")
+    dian_certificado_sujeto = models.CharField(max_length=255, blank=True, verbose_name="Titular Certificado DIAN")
+    dian_certificado_vence = models.DateField(null=True, blank=True, verbose_name="Vencimiento Certificado DIAN")
 
     # Servidor de Correo Independiente de la Empresa (Resend o SMTP propio; vacío = oficial ServiGest)
     resend_api_key = models.CharField(max_length=255, blank=True, verbose_name="Resend API Key Propia")
@@ -209,17 +213,55 @@ class Empresa(models.Model):
         from apps.core.platform_settings import decrypt_secret
         return decrypt_secret(self.dian_pin).strip()
 
-    def obtener_siguiente_consecutivo(self):
-        num = self.consecutivo_actual
-        self.consecutivo_actual += 1
-        self.save(update_fields=['consecutivo_actual'])
-        return num
+    def obtener_siguiente_consecutivo(self, tipo_documento='FACTURA'):
+        with transaction.atomic():
+            res = (
+                ResolucionDIAN.objects.select_for_update()
+                .filter(empresa_id=self.pk, tipo_documento=tipo_documento, activa=True, predeterminada=True)
+                .first()
+            )
+            if res:
+                num = res.consecutivo_actual
+                res.consecutivo_actual = num + 1
+                res.save(update_fields=['consecutivo_actual'])
+                if tipo_documento == 'FACTURA':
+                    Empresa.objects.filter(pk=self.pk).update(consecutivo_actual=num + 1)
+                    self.consecutivo_actual = num + 1
+                return num
+            locked = Empresa.objects.select_for_update().get(pk=self.pk)
+            num = locked.consecutivo_actual
+            locked.consecutivo_actual = num + 1
+            locked.save(update_fields=['consecutivo_actual'])
+            self.consecutivo_actual = locked.consecutivo_actual
+            return num
 
     def obtener_siguiente_consecutivo_pos(self):
-        num = self.consecutivo_pos_actual
-        self.consecutivo_pos_actual += 1
-        self.save(update_fields=['consecutivo_pos_actual'])
-        return num
+        with transaction.atomic():
+            res = (
+                ResolucionDIAN.objects.select_for_update()
+                .filter(empresa_id=self.pk, tipo_documento='POS_ELECTRONICO', activa=True, predeterminada=True)
+                .first()
+            )
+            if res:
+                num = res.consecutivo_actual
+                res.consecutivo_actual = num + 1
+                res.save(update_fields=['consecutivo_actual'])
+                Empresa.objects.filter(pk=self.pk).update(consecutivo_pos_actual=num + 1)
+                self.consecutivo_pos_actual = num + 1
+                return num
+            locked = Empresa.objects.select_for_update().get(pk=self.pk)
+            num = locked.consecutivo_pos_actual
+            locked.consecutivo_pos_actual = num + 1
+            locked.save(update_fields=['consecutivo_pos_actual'])
+            self.consecutivo_pos_actual = locked.consecutivo_pos_actual
+            return num
+
+    def obtener_resolucion_activa(self, tipo_documento='FACTURA'):
+        return (
+            self.resoluciones_dian.filter(tipo_documento=tipo_documento, activa=True)
+            .order_by('-predeterminada', '-id')
+            .first()
+        )
 
     def tiene_modulo(self, codigo):
         if not self.modulos.exists():
@@ -308,3 +350,39 @@ class SolicitudCambioPlan(models.Model):
         ordering = ['-created_at']
         verbose_name = "Solicitud de Cambio de Plan"
         verbose_name_plural = "Solicitudes de Cambio de Plan"
+
+
+class ResolucionDIAN(models.Model):
+    """Soporte multi-resolución DIAN 1-a-N por tipo de documento, prefijo y sucursal."""
+    TIPO_DOC_CHOICES = [
+        ('FACTURA', 'Factura Electrónica de Venta'),
+        ('POS_ELECTRONICO', 'Documento Equivalente POS'),
+        ('DOCUMENTO_SOPORTE', 'Documento Soporte (DSE)'),
+        ('NOTA_CREDITO', 'Nota Crédito'),
+        ('NOTA_DEBITO', 'Nota Débito'),
+        ('NOMINA', 'Nómina Electrónica'),
+        ('NOMINA_AJUSTE', 'Nota Ajuste Nómina'),
+    ]
+
+    empresa = models.ForeignKey(Empresa, on_delete=models.CASCADE, related_name='resoluciones_dian')
+    tipo_documento = models.CharField(max_length=30, choices=TIPO_DOC_CHOICES, default='FACTURA')
+    prefijo = models.CharField(max_length=12, default='FE')
+    numero_resolucion = models.CharField(max_length=100)
+    fecha_resolucion = models.DateField(null=True, blank=True)
+    fecha_vigencia_hasta = models.DateField(null=True, blank=True)
+    rango_desde = models.BigIntegerField(default=1)
+    rango_hasta = models.BigIntegerField(default=5000)
+    consecutivo_actual = models.BigIntegerField(default=1)
+    clave_tecnica = models.CharField(max_length=255, blank=True)
+    activa = models.BooleanField(default=True)
+    predeterminada = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['tipo_documento', '-predeterminada', '-created_at']
+        unique_together = ('empresa', 'tipo_documento', 'prefijo', 'numero_resolucion')
+        verbose_name = "Resolución DIAN"
+        verbose_name_plural = "Resoluciones DIAN"
+
+    def __str__(self):
+        return f"{self.get_tipo_documento_display()} [{self.prefijo}] Res. {self.numero_resolucion}"

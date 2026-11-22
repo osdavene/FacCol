@@ -1,0 +1,52 @@
+{% extends 'base.html' %}
+{% block title %}Lotes y Vencimientos — FacCol{% endblock %}
+{% block content %}
+<div class="max-w-6xl mx-auto space-y-6">
+    <div>
+        <h1 class="text-2xl font-display font-black text-white">Lotes y Fechas de Vencimiento</h1>
+        <p class="text-xs text-slate-400">Trazabilidad por lote con alerta automática de vencimiento próximo (&le; 30 días).</p>
+    </div>
+    <form method="POST" class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 grid grid-cols-1 sm:grid-cols-5 gap-3 text-xs items-end">
+        {% csrf_token %}
+        <div>
+            <label class="block text-slate-300 mb-1">Producto</label>
+            <select name="producto" required class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                {% for p in productos %}<option value="{{ p.id }}">{{ p.nombre }}</option>{% endfor %}
+            </select>
+        </div>
+        <div>
+            <label class="block text-slate-300 mb-1">Código Lote</label>
+            <input type="text" name="codigo_lote" required placeholder="LOT-2026A" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+        </div>
+        <div>
+            <label class="block text-slate-300 mb-1">Vencimiento</label>
+            <input type="date" name="fecha_vencimiento" required class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+        </div>
+        <div>
+            <label class="block text-slate-300 mb-1">Cantidad</label>
+            <input type="number" step="0.01" name="cantidad" value="1" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+        </div>
+        <button type="submit" class="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black uppercase">Registrar Lote</button>
+    </form>
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl overflow-hidden text-xs">
+        <table class="w-full text-left">
+            <thead class="bg-[#162034] text-slate-400 uppercase text-[10px]">
+                <tr><th class="p-3">Producto</th><th>Lote</th><th>Vencimiento</th><th>Cantidad</th><th>Estado</th></tr>
+            </thead>
+            <tbody>
+                {% for l in lotes %}
+                <tr class="border-t border-[#1e2d47]">
+                    <td class="p-3 font-bold text-white">{{ l.producto.nombre }}</td>
+                    <td class="font-mono">{{ l.codigo_lote }}</td>
+                    <td>{{ l.fecha_vencimiento|date:"Y-m-d" }}</td>
+                    <td>{{ l.cantidad }}</td>
+                    <td>{% if l.fecha_vencimiento <= limite_alerta %}<span class="text-rose-400 font-bold">Próximo a vencer / Vencido</span>{% else %}<span class="text-emerald-400">Vigente</span>{% endif %}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="5" class="p-6 text-center text-slate-400">No hay lotes registrados.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

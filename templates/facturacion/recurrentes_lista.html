@@ -1,0 +1,75 @@
+{% extends 'base.html' %}
+{% block title %}Facturación Recurrente — FacCol{% endblock %}
+
+{% block content %}
+<div class="max-w-6xl mx-auto space-y-6">
+    <div>
+        <h1 class="text-2xl font-display font-black text-white">Facturación Recurrente / Contratos</h1>
+        <p class="text-xs text-slate-400">Automatiza mensualidades, arriendos y suscripciones con emisión periódica.</p>
+    </div>
+
+    <form method="POST" action="{% url 'facturacion:recurrente_crear' %}" class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 grid grid-cols-1 sm:grid-cols-6 gap-3 text-xs items-end">
+        {% csrf_token %}
+        <div class="sm:col-span-2">
+            <label class="block text-slate-300 font-semibold mb-1">Cliente</label>
+            <select name="tercero" required class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                {% for t in terceros %}<option value="{{ t.id }}">{{ t.razon_social }}</option>{% endfor %}
+            </select>
+        </div>
+        <div>
+            <label class="block text-slate-300 font-semibold mb-1">Nombre Contrato</label>
+            <input type="text" name="nombre_contrato" required placeholder="Mensualidad SaaS" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+        </div>
+        <div>
+            <label class="block text-slate-300 font-semibold mb-1">Producto / Servicio</label>
+            <select name="producto_id" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                <option value="">-- Libre --</option>
+                {% for p in productos %}<option value="{{ p.id }}">{{ p.nombre }} (${{ p.precio_venta }})</option>{% endfor %}
+            </select>
+        </div>
+        <div>
+            <label class="block text-slate-300 font-semibold mb-1">Valor Unitario</label>
+            <input type="number" step="0.01" name="precio_unitario" value="0" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+        </div>
+        <div class="flex gap-2">
+            <select name="frecuencia" class="bg-[#162034] border border-[#1e2d47] rounded-xl px-2 py-2 text-white">
+                <option value="MENSUAL">Mensual</option>
+                <option value="BIMESTRAL">Bimestral</option>
+                <option value="ANUAL">Anual</option>
+            </select>
+            <button type="submit" class="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black uppercase">Crear</button>
+        </div>
+    </form>
+
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl overflow-hidden text-xs">
+        <table class="w-full text-left">
+            <thead class="bg-[#162034] text-slate-400 uppercase text-[10px]">
+                <tr>
+                    <th class="p-3">Contrato</th><th>Cliente</th><th>Frecuencia</th><th>Próxima Emisión</th><th>Última</th><th class="text-right p-3">Acción</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for c in contratos %}
+                <tr class="border-t border-[#1e2d47]">
+                    <td class="p-3 font-bold text-white">{{ c.nombre_contrato }}</td>
+                    <td>{{ c.tercero.razon_social }}</td>
+                    <td>{{ c.get_frecuencia_display }}</td>
+                    <td>{{ c.proxima_fecha|date:"Y-m-d" }}</td>
+                    <td>{{ c.ultima_emision|date:"Y-m-d"|default:"—" }}</td>
+                    <td class="p-3 text-right">
+                        <form method="POST" action="{% url 'facturacion:recurrente_ejecutar' c.id %}">
+                            {% csrf_token %}
+                            <button type="submit" class="px-3 py-1.5 rounded-lg bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/30 font-bold">
+                                Emitir Ahora
+                            </button>
+                        </form>
+                    </td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="6" class="p-6 text-center text-slate-400">No hay contratos recurrentes configurados.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

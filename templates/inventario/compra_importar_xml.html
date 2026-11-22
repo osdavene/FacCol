@@ -1,0 +1,25 @@
+{% extends 'base.html' %}
+{% block title %}Recepción XML Compra DIAN — FacCol{% endblock %}
+{% block content %}
+<div class="max-w-3xl mx-auto space-y-6">
+    <div>
+        <h1 class="text-2xl font-display font-black text-white">Recepción de Factura XML / ZIP de Proveedor</h1>
+        <p class="text-xs text-slate-400">Carga el AttachedDocument (.xml o .zip) enviado por tu proveedor para causar la compra y habilitar eventos RADIAN (030–033).</p>
+    </div>
+    <form method="POST" enctype="multipart/form-data" class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 space-y-4 text-xs">
+        {% csrf_token %}
+        <div>
+            <label class="block font-semibold text-slate-300 mb-1">Archivo XML o ZIP DIAN</label>
+            <input type="file" name="archivo_xml" accept=".xml,.zip" required class="w-full text-slate-300">
+        </div>
+        <div>
+            <label class="block font-semibold text-slate-300 mb-1">Condición de Pago</label>
+            <select name="metodo_pago" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                <option value="CREDITO">Crédito (Habilita eventos RADIAN título valor)</option>
+                <option value="CONTADO">Contado</option>
+            </select>
+        </div>
+        <button type="submit" class="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black uppercase">Leer XML y Registrar Compra</button>
+    </form>
+</div>
+{% endblock %}

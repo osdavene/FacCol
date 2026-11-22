@@ -112,6 +112,8 @@ class NominaEmpleado(models.Model):
     # Deducciones del Trabajador (Colombia)
     salud_empleado_4 = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0.00'))
     pension_empleado_4 = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0.00'))
+    fondo_solidaridad = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0.00'))
+    retefuente_salarios = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0.00'))
     otras_deducciones = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0.00'))
     total_deducciones = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0.00'))
 
@@ -138,3 +140,33 @@ class NominaEmpleado(models.Model):
 
     def __str__(self):
         return f"{self.empleado.nombre_completo} - Neto: ${self.neto_a_pagar}"
+
+
+class NominaAjuste(EmpresaTenantModel):
+    """Nota de Ajuste de Nómina Electrónica DIAN (Tipo XML 103: Reemplazo o Eliminación)."""
+    TIPO_NOTA_CHOICES = [
+        ('1', 'Reemplazar'),
+        ('2', 'Eliminar'),
+    ]
+
+    nomina_detalle = models.ForeignKey(NominaEmpleado, on_delete=models.CASCADE, related_name='notas_ajuste')
+    tipo_nota = models.CharField(max_length=5, choices=TIPO_NOTA_CHOICES, default='1')
+    numero_ajuste = models.CharField(max_length=40)
+    cune_ajuste = models.CharField(max_length=255, blank=True)
+    cune_predecesor = models.CharField(max_length=255, blank=True)
+    motivo = models.CharField(max_length=255)
+    total_devengado_nuevo = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0.00'))
+    total_deducciones_nuevo = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0.00'))
+    neto_a_pagar_nuevo = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0.00'))
+    estado_dian = models.CharField(max_length=30, default='PENDIENTE')
+    dian_track_id = models.CharField(max_length=120, blank=True)
+    dian_mensaje = models.TextField(blank=True)
+    xml_ubl = models.TextField(blank=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        verbose_name = "Nota de Ajuste Nómina Electrónica"
+        verbose_name_plural = "Notas de Ajuste Nómina Electrónica"
+
+    def __str__(self):
+        return f"{self.numero_ajuste} ({self.get_tipo_nota_display()})"

@@ -149,6 +149,10 @@ class CompraProveedor(EmpresaTenantModel):
     total = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal('0.00'))
     saldo_pendiente = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal('0.00'))
     fecha_vencimiento = models.DateField(null=True, blank=True)
+    cufe_proveedor = models.CharField(max_length=200, blank=True, verbose_name="CUFE Factura Proveedor")
+    radian_estado = models.CharField(max_length=120, blank=True, verbose_name="Último Evento RADIAN Compra")
+    radian_eventos = models.JSONField(default=list, blank=True)
+    xml_recibido = models.TextField(blank=True)
     observaciones = models.TextField(blank=True)
 
     class Meta:
@@ -209,3 +213,94 @@ class StockBodega(models.Model):
 
     def __str__(self):
         return f"{self.bodega.codigo} - {self.producto.codigo}: {self.cantidad}"
+
+
+class OrdenCompra(EmpresaTenantModel):
+    """Órdenes de compra a proveedores convertibles en entrada de mercancía / CompraProveedor."""
+    ESTADO_CHOICES = [
+        ('BORRADOR', 'Borrador'),
+        ('APROBADA', 'Aprobada / Enviada'),
+        ('RECIBIDA', 'Recibida'),
+        ('CANCELADA', 'Cancelada'),
+    ]
+
+    consecutivo = models.BigIntegerField()
+    proveedor = models.ForeignKey('terceros.Tercero', on_delete=models.PROTECT, related_name='ordenes_compra')
+    fecha = models.DateField()
+    fecha_esperada = models.DateField(null=True, blank=True)
+    estado = models.CharField(max_length=20, choices=ESTADO_CHOICES, default='APROBADA')
+    total = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal('0.00'))
+    observaciones = models.TextField(blank=True)
+    compra_generada = models.OneToOneField(
+        CompraProveedor, on_delete=models.SET_NULL, null=True, blank=True, related_name='orden_origen'
+    )
+
+    class Meta:
+        unique_together = ('empresa', 'consecutivo')
+        ordering = ['-fecha', '-consecutivo']
+        verbose_name = "Orden de Compra"
+        verbose_name_plural = "Órdenes de Compra"
+
+    @property
+    def numero_completo(self):
+        return f"ORD-{self.consecutivo}"
+
+    def __str__(self):
+        return f"{self.numero_completo} - {self.proveedor.razon_social}"
+
+
+class OrdenCompraItem(models.Model):
+    orden = models.ForeignKey(OrdenCompra, on_delete=models.CASCADE, related_name='items')
+    producto = models.ForeignKey(Producto, on_delete=models.PROTECT)
+    cantidad = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('1.00'))
+    costo_unitario = models.DecimalField(max_digits=14, decimal_places=2, default=Decimal('0.00'))
+    subtotal = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal('0.00'))
+
+    def save(self, *args, **kwargs):
+        self.subtotal = (Decimal(str(self.cantidad)) * Decimal(str(self.costo_unitario))).quantize(Decimal('0.01'))
+        super().save(*args, **kwargs)
+
+
+class LoteProducto(EmpresaTenantModel):
+    """Trazabilidad por lote y fecha de vencimiento (alimentos, droguerías, perecederos)."""
+    producto = models.ForeignKey(Producto, on_delete=models.CASCADE, related_name='lotes')
+    bodega = models.ForeignKey(Bodega, on_delete=models.SET_NULL, null=True, blank=True, related_name='lotes')
+    codigo_lote = models.CharField(max_length=60)
+    fecha_vencimiento = models.DateField(db_index=True)
+    cantidad = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+
+    class Meta:
+        unique_together = ('empresa', 'producto', 'codigo_lote')
+        ordering = ['fecha_vencimiento', 'codigo_lote']
+        verbose_name = "Lote y Vencimiento"
+        verbose_name_plural = "Lotes y Vencimientos"
+
+    def __str__(self):
+        return f"{self.producto.codigo} Lote {self.codigo_lote} (Vence {self.fecha_vencimiento})"
+
+
+class ListaPrecio(EmpresaTenantModel):
+    """Listas de precios diferenciales (Mayorista, VIP, Distribuidor) asignables a clientes."""
+    nombre = models.CharField(max_length=100)
+    predeterminada = models.BooleanField(default=False)
+    activa = models.BooleanField(default=True)
+
+    class Meta:
+        unique_together = ('empresa', 'nombre')
+        ordering = ['nombre']
+        verbose_name = "Lista de Precios"
+        verbose_name_plural = "Listas de Precios"
+
+    def __str__(self):
+        return self.nombre
+
+
+class PrecioProducto(models.Model):
+    lista = models.ForeignKey(ListaPrecio, on_delete=models.CASCADE, related_name='precios')
+    producto = models.ForeignKey(Producto, on_delete=models.CASCADE, related_name='precios_lista')
+    precio = models.DecimalField(max_digits=14, decimal_places=2)
+
+    class Meta:
+        unique_together = ('lista', 'producto')
+        verbose_name = "Precio en Lista"
+        verbose_name_plural = "Precios en Listas"

@@ -111,14 +111,16 @@ def pos_procesar_venta(request):
                 'error': 'Para anotar un fiado debes seleccionar al cliente/vecino específico, no Consumidor Final.'
             }, status=400)
 
-        if tipo_documento == 'POS_ELECTRONICO':
-            prefijo = empresa.prefijo_pos_electronico
-            consecutivo = empresa.obtener_siguiente_consecutivo_pos()
-        else:
-            prefijo = empresa.prefijo_factura
-            consecutivo = empresa.obtener_siguiente_consecutivo()
-
         with transaction.atomic():
+            if tipo_documento == 'POS_ELECTRONICO':
+                res_pos = empresa.obtener_resolucion_activa('POS_ELECTRONICO')
+                prefijo = res_pos.prefijo if res_pos else empresa.prefijo_pos_electronico
+                consecutivo = empresa.obtener_siguiente_consecutivo_pos()
+            else:
+                res_fac = empresa.obtener_resolucion_activa('FACTURA')
+                prefijo = res_fac.prefijo if res_fac else empresa.prefijo_factura
+                consecutivo = empresa.obtener_siguiente_consecutivo()
+
             factura = Factura.objects.create(
                 empresa=empresa,
                 tipo_documento=tipo_documento,
@@ -135,7 +137,7 @@ def pos_procesar_venta(request):
 
             productos_afectados = []
             for it in items:
-                prod = Producto.objects.get(id=it['producto_id'], empresa=empresa)
+                prod = Producto.objects.select_for_update().get(id=it['producto_id'], empresa=empresa)
                 cant = Decimal(str(it['cantidad']))
                 precio_base, iva_pct, otro_pct = desglosar_impuestos_item(prod, it['precio'], empresa)
 

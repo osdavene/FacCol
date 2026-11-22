@@ -16,6 +16,8 @@ class User(AbstractUser):
     activo = models.BooleanField(default=True, verbose_name="Usuario Activo")
     email_verified_at = models.DateTimeField(null=True, blank=True, verbose_name="Correo verificado el")
     preferencias_notificaciones = models.JSONField(default=dict, blank=True, verbose_name="Preferencias de Notificación")
+    totp_secret = models.CharField(max_length=255, blank=True, verbose_name="Secreto TOTP 2FA (cifrado)")
+    totp_enabled = models.BooleanField(default=False, verbose_name="2FA Habilitado")
 
     class Meta:
         verbose_name = "Usuario"

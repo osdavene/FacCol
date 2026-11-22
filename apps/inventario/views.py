@@ -13,13 +13,22 @@ from django.urls import reverse
 from django.views.decorators.http import require_POST
 
 from apps.core.importers import leer_filas_archivo
-from apps.facturacion.dian_service import transmitir_dse_dian
+from apps.facturacion.dian_service import (
+    generar_application_response_radian,
+    parsear_attached_document_o_invoice,
+    transmitir_dse_dian,
+)
 from apps.inventario.models import (
     Bodega,
     Categoria,
     CompraItem,
     CompraProveedor,
+    ListaPrecio,
+    LoteProducto,
     MovimientoInventario,
+    OrdenCompra,
+    OrdenCompraItem,
+    PrecioProducto,
     Producto,
     StockBodega,
     UnidadMedida,
@@ -279,8 +288,8 @@ def ajuste_inventario_crear(request):
             messages.error(request, "La cantidad del ajuste debe ser mayor a cero.")
             return redirect('inventario:ajuste_crear')
 
-        prod = get_object_or_404(Producto, id=prod_id, empresa=empresa)
         with transaction.atomic():
+            prod = get_object_or_404(Producto.objects.select_for_update(), id=prod_id, empresa=empresa)
             saldo_ant = prod.stock_actual
             if tipo_mov == 'SALIDA':
                 saldo_nuevo = max(Decimal('0.00'), saldo_ant - cantidad)
@@ -410,7 +419,7 @@ def compra_crear(request):
 
             total_compra = Decimal('0.00')
             for it in items_data:
-                prod = get_object_or_404(Producto, id=it.get('producto_id'), empresa=empresa)
+                prod = get_object_or_404(Producto.objects.select_for_update(), id=it.get('producto_id'), empresa=empresa)
                 cant_emp = Decimal(str(it.get('cantidad_empaque') or '1'))
                 un_por_emp = Decimal(str(it.get('unidades_por_empaque') or prod.factor_conversion or '1'))
                 costo_emp = Decimal(str(it.get('costo_unitario_empaque') or '0'))
@@ -663,11 +672,11 @@ def bodega_traslado(request):
         return redirect('inventario:bodegas_lista')
 
     with transaction.atomic():
-        st_orig, _ = StockBodega.objects.get_or_create(bodega=orig, producto=prod, defaults={'cantidad': prod.stock_actual})
+        st_orig, _ = StockBodega.objects.select_for_update().get_or_create(bodega=orig, producto=prod, defaults={'cantidad': prod.stock_actual})
         if st_orig.cantidad < cant:
             messages.error(request, f"Saldo insuficiente en {orig.nombre} ({st_orig.cantidad} uds).")
             return redirect('inventario:bodegas_lista')
-        st_dest, _ = StockBodega.objects.get_or_create(bodega=dest, producto=prod, defaults={'cantidad': Decimal('0.00')})
+        st_dest, _ = StockBodega.objects.select_for_update().get_or_create(bodega=dest, producto=prod, defaults={'cantidad': Decimal('0.00')})
         st_orig.cantidad -= cant
         st_dest.cantidad += cant
         st_orig.save(update_fields=['cantidad'])
@@ -680,3 +689,242 @@ def bodega_traslado(request):
     )
     messages.success(request, f"Traslado completado: {cant} uds de '{prod.nombre}' hacia {dest.nombre}.")
     return redirect('inventario:bodegas_lista')
+
+
+@login_required
+@requiere_inventario
+def ordenes_compra_lista(request):
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+    if request.method == 'POST':
+        prov = get_object_or_404(Tercero, id=request.POST.get('proveedor'), empresa=empresa)
+        prod = get_object_or_404(Producto, id=request.POST.get('producto'), empresa=empresa)
+        cant = Decimal(request.POST.get('cantidad') or '1')
+        costo = Decimal(request.POST.get('costo_unitario') or prod.costo_unitario or '0')
+        with transaction.atomic():
+            ult = OrdenCompra.objects.filter(empresa=empresa).order_by('-consecutivo').first()
+            cons = (ult.consecutivo + 1) if ult else 1
+            oc = OrdenCompra.objects.create(
+                empresa=empresa,
+                consecutivo=cons,
+                proveedor=prov,
+                fecha=request.POST.get('fecha') or date.today(),
+                observaciones=request.POST.get('observaciones', '').strip(),
+                total=(cant * costo).quantize(Decimal('0.01')),
+            )
+            OrdenCompraItem.objects.create(orden=oc, producto=prod, cantidad=cant, costo_unitario=costo)
+        messages.success(request, f"Orden de Compra {oc.numero_completo} creada.")
+        return redirect('inventario:ordenes_compra_lista')
+
+    ordenes = OrdenCompra.objects.filter(empresa=empresa).select_related('proveedor', 'compra_generada')
+    proveedores = Tercero.objects.filter(empresa=empresa, activo=True).order_by('-es_proveedor', 'razon_social')
+    productos = Producto.objects.filter(empresa=empresa, activo=True).order_by('nombre')
+    return render(request, 'inventario/ordenes_compra_lista.html', {
+        'ordenes': ordenes,
+        'proveedores': proveedores,
+        'productos': productos,
+    })
+
+
+@login_required
+@requiere_inventario
+@require_POST
+def orden_compra_convertir(request, orden_id):
+    """Convierte una Orden de Compra aprobada en CompraProveedor real con ingreso al Kardex y asiento."""
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+    orden = get_object_or_404(OrdenCompra, id=orden_id, empresa=empresa)
+    if orden.compra_generada:
+        messages.warning(request, "Esta orden ya fue recibida y convertida en compra.")
+        return redirect('inventario:compra_detalle', compra_id=orden.compra_generada_id)
+
+    with transaction.atomic():
+        ult = CompraProveedor.objects.filter(empresa=empresa).order_by('-consecutivo').first()
+        cons = (ult.consecutivo + 1) if ult else 1
+        compra = CompraProveedor.objects.create(
+            empresa=empresa,
+            consecutivo=cons,
+            proveedor=orden.proveedor,
+            numero_factura_proveedor=orden.numero_completo,
+            fecha=date.today(),
+            metodo_pago='CREDITO',
+            total=orden.total,
+            saldo_pendiente=orden.total,
+            observaciones=f"Generada desde {orden.numero_completo}",
+        )
+        for it in orden.items.select_related('producto'):
+            prod = Producto.objects.select_for_update().get(pk=it.producto_id)
+            CompraItem.objects.create(
+                compra=compra,
+                producto=prod,
+                cantidad_empaque=it.cantidad,
+                unidades_por_empaque=Decimal('1.000'),
+                costo_unitario_empaque=it.costo_unitario,
+            )
+            if prod.maneja_inventario:
+                s_ant = prod.stock_actual
+                prod.stock_actual = s_ant + it.cantidad
+                if it.costo_unitario > 0:
+                    prod.costo_unitario = it.costo_unitario
+                prod.save(update_fields=['stock_actual', 'costo_unitario'])
+                MovimientoInventario.objects.create(
+                    empresa=empresa, producto=prod, tipo='ENTRADA', cantidad=it.cantidad,
+                    costo_unitario=prod.costo_unitario, saldo_anterior=s_ant, saldo_nuevo=prod.stock_actual,
+                    motivo=f"Recepción {orden.numero_completo}", referencia_documento=compra.numero_completo,
+                )
+        orden.estado = 'RECIBIDA'
+        orden.compra_generada = compra
+        orden.save(update_fields=['estado', 'compra_generada'])
+        registrar_asiento_compra(compra)
+
+    messages.success(request, f"Orden {orden.numero_completo} convertida en compra {compra.numero_completo}.")
+    return redirect('inventario:compra_detalle', compra_id=compra.id)
+
+
+@login_required
+@requiere_inventario
+def lotes_lista(request):
+    from datetime import timedelta
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+    if request.method == 'POST':
+        prod = get_object_or_404(Producto, id=request.POST.get('producto'), empresa=empresa)
+        bodega_id = request.POST.get('bodega')
+        bodega = Bodega.objects.filter(id=bodega_id, empresa=empresa).first() if bodega_id else None
+        LoteProducto.objects.update_or_create(
+            empresa=empresa,
+            producto=prod,
+            codigo_lote=(request.POST.get('codigo_lote') or '').strip().upper(),
+            defaults={
+                'bodega': bodega,
+                'fecha_vencimiento': request.POST.get('fecha_vencimiento') or date.today(),
+                'cantidad': Decimal(request.POST.get('cantidad') or '0'),
+            },
+        )
+        messages.success(request, "Lote registrado correctamente.")
+        return redirect('inventario:lotes_lista')
+
+    limite_alerta = date.today() + timedelta(days=30)
+    lotes = LoteProducto.objects.filter(empresa=empresa).select_related('producto', 'bodega')
+    return render(request, 'inventario/lotes_lista.html', {
+        'lotes': lotes,
+        'productos': Producto.objects.filter(empresa=empresa, activo=True),
+        'bodegas': Bodega.objects.filter(empresa=empresa, activa=True),
+        'limite_alerta': limite_alerta,
+    })
+
+
+@login_required
+@requiere_inventario
+def listas_precios_lista(request):
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+    if request.method == 'POST':
+        accion = request.POST.get('accion', 'crear_lista')
+        if accion == 'asignar_precio':
+            lista = get_object_or_404(ListaPrecio, id=request.POST.get('lista_id'), empresa=empresa)
+            prod = get_object_or_404(Producto, id=request.POST.get('producto_id'), empresa=empresa)
+            PrecioProducto.objects.update_or_create(
+                lista=lista,
+                producto=prod,
+                defaults={'precio': Decimal(request.POST.get('precio') or '0')},
+            )
+            messages.success(request, f"Precio asignado en '{lista.nombre}' para {prod.nombre}.")
+        else:
+            nom = (request.POST.get('nombre') or '').strip()
+            if nom:
+                ListaPrecio.objects.get_or_create(empresa=empresa, nombre=nom[:100])
+                messages.success(request, f"Lista de precios '{nom}' creada.")
+        return redirect('inventario:listas_precios_lista')
+
+    return render(request, 'inventario/listas_precios_lista.html', {
+        'listas': ListaPrecio.objects.filter(empresa=empresa, activa=True).prefetch_related('precios__producto'),
+        'productos': Producto.objects.filter(empresa=empresa, activo=True),
+    })
+
+
+@login_required
+@requiere_inventario
+def compra_importar_xml(request):
+    """Recepción de Factura Electrónica XML / ZIP (AttachedDocument) de proveedor."""
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+    if request.method == 'POST' and request.FILES.get('archivo_xml'):
+        try:
+            datos = parsear_attached_document_o_invoice(request.FILES['archivo_xml'].read())
+            with transaction.atomic():
+                doc_nit = datos['nit_proveedor'] or '222222222222'
+                prov, _ = Tercero.objects.get_or_create(
+                    empresa=empresa,
+                    numero_documento=doc_nit,
+                    defaults={
+                        'tipo_documento': 'NIT',
+                        'tipo_persona': 'JURIDICA',
+                        'razon_social': datos['nombre_proveedor'],
+                        'es_cliente': False,
+                        'es_proveedor': True,
+                    },
+                )
+                ult = CompraProveedor.objects.filter(empresa=empresa).order_by('-consecutivo').first()
+                cons = (ult.consecutivo + 1) if ult else 1
+                metodo = 'CREDITO' if request.POST.get('metodo_pago', 'CREDITO') == 'CREDITO' else 'CONTADO'
+                compra = CompraProveedor.objects.create(
+                    empresa=empresa,
+                    consecutivo=cons,
+                    proveedor=prov,
+                    numero_factura_proveedor=datos['numero_factura'],
+                    fecha=datos['fecha'] or date.today(),
+                    metodo_pago=metodo,
+                    total=datos['total'],
+                    saldo_pendiente=datos['total'] if metodo == 'CREDITO' else Decimal('0.00'),
+                    cufe_proveedor=datos['cufe'],
+                    xml_recibido=datos['xml_raw'][:65000],
+                    observaciones=f"Importada desde XML UBL 2.1 ({len(datos['lineas'])} líneas).",
+                )
+                registrar_asiento_compra(compra)
+            registrar_actividad(request, 'inventario', 'IMPORTAR_COMPRA_XML', f"Recibió factura XML {datos['numero_factura']} de {prov.razon_social}.", empresa=empresa, objeto=compra)
+            messages.success(request, f"Factura XML {datos['numero_factura']} de {prov.razon_social} recibida (${datos['total']:,.0f}).")
+            return redirect('inventario:compra_detalle', compra_id=compra.id)
+        except Exception as exc:
+            messages.error(request, f"Error leyendo XML/ZIP de proveedor: {exc}")
+    return render(request, 'inventario/compra_importar_xml.html')
+
+
+@login_required
+@requiere_inventario
+@require_POST
+def compra_evento_radian(request, compra_id):
+    """Emite evento RADIAN (030 Acuse, 031 Reclamo, 032 Recibo Bien, 033 Aceptación) sobre compra recibida."""
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+    compra = get_object_or_404(CompraProveedor, id=compra_id, empresa=empresa)
+    codigo = request.POST.get('codigo_evento', '').strip()
+    desc_map = {
+        '030': 'Acuse de recibo',
+        '031': 'Reclamo factura',
+        '032': 'Recibo bien/servicio',
+        '033': 'Aceptación expresa',
+    }
+    if codigo not in desc_map:
+        messages.error(request, "Evento RADIAN no válido.")
+        return redirect('inventario:compra_detalle', compra_id=compra.id)
+    xml_ar = generar_application_response_radian(compra, codigo, empresa)
+    eventos = list(compra.radian_eventos or [])
+    eventos.append({
+        'codigo': codigo,
+        'descripcion': desc_map[codigo],
+        'fecha': datetime.now().strftime('%Y-%m-%d %H:%M:%S'),
+        'xml_len': len(xml_ar),
+    })
+    compra.radian_eventos = eventos
+    compra.radian_estado = f"{codigo} - {desc_map[codigo]}"[:120]
+    compra.save(update_fields=['radian_eventos', 'radian_estado'])
+    registrar_actividad(request, 'inventario', 'RADIAN_COMPRA', f"Evento RADIAN {codigo} en compra {compra.numero_completo}.", empresa=empresa, objeto=compra)
+    messages.success(request, f"Evento RADIAN {codigo} ({desc_map[codigo]}) registrado con XML ApplicationResponse.")
+    return redirect('inventario:compra_detalle', compra_id=compra.id)
