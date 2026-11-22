@@ -1,4 +1,5 @@
 import logging
+from datetime import timedelta
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
@@ -19,12 +20,44 @@ from apps.usuarios.models import User, EmpresaUsuario
 from apps.usuarios.decorators import requiere_admin
 from apps.core.audit import registrar_actividad
 from apps.core.config import mail_settings
+from apps.core.models import RegistroActividad
+from apps.core.notifications import (
+    destinatarios_propietarios_empresa,
+    notificar_evento_seguridad,
+)
 from apps.core.mail import (
     get_last_mail_error,
     is_dummy_or_invalid_email,
     send_notification_email,
     send_password_reset_email,
 )
+
+
+def _notificar_cambio_clave_usuario(request, user, origen: str):
+    """Notifica al usuario y, si es propietario activo, al correo oficial de sus empresas."""
+    destinatarios = [user.email]
+    rels_prop = list(
+        EmpresaUsuario.objects.filter(
+            user=user, activo=True, rol='propietario', empresa__activa=True
+        ).select_related('empresa')
+    )
+    emp_principal = rels_prop[0].empresa if rels_prop else (
+        None if user.es_superadmin_user() else (user.empresas_activas()[0] if user.empresas_activas() else None)
+    )
+    for rel in rels_prop:
+        if rel.empresa.email:
+            destinatarios.append(rel.empresa.email)
+
+    notificar_evento_seguridad(
+        request,
+        "Contraseña actualizada",
+        f"Se actualizó la contraseña de acceso para {user.email} ({origen}).",
+        destinatarios=destinatarios,
+        actor=user,
+        empresa=emp_principal,
+        action_url=request.build_absolute_uri(reverse('usuarios:password_reset')),
+        action_text="Solicitar nuevo restablecimiento",
+    )
 
 
 class EmailVerificationTokenGenerator(PasswordResetTokenGenerator):
@@ -76,7 +109,54 @@ def login_view(request):
             next_url = request.GET.get('next') or 'core:dashboard'
             return redirect(next_url)
         else:
-            registrar_actividad(request, 'auth', 'LOGIN_FALLIDO', f"Credenciales incorrectas para '{login_id}'.", datos_extra={'login_intentado': login_id})
+            u_intento = User.objects.filter(
+                Q(username__iexact=login_id) | Q(email__iexact=login_id)
+            ).first()
+            registrar_actividad(
+                request,
+                'auth',
+                'LOGIN_FALLIDO',
+                f"Credenciales incorrectas para '{login_id}'.",
+                user=u_intento,
+                datos_extra={'login_intentado': login_id},
+            )
+            if u_intento and u_intento.email:
+                desde_24h = timezone.now() - timedelta(hours=24)
+                ultimo_ok = (
+                    RegistroActividad.objects.filter(
+                        accion='LOGIN',
+                        usuario=u_intento,
+                        created_at__gte=desde_24h,
+                    )
+                    .order_by('-created_at')
+                    .first()
+                )
+                corte = ultimo_ok.created_at if ultimo_ok else desde_24h
+                fallos_consecutivos = (
+                    RegistroActividad.objects.filter(accion='LOGIN_FALLIDO', created_at__gte=corte)
+                    .filter(
+                        Q(usuario=u_intento)
+                        | Q(datos_extra__login_intentado__iexact=u_intento.username)
+                        | Q(datos_extra__login_intentado__iexact=u_intento.email)
+                    )
+                    .count()
+                )
+                if fallos_consecutivos >= 5 and fallos_consecutivos % 5 == 0:
+                    emp_alerta = (
+                        None
+                        if u_intento.es_superadmin_user()
+                        else (u_intento.empresas_activas()[0] if u_intento.empresas_activas() else None)
+                    )
+                    notificar_evento_seguridad(
+                        request,
+                        f"Alerta: {fallos_consecutivos} intentos fallidos de inicio de sesión",
+                        f"Se detectaron {fallos_consecutivos} intentos fallidos consecutivos de acceso para la cuenta {u_intento.email}.",
+                        destinatarios=[u_intento.email],
+                        actor=u_intento,
+                        empresa=emp_alerta,
+                        action_url=request.build_absolute_uri(reverse('usuarios:password_reset')),
+                        action_text="Restablecer mi contraseña",
+                    )
             messages.error(request, "Credenciales incorrectas. Verifique su usuario o contraseña.")
 
     return render(request, 'usuarios/login.html')
@@ -127,15 +207,27 @@ def perfil_view(request):
 
         # Cambio de contraseña opcional
         nuevo_pwd = request.POST.get('nuevo_password', '').strip()
+        clave_actualizada = False
         if nuevo_pwd:
             if len(nuevo_pwd) >= 6:
                 user.set_password(nuevo_pwd)
                 login(request, user)
+                clave_actualizada = True
                 messages.success(request, "Contraseña actualizada exitosamente.")
             else:
                 messages.error(request, "La nueva contraseña debe tener mínimo 6 caracteres.")
 
         user.save()
+        if clave_actualizada:
+            registrar_actividad(
+                request,
+                'auth',
+                'CAMBIAR_CONTRASENA_PERFIL',
+                f"Actualizó su contraseña desde su perfil ({user.username}).",
+                user=user,
+                objeto=user,
+            )
+            _notificar_cambio_clave_usuario(request, user, "desde su perfil")
         messages.success(request, "Perfil actualizado correctamente.")
         return redirect('usuarios:perfil')
 
@@ -188,10 +280,15 @@ def usuario_crear(request):
         rol = request.POST.get('rol', 'operador')
         password = request.POST.get('password', '').strip()
 
-        if not email or not password:
-            messages.error(request, "El correo electrónico y la contraseña son obligatorios.")
+        if not email:
+            messages.error(request, "El correo electrónico es obligatorio.")
             return render(request, 'usuarios/crear.html', {'roles': EmpresaUsuario.ROLES_CHOICES})
 
+        if password and len(password) < 6:
+            messages.error(request, "La contraseña inicial debe tener al menos 6 caracteres o quedar vacía para enviar enlace.")
+            return render(request, 'usuarios/crear.html', {'roles': EmpresaUsuario.ROLES_CHOICES})
+
+        enviar_enlace_inicial = not bool(password)
         user, created = User.objects.get_or_create(
             username=email,
             defaults={
@@ -203,25 +300,61 @@ def usuario_crear(request):
             }
         )
         if created:
-            user.set_password(password)
+            user.set_password(password or get_random_string(20))
             user.save()
 
         # Asignar a la empresa
-        EmpresaUsuario.objects.update_or_create(
+        asignacion, _ = EmpresaUsuario.objects.update_or_create(
             user=user,
             empresa=empresa,
             defaults={'rol': rol, 'activo': True}
         )
+        rol_display = asignacion.get_rol_display()
         registrar_actividad(
             request,
             'usuarios',
             'CREAR_USUARIO',
-            f"Configuró usuario '{user.email}' con rol '{rol}' en {empresa.display_name}.",
+            f"Configuró usuario '{user.email}' con rol '{rol_display}' en {empresa.display_name}.",
             empresa=empresa,
             objeto=user,
+            datos_extra={'enlace_inicial': enviar_enlace_inicial, 'rol': rol},
         )
 
-        messages.success(request, f"Usuario {user.email} configurado exitosamente con rol {rol}.")
+        if created and enviar_enlace_inicial:
+            uid = urlsafe_base64_encode(force_bytes(user.pk))
+            token = default_token_generator.make_token(user)
+            reset_url = request.build_absolute_uri(reverse('usuarios:password_reset_confirm', args=[uid, token]))
+            enlace_ok = send_password_reset_email(user, reset_url)
+            propietarios = destinatarios_propietarios_empresa(
+                empresa, excluir_emails=[request.user.email, user.email]
+            )
+            notificar_evento_seguridad(
+                request,
+                "Nuevo integrante agregado al equipo",
+                f"Se creó la cuenta de {user.email} en {empresa.display_name} con rol '{rol_display}' y se envió enlace para definir contraseña.",
+                destinatarios=propietarios,
+                empresa=empresa,
+                action_url=request.build_absolute_uri(reverse('usuarios:lista')),
+                action_text="Ver equipo y roles",
+            )
+            if enlace_ok:
+                messages.success(request, f"Usuario {user.email} creado con rol {rol_display} y enlace de acceso enviado a su correo.")
+            else:
+                messages.warning(request, f"Usuario {user.email} creado, pero no se pudo enviar el enlace inicial ({get_last_mail_error()}).")
+        else:
+            destinatarios = [user.email] + destinatarios_propietarios_empresa(
+                empresa, excluir_emails=[request.user.email]
+            )
+            notificar_evento_seguridad(
+                request,
+                "Nuevo acceso asignado en empresa",
+                f"Se habilitó el acceso de {user.email} en {empresa.display_name} con el rol '{rol_display}'.",
+                destinatarios=destinatarios,
+                empresa=empresa,
+                action_url=request.build_absolute_uri(reverse('usuarios:login')),
+                action_text="Ingresar a FacCol",
+            )
+            messages.success(request, f"Usuario {user.email} configurado exitosamente con rol {rol_display}.")
         return redirect('usuarios:lista')
 
     roles = EmpresaUsuario.ROLES_CHOICES
@@ -239,6 +372,8 @@ def usuario_cambiar_rol(request, asignacion_id):
     if request.method == 'POST':
         nuevo_rol = request.POST.get('rol')
         if nuevo_rol in dict(EmpresaUsuario.ROLES_CHOICES):
+            rol_anterior_display = asignacion.get_rol_display()
+            rol_cambiado = asignacion.rol != nuevo_rol
             asignacion.rol = nuevo_rol
             asignacion.save()
             registrar_actividad(
@@ -249,6 +384,19 @@ def usuario_cambiar_rol(request, asignacion_id):
                 empresa=empresa,
                 objeto=asignacion.user,
             )
+            if rol_cambiado:
+                dests = [asignacion.user.email] + destinatarios_propietarios_empresa(
+                    empresa, excluir_emails=[request.user.email]
+                )
+                notificar_evento_seguridad(
+                    request,
+                    "Cambio de rol de usuario",
+                    f"El rol de {asignacion.user.email} en {empresa.display_name} cambió de '{rol_anterior_display}' a '{asignacion.get_rol_display()}'.",
+                    destinatarios=dests,
+                    empresa=empresa,
+                    action_url=request.build_absolute_uri(reverse('usuarios:lista')),
+                    action_text="Ver equipo y roles",
+                )
             messages.success(request, f"Rol de {asignacion.user.get_full_name() or asignacion.user.username} actualizado a {asignacion.get_rol_display()}.")
 
     return redirect('usuarios:lista')
@@ -276,6 +424,18 @@ def usuario_cambiar_estado(request, asignacion_id):
         f"Acceso de '{asignacion.user.username}' {estado_str} en {empresa.display_name}.",
         empresa=empresa,
         objeto=asignacion.user,
+    )
+    dests = [asignacion.user.email] + destinatarios_propietarios_empresa(
+        empresa, excluir_emails=[request.user.email]
+    )
+    notificar_evento_seguridad(
+        request,
+        f"Acceso de usuario {estado_str}",
+        f"La cuenta de {asignacion.user.email} en {empresa.display_name} fue {estado_str}.",
+        destinatarios=dests,
+        empresa=empresa,
+        action_url=request.build_absolute_uri(reverse('usuarios:lista')),
+        action_text="Ver equipo y roles",
     )
     messages.success(request, f"Acceso de {asignacion.user.username} a la empresa ha sido {estado_str}.")
     return redirect('usuarios:lista')
@@ -486,6 +646,20 @@ def usuario_actualizar_correo(request, asignacion_id):
         datos_extra={'correo_anterior': correo_anterior, 'correo_nuevo': nuevo_correo, 'motivo': motivo},
     )
 
+    dests_alerta = [correo_anterior, nuevo_correo] + destinatarios_propietarios_empresa(
+        asignacion.empresa, excluir_emails=[request.user.email]
+    )
+    notificar_evento_seguridad(
+        request,
+        "Correo electrónico de acceso actualizado",
+        f"El correo de acceso de '{correo_anterior or u.username}' fue actualizado a '{nuevo_correo}' en {asignacion.empresa.display_name}.",
+        destinatarios=dests_alerta,
+        empresa=asignacion.empresa,
+        action_url=request.build_absolute_uri(reverse('usuarios:password_reset')),
+        action_text="Restablecer contraseña",
+        extra_lineas=[f"Motivo registrado: {motivo}"] if motivo else None,
+    )
+
     if 'enviar_enlace' in request.POST:
         uid = urlsafe_base64_encode(force_bytes(u.pk))
         token = default_token_generator.make_token(u)
@@ -580,6 +754,7 @@ def password_reset_confirm_view(request, uidb64, token):
                 user=user,
                 objeto=user,
             )
+            _notificar_cambio_clave_usuario(request, user, "mediante enlace de recuperación")
             messages.success(request, "Tu contraseña ha sido actualizada. Ya puedes iniciar sesión.")
             return redirect('usuarios:login')
 

@@ -26,6 +26,10 @@ from apps.core.audit import registrar_actividad
 from apps.core.campaigns import get_tenant_banner
 from apps.core.mail_service import enviar_correo_sistema, get_mail_runtime_config
 from apps.core.models import RegistroActividad
+from apps.core.notifications import (
+    destinatarios_propietarios_empresa,
+    notificar_evento_seguridad,
+)
 from apps.core.platform_settings import encrypt_secret
 from apps.inventario.models import Producto, MovimientoInventario
 from apps.terceros.models import Tercero
@@ -150,6 +154,7 @@ def configuracion_empresa(request):
 
     if request.method == 'POST':
         seccion = request.POST.get('seccion', 'wompi')
+        alerta_cfg = None
 
         if seccion == 'wompi':
             empresa.wompi_public_key = request.POST.get('wompi_public_key', '').strip()
@@ -166,6 +171,10 @@ def configuracion_empresa(request):
                         setattr(empresa, attr, encrypt_secret(val))
             empresa.save()
             registrar_actividad(request, 'configuracion', 'CONFIG_WOMPI_EMPRESA', f"Actualizó pasarela Wompi propia de {empresa.display_name}.", empresa=empresa, objeto=empresa)
+            alerta_cfg = (
+                "Pasarela Wompi empresarial actualizada",
+                f"Se modificaron las llaves o configuración de Wompi para {empresa.display_name}.",
+            )
             messages.success(request, "Pasarela Wompi propia guardada y cifrada para tu empresa.")
 
         elif seccion == 'dian':
@@ -180,6 +189,10 @@ def configuracion_empresa(request):
             empresa.dian_test_set_id = request.POST.get('dian_test_set_id', '').strip()
             empresa.save()
             registrar_actividad(request, 'configuracion', 'CONFIG_DIAN_EMPRESA', f"Actualizó parámetros DIAN/perfil operativo de {empresa.display_name}.", empresa=empresa, objeto=empresa)
+            alerta_cfg = (
+                "Parámetros DIAN y facturación actualizados",
+                f"Se modificó el perfil operativo, prefijos o resolución DIAN de {empresa.display_name}.",
+            )
             messages.success(request, "Configuración DIAN y perfil de negocio actualizados.")
 
         elif seccion == 'smtp':
@@ -203,7 +216,22 @@ def configuracion_empresa(request):
                     empresa.resend_api_key = encrypt_secret(new_resend)
             empresa.save()
             registrar_actividad(request, 'configuracion', 'CONFIG_CORREO_EMPRESA', f"Actualizó configuración de correo independiente para {empresa.display_name}.", empresa=empresa, objeto=empresa)
+            alerta_cfg = (
+                "Configuración de correo empresarial actualizada",
+                f"Se modificó el servidor SMTP, remitente o API Key de Resend para {empresa.display_name}.",
+            )
             messages.success(request, "Configuración de correo de tu empresa actualizada.")
+
+        if alerta_cfg:
+            notificar_evento_seguridad(
+                request,
+                alerta_cfg[0],
+                alerta_cfg[1],
+                destinatarios=destinatarios_propietarios_empresa(empresa),
+                empresa=empresa,
+                action_url=request.build_absolute_uri(reverse('core:configuracion_empresa')),
+                action_text="Revisar configuración",
+            )
 
         return redirect('core:configuracion_empresa')
 

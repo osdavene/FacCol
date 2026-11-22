@@ -12,6 +12,10 @@ from apps.usuarios.models import User, EmpresaUsuario
 from apps.facturacion.models import Factura
 from apps.core.audit import registrar_actividad
 from apps.core.models import RegistroActividad
+from apps.core.notifications import (
+    destinatarios_propietarios_empresa,
+    notificar_evento_seguridad,
+)
 from apps.core.platform_settings import encrypt_secret, mask_secret, set_platform_setting
 from apps.core.mail_service import (
     enviar_correo_sistema,
@@ -64,6 +68,15 @@ def empresa_toggle_activa(request, empresa_id):
     empresa.save(update_fields=['activa'])
     estado_str = "activada" if empresa.activa else "suspendida"
     registrar_actividad(request, 'empresas', 'ACTIVAR_EMPRESA' if empresa.activa else 'SUSPENDER_EMPRESA', f"Empresa '{empresa.razon_social}' {estado_str} por SuperAdmin.", empresa=empresa, objeto=empresa)
+    notificar_evento_seguridad(
+        request,
+        f"Empresa {estado_str}: {empresa.display_name}",
+        f"El estado operativo de '{empresa.display_name}' cambió a '{estado_str.upper()}' desde el Backoffice SaaS.",
+        destinatarios=destinatarios_propietarios_empresa(empresa),
+        empresa=empresa,
+        action_url=request.build_absolute_uri(reverse('core:dashboard')),
+        action_text="Ir a FacCol",
+    )
     messages.success(request, f"La empresa inquilina '{empresa.razon_social}' ha sido {estado_str} exitosamente.")
     return redirect('backoffice:empresas_lista')
 
@@ -202,6 +215,14 @@ def empresa_editar(request, empresa_id):
         empresa.direccion = request.POST.get('direccion', '').strip()
 
         plan_anterior_id = empresa.plan_id
+        critico_antes = (
+            empresa.modo_dian,
+            empresa.resolucion_dian,
+            empresa.dian_software_id,
+            empresa.smtp_host,
+            empresa.smtp_from_address,
+            empresa.activa,
+        )
         plan_id = request.POST.get('plan')
         empresa.plan_id = int(plan_id) if plan_id else None
 
@@ -257,6 +278,36 @@ def empresa_editar(request, empresa_id):
                 f"SuperAdmin asignó el plan '{plan_txt}' a '{empresa.razon_social}'.",
                 empresa=empresa,
                 objeto=empresa,
+            )
+            notificar_evento_seguridad(
+                request,
+                f"Plan actualizado: {plan_txt}",
+                f"Desde el Backoffice SaaS se asignó el plan '{plan_txt}' a {empresa.display_name}.",
+                destinatarios=destinatarios_propietarios_empresa(empresa),
+                empresa=empresa,
+                action_url=request.build_absolute_uri(reverse('core:dashboard')),
+                action_text="Ir a FacCol",
+            )
+        critico_despues = (
+            empresa.modo_dian,
+            empresa.resolucion_dian,
+            empresa.dian_software_id,
+            empresa.smtp_host,
+            empresa.smtp_from_address,
+            empresa.activa,
+        )
+        clave_correo_tocada = any(
+            k in request.POST for k in ('clear_resend_api_key', 'clear_smtp_password')
+        ) or bool(request.POST.get('resend_api_key', '').strip() or request.POST.get('smtp_password', '').strip())
+        if critico_antes != critico_despues or clave_correo_tocada:
+            notificar_evento_seguridad(
+                request,
+                "Configuración crítica modificada desde Backoffice",
+                f"Se actualizaron parámetros operativos críticos (estado, DIAN o correo) de {empresa.display_name}.",
+                destinatarios=destinatarios_propietarios_empresa(empresa),
+                empresa=empresa,
+                action_url=request.build_absolute_uri(reverse('core:configuracion_empresa')),
+                action_text="Revisar configuración",
             )
         registrar_actividad(
             request,
@@ -335,22 +386,39 @@ def solicitud_plan_resolver(request, solicitud_id):
         solicitud.estado = 'APROBADA'
         solicitud.resolved_at = timezone.now()
         solicitud.save(update_fields=['estado', 'resolved_at'])
-        dest = (solicitud.solicitado_por.email if solicitud.solicitado_por and solicitud.solicitado_por.email else emp.email)
-        if dest:
-            enviar_correo_sistema(
-                dest,
-                f"FacCol — Plan actualizado a {nuevo_plan.nombre}",
-                f"<h3>¡Cambio de plan aprobado!</h3><p>Tu empresa <b>{emp.display_name}</b> ya tiene activo el plan <b>{nuevo_plan.nombre}</b> y todos sus módulos habilitados.</p>",
-                fail_silently=True,
-            )
+        dests = (
+            [solicitud.solicitado_por.email] if solicitud.solicitado_por and solicitud.solicitado_por.email else []
+        ) + destinatarios_propietarios_empresa(emp)
+        notificar_evento_seguridad(
+            request,
+            f"Cambio de plan aprobado: {nuevo_plan.nombre}",
+            f"La solicitud de cambio al plan '{nuevo_plan.nombre}' para '{emp.display_name}' fue aprobada y todos sus módulos están activos.",
+            destinatarios=dests,
+            empresa=emp,
+            action_url=request.build_absolute_uri(reverse('core:dashboard')),
+            action_text="Ir a FacCol",
+        )
         messages.success(request, f"Plan de '{emp.display_name}' actualizado a '{nuevo_plan.nombre}'.")
         registrar_actividad(request, 'planes', 'APROBAR_PLAN', f"Aprobó solicitud y activó '{nuevo_plan.nombre}' en '{emp.display_name}'.", empresa=emp, objeto=solicitud)
     elif accion == 'rechazar':
+        emp = solicitud.empresa
         solicitud.estado = 'RECHAZADA'
         solicitud.resolved_at = timezone.now()
         solicitud.save(update_fields=['estado', 'resolved_at'])
-        registrar_actividad(request, 'planes', 'RECHAZAR_PLAN', f"Rechazó solicitud de cambio a '{solicitud.plan_solicitado.nombre}' para '{solicitud.empresa.display_name}'.", empresa=solicitud.empresa, objeto=solicitud)
-        messages.info(request, f"Solicitud de '{solicitud.empresa.display_name}' rechazada.")
+        dests = (
+            [solicitud.solicitado_por.email] if solicitud.solicitado_por and solicitud.solicitado_por.email else []
+        ) + destinatarios_propietarios_empresa(emp)
+        notificar_evento_seguridad(
+            request,
+            f"Solicitud de cambio de plan rechazada: {solicitud.plan_solicitado.nombre}",
+            f"La solicitud de cambio al plan '{solicitud.plan_solicitado.nombre}' para '{emp.display_name}' fue rechazada desde Backoffice SaaS.",
+            destinatarios=dests,
+            empresa=emp,
+            action_url=request.build_absolute_uri(reverse('core:dashboard')),
+            action_text="Ver detalles en FacCol",
+        )
+        registrar_actividad(request, 'planes', 'RECHAZAR_PLAN', f"Rechazó solicitud de cambio a '{solicitud.plan_solicitado.nombre}' para '{emp.display_name}'.", empresa=emp, objeto=solicitud)
+        messages.info(request, f"Solicitud de '{emp.display_name}' rechazada.")
     else:
         messages.error(request, "Acción inválida sobre la solicitud.")
 
