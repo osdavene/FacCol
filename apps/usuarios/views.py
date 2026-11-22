@@ -16,12 +16,11 @@ from django.views.decorators.http import require_POST
 from apps.empresas.models import Empresa, Plan
 from apps.usuarios.models import User, EmpresaUsuario
 from apps.usuarios.decorators import requiere_admin
+from apps.core.audit import registrar_actividad
 from apps.core.config import mail_settings
 from apps.core.mail import (
     get_last_mail_error,
-    is_dummy_or_invalid_email,
     send_password_reset_email,
-    send_verification_email,
 )
 
 
@@ -64,121 +63,24 @@ def login_view(request):
                     )
                 else:
                     messages.error(request, "Esta cuenta ha sido desactivada. Comuníquese con el administrador.")
+                registrar_actividad(request, 'auth', 'LOGIN_BLOQUEADO', f"Intento de ingreso con cuenta inactiva ({user.username}).", user=user)
                 return render(request, 'usuarios/login.html')
 
             login(request, user)
+            emp_default = None if user.es_superadmin_user() else (user.empresas_activas()[0] if user.empresas_activas() else None)
+            registrar_actividad(request, 'auth', 'LOGIN', f"Inicio de sesión exitoso ({user.username}).", empresa=emp_default, user=user)
             messages.success(request, f"¡Bienvenido de nuevo, {user.first_name or user.username}!")
             next_url = request.GET.get('next') or 'core:dashboard'
             return redirect(next_url)
         else:
+            registrar_actividad(request, 'auth', 'LOGIN_FALLIDO', f"Credenciales incorrectas para '{login_id}'.", datos_extra={'login_intentado': login_id})
             messages.error(request, "Credenciales incorrectas. Verifique su usuario o contraseña.")
 
     return render(request, 'usuarios/login.html')
 
 
-def registro_view(request):
-    """Registro público SaaS: crea Empresa + Propietario pendiente y envía correo de verificación."""
-    if request.user.is_authenticated:
-        return redirect('core:dashboard')
-
-    if request.method == 'POST':
-        razon_social = request.POST.get('razon_social', '').strip()
-        nit = request.POST.get('nit', '').strip()
-        first_name = request.POST.get('first_name', '').strip()
-        last_name = request.POST.get('last_name', '').strip()
-        telefono = request.POST.get('telefono', '').strip()
-        email = request.POST.get('email', '').strip().lower()
-        perfil = request.POST.get('perfil_operativo', 'GENERAL').strip().upper()
-        if perfil not in ('GENERAL', 'TIENDA'):
-            perfil = 'GENERAL'
-        p1 = request.POST.get('password1', '').strip()
-        p2 = request.POST.get('password2', '').strip()
-
-        form_data = {
-            'razon_social': razon_social,
-            'nit': nit,
-            'first_name': first_name,
-            'last_name': last_name,
-            'telefono': telefono,
-            'email': email,
-            'perfil_operativo': perfil,
-        }
-
-        if not razon_social or not nit or not email or not p1:
-            messages.error(request, "Completa razón social, NIT/cédula, correo electrónico y contraseña.")
-            return render(request, 'usuarios/registro.html', {'form_data': form_data})
-        if is_dummy_or_invalid_email(email):
-            messages.error(request, "Ingresa una dirección de correo electrónico válida y real.")
-            return render(request, 'usuarios/registro.html', {'form_data': form_data})
-        if len(p1) < 6:
-            messages.error(request, "La contraseña debe tener mínimo 6 caracteres.")
-            return render(request, 'usuarios/registro.html', {'form_data': form_data})
-        if p1 != p2:
-            messages.error(request, "Las contraseñas no coinciden.")
-            return render(request, 'usuarios/registro.html', {'form_data': form_data})
-        if User.objects.filter(Q(username__iexact=email) | Q(email__iexact=email)).exists():
-            messages.error(request, "Ya existe una cuenta registrada con ese correo electrónico.")
-            return render(request, 'usuarios/registro.html', {'form_data': form_data})
-        if Empresa.objects.filter(nit=nit).exists():
-            messages.error(request, "Ya existe una empresa registrada con ese NIT o cédula.")
-            return render(request, 'usuarios/registro.html', {'form_data': form_data})
-
-        with transaction.atomic():
-            plan_gratuito = Plan.objects.filter(activo=True, precio_mensual=0).order_by('id').first()
-            empresa = Empresa.objects.create(
-                razon_social=razon_social,
-                nombre_comercial=razon_social,
-                nit=nit,
-                email=email,
-                telefono=telefono,
-                perfil_operativo=perfil,
-                plan=plan_gratuito,
-                activa=True,
-            )
-            if plan_gratuito:
-                empresa.sincronizar_modulos_con_plan(plan_gratuito)
-
-            user = User.objects.create_user(
-                username=email,
-                email=email,
-                password=p1,
-                first_name=first_name or razon_social[:30],
-                last_name=last_name,
-                telefono=telefono,
-                activo=False,
-                is_active=True,
-                email_verified_at=None,
-            )
-            EmpresaUsuario.objects.create(
-                user=user,
-                empresa=empresa,
-                rol='propietario',
-                activo=True,
-            )
-
-        uid = urlsafe_base64_encode(force_bytes(user.pk))
-        token = email_verification_token.make_token(user)
-        verify_url = request.build_absolute_uri(
-            reverse('usuarios:verificar_email', args=[uid, token])
-        )
-        enviado = send_verification_email(user, verify_url)
-        if enviado:
-            messages.success(
-                request,
-                f"¡Empresa '{empresa.display_name}' creada! Enviamos un enlace de activación a {email} para habilitar tu acceso."
-            )
-        else:
-            messages.warning(
-                request,
-                f"Tu cuenta para '{empresa.display_name}' fue creada, pero el servidor de correo no pudo entregar el enlace de verificación."
-            )
-        return redirect('usuarios:login')
-
-    return render(request, 'usuarios/registro.html', {'form_data': {}})
-
-
 def verificar_email_view(request, uidb64, token):
-    """Activa cuenta nueva validando token firmado de un solo uso y expiración."""
+    """Activa cuenta validando token firmado de un solo uso y expiración."""
     try:
         uid = force_str(urlsafe_base64_decode(uidb64))
         user = User.objects.get(pk=uid)
@@ -193,11 +95,14 @@ def verificar_email_view(request, uidb64, token):
     user.activo = True
     user.is_active = True
     user.save(update_fields=['email_verified_at', 'activo', 'is_active'])
-    messages.success(request, "¡Correo verificado y empresa activada! Ya puedes iniciar sesión en FacCol.")
+    registrar_actividad(request, 'auth', 'VERIFICAR_EMAIL', f"Correo verificado para {user.email or user.username}.", user=user, objeto=user)
+    messages.success(request, "¡Correo verificado! Ya puedes iniciar sesión en FacCol.")
     return redirect('usuarios:login')
 
 
 def logout_view(request):
+    if request.user.is_authenticated:
+        registrar_actividad(request, 'auth', 'LOGOUT', f"Cierre de sesión ({request.user.username}).")
     logout(request)
     messages.info(request, "Ha cerrado sesión de forma segura.")
     return redirect('usuarios:login')
@@ -304,6 +209,14 @@ def usuario_crear(request):
             empresa=empresa,
             defaults={'rol': rol, 'activo': True}
         )
+        registrar_actividad(
+            request,
+            'usuarios',
+            'CREAR_USUARIO',
+            f"Configuró usuario '{user.email}' con rol '{rol}' en {empresa.display_name}.",
+            empresa=empresa,
+            objeto=user,
+        )
 
         messages.success(request, f"Usuario {user.email} configurado exitosamente con rol {rol}.")
         return redirect('usuarios:lista')
@@ -325,6 +238,14 @@ def usuario_cambiar_rol(request, asignacion_id):
         if nuevo_rol in dict(EmpresaUsuario.ROLES_CHOICES):
             asignacion.rol = nuevo_rol
             asignacion.save()
+            registrar_actividad(
+                request,
+                'usuarios',
+                'CAMBIAR_ROL',
+                f"Cambió rol de '{asignacion.user.username}' a '{asignacion.get_rol_display()}'.",
+                empresa=empresa,
+                objeto=asignacion.user,
+            )
             messages.success(request, f"Rol de {asignacion.user.get_full_name() or asignacion.user.username} actualizado a {asignacion.get_rol_display()}.")
 
     return redirect('usuarios:lista')
@@ -345,6 +266,14 @@ def usuario_cambiar_estado(request, asignacion_id):
     asignacion.activo = not asignacion.activo
     asignacion.save()
     estado_str = "activado" if asignacion.activo else "desactivado"
+    registrar_actividad(
+        request,
+        'usuarios',
+        'CAMBIAR_ESTADO_USUARIO',
+        f"Acceso de '{asignacion.user.username}' {estado_str} en {empresa.display_name}.",
+        empresa=empresa,
+        objeto=asignacion.user,
+    )
     messages.success(request, f"Acceso de {asignacion.user.username} a la empresa ha sido {estado_str}.")
     return redirect('usuarios:lista')
 
@@ -384,6 +313,14 @@ def usuario_asignar_clave(request, asignacion_id):
     u = asignacion.user
     u.set_password(clave_final)
     u.save(update_fields=['password'])
+    registrar_actividad(
+        request,
+        'usuarios',
+        'ASIGNAR_CLAVE',
+        f"Asignó nueva contraseña a '{u.email or u.username}' en {asignacion.empresa.display_name}.",
+        empresa=asignacion.empresa,
+        objeto=u,
+    )
 
     messages.success(
         request,
@@ -465,6 +402,14 @@ def password_reset_confirm_view(request, uidb64, token):
         else:
             user.set_password(p1)
             user.save(update_fields=['password'])
+            registrar_actividad(
+                request,
+                'auth',
+                'CAMBIAR_CONTRASENA',
+                f"Restableció su contraseña mediante enlace de recuperación ({user.username}).",
+                user=user,
+                objeto=user,
+            )
             messages.success(request, "Tu contraseña ha sido actualizada. Ya puedes iniciar sesión.")
             return redirect('usuarios:login')
 

@@ -32,6 +32,7 @@ from apps.facturacion.wompi_service import (
     sync_wompi_transaction_by_id,
     verify_wompi_event_checksum,
 )
+from apps.core.audit import registrar_actividad
 from apps.core.mail_service import enviar_correo_sistema
 from apps.contabilidad.services import (
     registrar_asiento_nota_credito,
@@ -233,6 +234,14 @@ def factura_crear(request):
                 factura.saldo_pendiente = Decimal('0.00')
                 factura.save(update_fields=['saldo_pendiente'])
 
+        registrar_actividad(
+            request,
+            'facturacion',
+            'EMITIR_DOCUMENTO',
+            f"Emitió {factura.get_tipo_documento_display()} {factura.numero_completo} por ${factura.total:,.0f} COP.",
+            empresa=empresa,
+            objeto=factura,
+        )
         messages.success(
             request,
             f"{factura.get_tipo_documento_display()} {factura.numero_completo} emitida exitosamente por ${factura.total:,.0f} COP."
@@ -418,6 +427,14 @@ def factura_enviar_email(request, factura_id):
                 fail_silently=False,
             )
 
+            registrar_actividad(
+                request,
+                'facturacion',
+                'ENVIAR_FACTURA_EMAIL',
+                f"Envió {factura.numero_completo} por correo a {destinatario}.",
+                empresa=empresa,
+                objeto=factura,
+            )
             messages.success(request, f"¡Factura {factura.numero_completo} enviada exitosamente a {destinatario}!")
         except Exception as e:
             messages.error(request, f"No se pudo enviar el correo: {str(e)}")
@@ -646,6 +663,14 @@ def recibo_crear(request):
 
             registrar_asiento_recibo(recibo)
 
+        registrar_actividad(
+            request,
+            'facturacion',
+            'RECIBO_CAJA',
+            f"Registró Recibo RC-{recibo.consecutivo} por ${recibo.valor:,.0f} COP.",
+            empresa=empresa,
+            objeto=recibo,
+        )
         messages.success(request, f"Recibo RC-{recibo.consecutivo} registrado exitosamente por ${recibo.valor:,.0f} COP.")
         return redirect('facturacion:recibos_lista')
 
@@ -856,6 +881,14 @@ def factura_emitir_nota_credito(request, factura_id):
 
         registrar_asiento_nota_credito(nc, factura_origen=origen)
 
+    registrar_actividad(
+        request,
+        'facturacion',
+        'NOTA_CREDITO',
+        f"Emitió Nota Crédito {nc.numero_completo} anulando {origen.numero_completo} por ${nc.total:,.0f} COP.",
+        empresa=empresa,
+        objeto=nc,
+    )
     messages.success(
         request,
         f"Nota Crédito {nc.numero_completo} emitida por ${nc.total:,.0f} COP. Documento {origen.numero_completo} anulado e inventario reversado."

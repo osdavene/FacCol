@@ -480,56 +480,176 @@ class ArquitecturaCorreoYCampanasTests(TestCase):
         self.assertContains(r_dash, "banner_dismissed_")
 
     @override_settings(EMAIL_BACKEND="django.core.mail.backends.locmem.EmailBackend")
-    def test_registro_publico_y_verificacion_token_unico(self):
-        import re
+    def test_solo_superadmin_crea_empresas_verificacion_correo_y_auditoria(self):
+        from django.utils.encoding import force_bytes
+        from django.utils.http import urlsafe_base64_encode
+        from apps.core.models import RegistroActividad
+        from apps.usuarios.views import email_verification_token
+
         c = Client()
-        r_reg = c.post(reverse("usuarios:registro"), {
-            "razon_social": "Comercio Nuevo SAS",
-            "nit": "901777888",
-            "first_name": "Mateo",
-            "last_name": "Rojas",
-            "email": "mateo@comercionuevo.co",
-            "perfil_operativo": "TIENDA",
-            "password1": "ClaveSegura123",
-            "password2": "ClaveSegura123",
-        }, follow=True)
-        self.assertEqual(r_reg.status_code, 200)
-        self.assertContains(r_reg, "enlace de activación")
+        # No hay registro público ni creación de empresas desde el login
+        self.assertEqual(c.get("/auth/registro/").status_code, 404)
+        r_login = c.get(reverse("usuarios:login"))
+        self.assertEqual(r_login.status_code, 200)
+        self.assertNotContains(r_login, "Crear Empresa")
 
-        u = User.objects.get(email="mateo@comercionuevo.co")
-        self.assertFalse(u.activo)
-        self.assertIsNone(u.email_verified_at)
-        emp_nueva = Empresa.objects.get(nit="901777888")
-        self.assertEqual(emp_nueva.plan_id, self.plan_gratis.id)
-
-        # No puede iniciar sesión antes de verificar correo
+        # Token de un solo uso para usuario pendiente de verificar correo
+        u_pend = User.objects.create_user(
+            username="pendiente@empresa.co",
+            email="pendiente@empresa.co",
+            password="ClaveSegura123",
+            activo=False,
+            is_active=True,
+            email_verified_at=None,
+        )
         r_login_antes = c.post(reverse("usuarios:login"), {
-            "login": "mateo@comercionuevo.co",
+            "login": "pendiente@empresa.co",
             "password": "ClaveSegura123",
         })
         self.assertContains(r_login_antes, "pendiente de verificación")
 
-        # Verifica token de correo
-        self.assertEqual(len(mail.outbox), 1)
-        m = re.search(r'href="([^"]+/auth/verificar/[^"]+)"', mail.outbox[0].alternatives[0][0])
-        self.assertIsNotNone(m)
-        verify_path = "/" + m.group(1).split("://", 1)[1].split("/", 1)[1]
+        uid = urlsafe_base64_encode(force_bytes(u_pend.pk))
+        token = email_verification_token.make_token(u_pend)
+        verify_path = reverse("usuarios:verificar_email", args=[uid, token])
 
         r_ver = c.get(verify_path, follow=True)
         self.assertContains(r_ver, "Correo verificado")
-        u.refresh_from_db()
-        self.assertTrue(u.activo)
-        self.assertIsNotNone(u.email_verified_at)
+        u_pend.refresh_from_db()
+        self.assertTrue(u_pend.activo)
+        self.assertIsNotNone(u_pend.email_verified_at)
 
         # Token de un solo uso: segundo intento falla
         r_reuso = c.get(verify_path, follow=True)
         self.assertContains(r_reuso, "inválido o ya fue utilizado")
 
-        # Ahora sí inicia sesión
+        # Ahora sí inicia sesión y queda registrado en auditoría
         r_login_ok = c.post(reverse("usuarios:login"), {
-            "login": "mateo@comercionuevo.co",
+            "login": "pendiente@empresa.co",
             "password": "ClaveSegura123",
         })
         self.assertEqual(r_login_ok.status_code, 302)
+        self.assertTrue(RegistroActividad.objects.filter(modulo="auth", accion="LOGIN", usuario=u_pend).exists())
+
+    def test_correo_independiente_empresa_y_auditoria_aislada(self):
+        import os
+        from unittest.mock import patch, MagicMock
+        from apps.core.mail_service import enviar_correo_sistema, get_mail_runtime_config
+        from apps.core.models import RegistroActividad
+
+        mod_pos = Modulo.objects.create(codigo="pos_aud", nombre="POS Aud", ruta="pos:caja")
+        plan_pro = Plan.objects.create(nombre="Plan Pro Aud", precio_mensual=99000, activo=True)
+        plan_pro.modulos.set([mod_pos])
+
+        # 1. SuperAdmin crea 2 empresas (una sin plan inicial, luego asigna plan con sincronizar_plan_modulos)
+        sa_client = Client()
+        sa_client.force_login(self.sa)
+        sa_client.post(reverse("backoffice:empresa_crear"), {
+            "razon_social": "Alfa Distribuciones SAS",
+            "nit": "901111222",
+            "email": "facturas@alfa.co",
+            "admin_tipo": "nuevo_cliente",
+            "admin_nombre": "Admin Alfa",
+            "admin_email": "admin@alfa.co",
+            "admin_password": "SafePass!2026",
+        }, follow=True)
+        emp_alfa = Empresa.objects.get(nit="901111222")
+        self.assertIsNone(emp_alfa.plan)
+
+        sa_client.post(reverse("backoffice:empresa_editar", args=[emp_alfa.id]), {
+            "razon_social": emp_alfa.razon_social,
+            "nit": emp_alfa.nit,
+            "email": emp_alfa.email,
+            "plan": str(plan_pro.id),
+            "sincronizar_plan_modulos": "on",
+            "regimen_tributario": "RESPONSABLE_IVA",
+            "perfil_operativo": "GENERAL",
+            "prefijo_factura": "FE",
+            "prefijo_pos_electronico": "POS",
+            "modo_dian": "PRUEBAS",
+            "activa": "on",
+        }, follow=True)
+        emp_alfa.refresh_from_db()
+        self.assertEqual(emp_alfa.plan_id, plan_pro.id)
+        self.assertTrue(emp_alfa.tiene_modulo("pos_aud"))
+        self.assertTrue(RegistroActividad.objects.filter(empresa=emp_alfa, accion="CREAR_EMPRESA").exists())
+        self.assertTrue(RegistroActividad.objects.filter(empresa=emp_alfa, accion="ASIGNAR_PLAN").exists())
+
+        emp_beta = Empresa.objects.create(razon_social="Beta Comercios SAS", nit="901333444", email="beta@comercios.co")
+        u_beta = User.objects.create_user(
+            username="beta@comercios.co", email="beta@comercios.co", password="SafePass!2026",
+            email_verified_at=self.now,
+        )
+        EmpresaUsuario.objects.create(user=u_beta, empresa=emp_beta, rol="propietario", activo=True)
+
+        # 2. Alfa configura su propio Resend; Beta no configura nada y cae al correo oficial ServiGest
+        u_alfa = User.objects.get(email="admin@alfa.co")
+        c_alfa = Client()
+        c_alfa.force_login(u_alfa)
+        c_alfa.post(reverse("core:configuracion_empresa"), {
+            "seccion": "smtp",
+            "resend_api_key": "re_alfa_privada_999",
+            "smtp_from_address": "facturacion@alfa.co",
+            "smtp_from_name": "Alfa Facturación",
+        }, follow=True)
+        emp_alfa.refresh_from_db()
+
+        cfg_alfa = get_mail_runtime_config(emp_alfa)
+        self.assertEqual(cfg_alfa["source"], "empresa")
+        self.assertEqual(cfg_alfa["resend_api_key"], "re_alfa_privada_999")
+        self.assertEqual(cfg_alfa["from_address"], "facturacion@alfa.co")
+
+        with patch.dict(
+            os.environ,
+            {"RESEND_API_KEY": "re_servigest_oficial_123", "MAIL_FROM_ADDRESS": "notificaciones@servigest.online"},
+            clear=False,
+        ):
+            cfg_beta = get_mail_runtime_config(emp_beta)
+            self.assertEqual(cfg_beta["source"], "plataforma")
+            self.assertEqual(cfg_beta["resend_api_key"], "re_servigest_oficial_123")
+            self.assertEqual(cfg_beta["from_address"], "notificaciones@servigest.online")
+
+            # Con backend SMTP activo (no locmem), Alfa usa su propio token y Beta usa el oficial de ServiGest
+            ok_resp = MagicMock(status_code=200, text="{}")
+            with self.settings(EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend"), \
+                 patch("apps.core.mail_service.httpx.post", return_value=ok_resp) as m_post:
+                enviar_correo_sistema(
+                    "cliente@comprador.co",
+                    "Factura FE-1",
+                    "<p>Adjunto PDF</p>",
+                    attachments=[("FE-1.pdf", b"%PDF", "application/pdf")],
+                    reply_to=[emp_alfa.email],
+                    empresa=emp_alfa,
+                    fail_silently=False,
+                )
+                self.assertEqual(m_post.call_args.kwargs["headers"]["Authorization"], "Bearer re_alfa_privada_999")
+                self.assertIn("facturacion@alfa.co", m_post.call_args.kwargs["json"]["from"])
+
+                enviar_correo_sistema(
+                    "cliente@comprador.co",
+                    "Factura FE-2",
+                    "<p>Adjunto PDF</p>",
+                    attachments=[("FE-2.pdf", b"%PDF", "application/pdf")],
+                    reply_to=[emp_beta.email],
+                    empresa=emp_beta,
+                    fail_silently=False,
+                )
+                self.assertEqual(m_post.call_args.kwargs["headers"]["Authorization"], "Bearer re_servigest_oficial_123")
+                self.assertIn("notificaciones@servigest.online", m_post.call_args.kwargs["json"]["from"])
+
+        # 3. Auditoría aislada: Beta ve solo lo de Beta (no ve Alfa), SuperAdmin ve ambas
+        c_beta = Client()
+        c_beta.force_login(u_beta)
+        c_beta.post(reverse("core:solicitar_cambio_plan"), {"plan_id": plan_pro.id}, follow=True)
+
+        r_aud_beta = c_beta.get(reverse("core:auditoria_empresa"))
+        self.assertEqual(r_aud_beta.status_code, 200)
+        self.assertContains(r_aud_beta, "SOLICITAR_PLAN")
+        self.assertNotContains(r_aud_beta, "Alfa Distribuciones SAS")
+        self.assertNotContains(r_aud_beta, "CREAR_EMPRESA")
+
+        r_aud_sa = sa_client.get(reverse("backoffice:auditoria_lista"))
+        self.assertEqual(r_aud_sa.status_code, 200)
+        self.assertContains(r_aud_sa, "Alfa Distribuciones SAS")
+        self.assertContains(r_aud_sa, "SOLICITAR_PLAN")
 
 

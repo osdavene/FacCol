@@ -1,0 +1,106 @@
+{% extends 'base.html' %}
+
+{% block title %}{% if es_superadmin_vista %}Registro Global de Auditoría{% else %}Registro de Actividad — {{ empresa.display_name }}{% endif %}{% endblock %}
+
+{% block content %}
+<div class="max-w-7xl mx-auto space-y-6 text-xs">
+
+    <div class="bg-gradient-to-r from-[#141c2e] via-[#162034] to-[#121927] border border-[#1e2d47] p-6 rounded-3xl shadow-xl flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-cyan-500/15 text-cyan-300 border border-cyan-500/30 mb-1.5">
+                <i class="fas fa-clipboard-list"></i> Trazabilidad Completa
+            </span>
+            <h1 class="font-display font-extrabold text-2xl text-white">
+                {% if es_superadmin_vista %}Auditoría Global de Plataforma{% else %}Registro de Actividad — {{ empresa.display_name }}{% endif %}
+            </h1>
+            <p class="text-slate-400 mt-1">
+                Historial detallado de quién realizó cada operación, en qué módulo, fecha exacta y dirección IP.
+            </p>
+        </div>
+    </div>
+
+    <form method="GET" class="bg-[#111827] border border-[#1e2d47] rounded-2xl p-4 grid grid-cols-1 sm:grid-cols-4 gap-3">
+        {% if es_superadmin_vista %}
+        <div>
+            <label class="block text-[10px] font-bold uppercase text-slate-400 mb-1">Empresa</label>
+            <select name="empresa" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                <option value="">Todas las empresas</option>
+                <option value="plataforma" {% if empresa_sel == 'plataforma' %}selected{% endif %}>Solo acciones de Plataforma</option>
+                {% for emp in empresas_disp %}
+                <option value="{{ emp.id }}" {% if empresa_sel == emp.id|stringformat:'s' %}selected{% endif %}>{{ emp.display_name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        {% endif %}
+
+        <div>
+            <label class="block text-[10px] font-bold uppercase text-slate-400 mb-1">Módulo</label>
+            <select name="modulo" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                <option value="">Todos los módulos</option>
+                {% for m in modulos_disp %}
+                <option value="{{ m }}" {% if modulo_sel == m %}selected{% endif %}>{{ m|upper }}</option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="{% if not es_superadmin_vista %}sm:col-span-2{% endif %}">
+            <label class="block text-[10px] font-bold uppercase text-slate-400 mb-1">Buscar usuario, acción o detalle</label>
+            <input type="text" name="q" value="{{ q }}" placeholder="Ej: factura, plan, correo, nombre..."
+                   class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+        </div>
+
+        <div class="flex items-end gap-2">
+            <button type="submit" class="flex-1 py-2 px-4 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black uppercase tracking-wider transition">
+                Filtrar
+            </button>
+            <a href="?" class="py-2 px-3 rounded-xl bg-[#162034] border border-[#1e2d47] text-slate-300 hover:text-white font-bold">
+                Limpiar
+            </a>
+        </div>
+    </form>
+
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl overflow-hidden shadow-xl">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left border-collapse">
+                <thead>
+                    <tr class="border-b border-[#1e2d47] bg-[#0e1422] text-[10px] font-black uppercase tracking-wider text-slate-400">
+                        <th class="p-3.5">Fecha y Hora</th>
+                        <th class="p-3.5">Usuario / Rol</th>
+                        {% if es_superadmin_vista %}<th class="p-3.5">Empresa</th>{% endif %}
+                        <th class="p-3.5">Módulo / Acción</th>
+                        <th class="p-3.5">Detalle de la Operación</th>
+                        <th class="p-3.5">IP</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-[#1e2d47]">
+                    {% for log in logs %}
+                    <tr class="hover:bg-[#162034]/60 transition">
+                        <td class="p-3.5 text-slate-300 whitespace-nowrap font-mono">{{ log.created_at|date:"d/m/Y H:i:s" }}</td>
+                        <td class="p-3.5">
+                            <div class="font-bold text-white">{{ log.usuario_nombre|default:"Sistema" }}</div>
+                            <span class="inline-block mt-0.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#162034] text-amber-300 border border-[#1e2d47]">{{ log.rol|upper }}</span>
+                        </td>
+                        {% if es_superadmin_vista %}
+                        <td class="p-3.5 text-slate-300">{{ log.empresa.display_name|default:"Plataforma SaaS" }}</td>
+                        {% endif %}
+                        <td class="p-3.5 whitespace-nowrap">
+                            <span class="px-2 py-0.5 rounded-md text-[10px] font-bold bg-cyan-500/15 text-cyan-300 uppercase">{{ log.modulo }}</span>
+                            <div class="font-mono text-[11px] text-white mt-1">{{ log.accion }}</div>
+                        </td>
+                        <td class="p-3.5 text-slate-200 max-w-md">{{ log.descripcion }}</td>
+                        <td class="p-3.5 text-slate-400 font-mono whitespace-nowrap">{{ log.ip_address|default:"—" }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr>
+                        <td colspan="{% if es_superadmin_vista %}6{% else %}5{% endif %}" class="p-8 text-center text-slate-400">
+                            No hay registros de actividad que coincidan con el filtro actual.
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+</div>
+{% endblock %}

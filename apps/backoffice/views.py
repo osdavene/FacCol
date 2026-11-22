@@ -2,6 +2,7 @@ from decimal import Decimal
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import user_passes_test
 from django.contrib import messages
+from django.db.models import Q
 from django.urls import reverse
 from django.utils import timezone
 from django.utils.crypto import get_random_string
@@ -9,7 +10,9 @@ from django.views.decorators.http import require_POST
 from apps.empresas.models import Empresa, Plan, Modulo, Departamento, Municipio, SolicitudCambioPlan
 from apps.usuarios.models import User, EmpresaUsuario
 from apps.facturacion.models import Factura
-from apps.core.platform_settings import encrypt_secret, set_platform_setting
+from apps.core.audit import registrar_actividad
+from apps.core.models import RegistroActividad
+from apps.core.platform_settings import encrypt_secret, mask_secret, set_platform_setting
 from apps.core.mail_service import (
     enviar_correo_sistema,
     enviar_notificacion_bienvenida_empresa,
@@ -60,6 +63,7 @@ def empresa_toggle_activa(request, empresa_id):
     empresa.activa = not empresa.activa
     empresa.save(update_fields=['activa'])
     estado_str = "activada" if empresa.activa else "suspendida"
+    registrar_actividad(request, 'empresas', 'ACTIVAR_EMPRESA' if empresa.activa else 'SUSPENDER_EMPRESA', f"Empresa '{empresa.razon_social}' {estado_str} por SuperAdmin.", empresa=empresa, objeto=empresa)
     messages.success(request, f"La empresa inquilina '{empresa.razon_social}' ha sido {estado_str} exitosamente.")
     return redirect('backoffice:empresas_lista')
 
@@ -161,6 +165,15 @@ def empresa_crear(request):
                 f"Empresa inquilina '{empresa.razon_social}' creada exitosamente con Aislamiento Estricto. {cred_msg}"
             )
 
+        plan_txt = empresa.plan.nombre if empresa.plan else "Sin plan asignado"
+        registrar_actividad(
+            request,
+            'empresas',
+            'CREAR_EMPRESA',
+            f"Creó empresa '{empresa.razon_social}' (NIT {empresa.nit}) con plan '{plan_txt}'.",
+            empresa=empresa,
+            objeto=empresa,
+        )
         return redirect('backoffice:empresas_lista')
 
     return render(request, 'backoffice/empresa_formulario.html', {
@@ -188,8 +201,9 @@ def empresa_editar(request, empresa_id):
         empresa.telefono = request.POST.get('telefono', '').strip()
         empresa.direccion = request.POST.get('direccion', '').strip()
 
+        plan_anterior_id = empresa.plan_id
         plan_id = request.POST.get('plan')
-        empresa.plan_id = plan_id if plan_id else None
+        empresa.plan_id = int(plan_id) if plan_id else None
 
         # Configuración DIAN y POS Electrónico
         empresa.prefijo_factura = request.POST.get('prefijo_factura', 'FE').strip().upper()
@@ -202,23 +216,56 @@ def empresa_editar(request, empresa_id):
         empresa.dian_pin = request.POST.get('dian_pin', '').strip()
         empresa.dian_test_set_id = request.POST.get('dian_test_set_id', '').strip()
 
-        # Configuración SMTP propia de empresa (solo sobrescribe clave si se ingresa nueva)
+        # Configuración de correo independiente de empresa (Resend propio o SMTP propio)
+        if 'clear_resend_api_key' in request.POST:
+            empresa.resend_api_key = ''
+        else:
+            new_emp_resend = request.POST.get('resend_api_key', '').strip()
+            if new_emp_resend:
+                empresa.resend_api_key = encrypt_secret(new_emp_resend)
+
         empresa.smtp_host = request.POST.get('smtp_host', '').strip()
         empresa.smtp_port = int(request.POST.get('smtp_port', 587) or 587)
         empresa.smtp_user = request.POST.get('smtp_user', '').strip()
-        new_smtp_pwd = request.POST.get('smtp_password', '').strip()
-        if new_smtp_pwd:
-            empresa.smtp_password = encrypt_secret(new_smtp_pwd)
+        if 'clear_smtp_password' in request.POST:
+            empresa.smtp_password = ''
+        else:
+            new_smtp_pwd = request.POST.get('smtp_password', '').strip()
+            if new_smtp_pwd:
+                empresa.smtp_password = encrypt_secret(new_smtp_pwd)
         empresa.smtp_from_address = request.POST.get('smtp_from_address', '').strip()
+        empresa.smtp_from_name = request.POST.get('smtp_from_name', '').strip()
 
         empresa.activa = 'activa' in request.POST
         empresa.save()
 
-        # Actualizar módulos
-        modulos_seleccionados = request.POST.getlist('modulos[]')
-        empresa.modulos.clear()
-        for mod_id in modulos_seleccionados:
-            empresa.modulos.add(mod_id)
+        # Actualizar módulos (sincronizados con plan nuevo si se marcó o cambió de plan sin edición manual)
+        if 'sincronizar_plan_modulos' in request.POST and empresa.plan:
+            empresa.sincronizar_modulos_con_plan(empresa.plan)
+        else:
+            modulos_seleccionados = request.POST.getlist('modulos[]')
+            empresa.modulos.clear()
+            for mod_id in modulos_seleccionados:
+                empresa.modulos.add(mod_id)
+
+        if empresa.plan_id != plan_anterior_id:
+            plan_txt = empresa.plan.nombre if empresa.plan else "Sin plan"
+            registrar_actividad(
+                request,
+                'planes',
+                'ASIGNAR_PLAN',
+                f"SuperAdmin asignó el plan '{plan_txt}' a '{empresa.razon_social}'.",
+                empresa=empresa,
+                objeto=empresa,
+            )
+        registrar_actividad(
+            request,
+            'empresas',
+            'EDITAR_EMPRESA',
+            f"Actualizó configuración de '{empresa.razon_social}' (NIT {empresa.nit}).",
+            empresa=empresa,
+            objeto=empresa,
+        )
 
         messages.success(request, f"Empresa '{empresa.razon_social}' actualizada correctamente.")
         return redirect('backoffice:empresas_lista')
@@ -297,10 +344,12 @@ def solicitud_plan_resolver(request, solicitud_id):
                 fail_silently=True,
             )
         messages.success(request, f"Plan de '{emp.display_name}' actualizado a '{nuevo_plan.nombre}'.")
+        registrar_actividad(request, 'planes', 'APROBAR_PLAN', f"Aprobó solicitud y activó '{nuevo_plan.nombre}' en '{emp.display_name}'.", empresa=emp, objeto=solicitud)
     elif accion == 'rechazar':
         solicitud.estado = 'RECHAZADA'
         solicitud.resolved_at = timezone.now()
         solicitud.save(update_fields=['estado', 'resolved_at'])
+        registrar_actividad(request, 'planes', 'RECHAZAR_PLAN', f"Rechazó solicitud de cambio a '{solicitud.plan_solicitado.nombre}' para '{solicitud.empresa.display_name}'.", empresa=solicitud.empresa, objeto=solicitud)
         messages.info(request, f"Solicitud de '{solicitud.empresa.display_name}' rechazada.")
     else:
         messages.error(request, "Acción inválida sobre la solicitud.")
@@ -503,6 +552,7 @@ def configuracion_plataforma(request):
                 if pt_tok:
                     set_platform_setting('pt_dian_token', pt_tok, is_secret=True)
 
+        registrar_actividad(request, 'configuracion', 'CONFIG_PLATAFORMA', f"Actualizó configuración global cifrada (sección '{seccion}').")
         messages.success(request, "Configuración cifrada de plataforma guardada exitosamente en la base de datos.")
         return redirect('backoffice:configuracion_plataforma')
 
@@ -593,6 +643,7 @@ def comunicado_probar(request):
         **datos,
     )
     if ok:
+        registrar_actividad(request, 'comunicados', 'PROBAR_COMUNICADO', f"Envió prueba de comunicado '{datos['subject']}' a {test_email}.")
         messages.success(request, msg)
     else:
         messages.error(request, msg)
@@ -605,6 +656,7 @@ def comunicado_enviar_tanda(request):
     datos = _extraer_borrador_comunicado(request.POST)
     res = send_campaign_batch(**datos)
     if res.get('ok'):
+        registrar_actividad(request, 'comunicados', 'ENVIAR_TANDA', f"Envió tanda comunicado ({res.get('sent_count', 0)} entregados): {res.get('message', '')}")
         messages.success(request, res.get('message', 'Tanda enviada correctamente.'))
     else:
         messages.error(request, res.get('message', 'No se pudo enviar la tanda.'))
@@ -616,6 +668,7 @@ def comunicado_enviar_tanda(request):
 def comunicado_reiniciar(request):
     custom_slug = request.POST.get('custom_slug', '').strip() or None
     nuevo_id = reset_campaign_cycle(custom_slug)
+    registrar_actividad(request, 'comunicados', 'REINICIAR_CICLO', f"Reinició ciclo de campaña a '{nuevo_id}'.")
     messages.info(request, f"Ciclo de campaña reiniciado con ID '{nuevo_id}'. Debes probar el borrador nuevamente.")
     return redirect(f"{reverse('backoffice:comunicados_panel')}?tab=correo")
 
@@ -623,7 +676,7 @@ def comunicado_reiniciar(request):
 @user_passes_test(es_superadmin)
 @require_POST
 def comunicado_guardar_banner(request):
-    save_tenant_banner({
+    cfg = save_tenant_banner({
         'enabled': 'enabled' in request.POST,
         'campaign_id': request.POST.get('campaign_id', ''),
         'badge': request.POST.get('badge', ''),
@@ -634,5 +687,42 @@ def comunicado_guardar_banner(request):
         'secondary_label': request.POST.get('secondary_label', ''),
         'secondary_url': request.POST.get('secondary_url', ''),
     })
+    registrar_actividad(request, 'comunicados', 'GUARDAR_BANNER', f"Actualizó banner '{cfg['campaign_id']}' (activo={cfg['enabled']}).")
     messages.success(request, "Banner informativo del panel del usuario actualizado correctamente.")
     return redirect(f"{reverse('backoffice:comunicados_panel')}?tab=banner")
+
+
+@user_passes_test(es_superadmin)
+def auditoria_global_view(request):
+    """Bitácora global de plataforma y todas las empresas para el SuperAdmin."""
+    empresa_sel = request.GET.get('empresa', '').strip()
+    modulo_sel = request.GET.get('modulo', '').strip()
+    q = request.GET.get('q', '').strip()
+
+    qs = RegistroActividad.objects.select_related('empresa', 'usuario').all()
+    if empresa_sel == 'plataforma':
+        qs = qs.filter(empresa__isnull=True)
+    elif empresa_sel.isdigit():
+        qs = qs.filter(empresa_id=int(empresa_sel))
+    if modulo_sel:
+        qs = qs.filter(modulo=modulo_sel)
+    if q:
+        qs = qs.filter(
+            Q(usuario_nombre__icontains=q)
+            | Q(accion__icontains=q)
+            | Q(descripcion__icontains=q)
+        )
+
+    empresas_disp = Empresa.objects.order_by('razon_social')
+    modulos_disp = (
+        RegistroActividad.objects.values_list('modulo', flat=True).distinct().order_by('modulo')
+    )
+    return render(request, 'core/auditoria_lista.html', {
+        'logs': qs[:200],
+        'empresas_disp': empresas_disp,
+        'modulos_disp': modulos_disp,
+        'empresa_sel': empresa_sel,
+        'modulo_sel': modulo_sel,
+        'q': q,
+        'es_superadmin_vista': True,
+    })

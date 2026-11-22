@@ -46,3 +46,44 @@ class ConfiguracionPlataforma(models.Model):
 
     def __str__(self):
         return f"{self.key} ({'secreto' if self.is_secret else 'público'})"
+
+
+class RegistroActividad(models.Model):
+    """Bitácora inmutable multi-tenant: registra quién hizo qué, cuándo, dónde y sobre qué empresa."""
+
+    usuario = models.ForeignKey(
+        'usuarios.User',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='logs_actividad',
+    )
+    usuario_nombre = models.CharField(max_length=150, blank=True)
+    rol = models.CharField(max_length=40, blank=True)
+    empresa = models.ForeignKey(
+        'empresas.Empresa',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='logs_actividad',
+    )
+    modulo = models.CharField(max_length=40, db_index=True)
+    accion = models.CharField(max_length=80, db_index=True)
+    descripcion = models.TextField()
+    objeto_tipo = models.CharField(max_length=60, blank=True)
+    objeto_id = models.CharField(max_length=60, blank=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    datos_extra = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['empresa', '-created_at']),
+            models.Index(fields=['modulo', '-created_at']),
+        ]
+        verbose_name = "Registro de Actividad"
+        verbose_name_plural = "Registros de Actividad"
+
+    def __str__(self):
+        return f"[{self.modulo}] {self.usuario_nombre}: {self.accion}"

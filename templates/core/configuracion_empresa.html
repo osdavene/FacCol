@@ -139,22 +139,64 @@
         </form>
     </div>
 
-    <!-- 3. SMTP Propio Opcional -->
+    <!-- 3. Correo Independiente de Empresa (Resend o SMTP; vacío = Oficial ServiGest) -->
     <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 sm:p-8 shadow-xl space-y-5 text-xs">
-        <div class="flex items-center justify-between border-b border-[#1e2d47] pb-3">
-            <h2 class="text-sm font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-2">
-                <i class="fas fa-envelope"></i>
-                <span>3. Correo Propio Opcional (SMTP)</span>
-            </h2>
-            <span class="text-[11px] text-slate-400">Origen actual: <b class="text-white">{{ mail_cfg.source|upper }}</b></span>
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#1e2d47] pb-4">
+            <div>
+                <h2 class="text-sm font-bold text-cyan-400 uppercase tracking-wider flex items-center gap-2">
+                    <i class="fas fa-envelope"></i>
+                    <span>3. Correo Independiente de tu Empresa (Facturas y Notificaciones)</span>
+                </h2>
+                <p class="text-[11px] text-slate-400 mt-1">
+                    {% if mail_cfg.source == 'empresa' %}
+                    <span class="text-emerald-400 font-bold">Activo correo propio de {{ empresa.display_name }}:</span> tus facturas salen directamente desde tu propia configuración.
+                    {% else %}
+                    <span class="text-amber-300 font-bold">Usando correo oficial de ServiGest (<code>notificaciones@servigest.online</code>):</span> como no has configurado un correo propio, las facturas salen desde el correo oficial de ServiGest con respuesta a tu correo empresarial.
+                    {% endif %}
+                </p>
+            </div>
+
+            <form method="POST" action="{% url 'core:configuracion_empresa_probar_correo' %}" class="flex items-center gap-2">
+                {% csrf_token %}
+                <input type="email" name="email_prueba" value="{{ empresa.email|default:user.email }}" placeholder="correo@prueba.com"
+                       class="bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white text-xs w-48">
+                <button type="submit" class="px-3.5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black font-extrabold text-xs transition whitespace-nowrap">
+                    Probar Envío
+                </button>
+            </form>
         </div>
         <form method="POST" class="space-y-4">
             {% csrf_token %}
             <input type="hidden" name="seccion" value="smtp">
+
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-[#0e1422] border border-[#1e2d47] rounded-2xl p-4">
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">
+                        Resend API Key Propia (Opcional)
+                        {% if mail_cfg.masked_resend_key %}<span class="text-emerald-400 font-mono">({{ mail_cfg.masked_resend_key }})</span>{% endif %}
+                    </label>
+                    <input type="password" name="resend_api_key" value="" placeholder="re_... (vacío para usar oficial ServiGest)"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                    <label class="inline-flex items-center gap-1.5 text-[10px] text-rose-400 mt-1 cursor-pointer">
+                        <input type="checkbox" name="clear_resend_api_key" class="rounded"> Limpiar Resend propia
+                    </label>
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Remitente (From)</label>
+                    <input type="email" name="smtp_from_address" value="{{ empresa.smtp_from_address }}" placeholder="facturas@tudominio.com"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Nombre Visible Remitente</label>
+                    <input type="text" name="smtp_from_name" value="{{ empresa.smtp_from_name }}" placeholder="{{ empresa.display_name }}"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                </div>
+            </div>
+
             <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
-                    <label class="block font-semibold text-slate-300 mb-1">Host SMTP</label>
-                    <input type="text" name="smtp_host" value="{{ empresa.smtp_host }}" placeholder="Dejar vacío para usar correo de FacCol (Resend)"
+                    <label class="block font-semibold text-slate-300 mb-1">Host SMTP Propio (Opcional)</label>
+                    <input type="text" name="smtp_host" value="{{ empresa.smtp_host }}" placeholder="Dejar vacío para usar correo oficial ServiGest"
                            class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
                 </div>
                 <div>
@@ -171,22 +213,18 @@
                     <label class="block font-semibold text-slate-300 mb-1">Usuario SMTP</label>
                     <input type="text" name="smtp_user" value="{{ empresa.smtp_user }}" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
                 </div>
-                <div>
-                    <label class="block font-semibold text-slate-300 mb-1">Remitente (From)</label>
-                    <input type="email" name="smtp_from_address" value="{{ empresa.smtp_from_address }}" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
-                </div>
-                <div class="sm:col-span-2">
+                <div class="sm:col-span-3">
                     <label class="block font-semibold text-slate-300 mb-1">Contraseña SMTP {% if empresa.smtp_password %}<span class="text-emerald-400">(Configurada)</span>{% endif %}</label>
                     <input type="password" name="smtp_password" value="" placeholder="Dejar vacío para conservar"
                            class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
                     <label class="inline-flex items-center gap-1.5 text-[10px] text-rose-400 mt-1 cursor-pointer">
-                        <input type="checkbox" name="clear_smtp_password" class="rounded"> Usar correo compartido de plataforma
+                        <input type="checkbox" name="clear_smtp_password" class="rounded"> Limpiar contraseña SMTP (usar ServiGest)
                     </label>
                 </div>
             </div>
             <div class="flex justify-end">
                 <button type="submit" class="px-5 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-black uppercase tracking-wider transition">
-                    Guardar SMTP de Empresa
+                    Guardar Correo de Empresa
                 </button>
             </div>
         </form>

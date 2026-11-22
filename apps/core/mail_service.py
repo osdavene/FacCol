@@ -2,7 +2,7 @@ import base64
 import html as _html
 import re
 from email.utils import formatdate, make_msgid
-import requests
+import httpx
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives, get_connection
 
@@ -21,27 +21,31 @@ from apps.core.platform_settings import decrypt_secret, get_platform_setting, ma
 def get_mail_runtime_config(empresa=None):
     """
     Resuelve la configuración de correo:
-    1. Si la empresa tiene su propio servidor SMTP completo, usa el de la empresa.
-    2. Si no, usa el correo cifrado de la plataforma en ConfiguracionPlataforma.
+    1. Si la empresa tiene su propia Resend API Key o su propio servidor SMTP completo, usa el de la empresa.
+    2. Si no, usa el correo oficial de la plataforma ServiGest (Resend .env/Backoffice o SMTP).
     """
-    if empresa and empresa.smtp_host and empresa.smtp_user and empresa.smtp_password:
-        pwd = decrypt_secret(empresa.smtp_password)
-        if pwd:
+    if empresa:
+        emp_resend = decrypt_secret(getattr(empresa, "resend_api_key", "") or "").strip()
+        emp_pwd = decrypt_secret(empresa.smtp_password).strip()
+        has_own_smtp = bool(empresa.smtp_host and empresa.smtp_user and emp_pwd)
+        if emp_resend or has_own_smtp:
             from_addr = _sanitize_header(
-                empresa.smtp_from_address or empresa.email or get_platform_setting("mail_from_address", "notificaciones@servigest.online")
+                empresa.smtp_from_address or empresa.email or mail_settings.MAIL_FROM_ADDRESS
             )
             from_name = _sanitize_header(empresa.smtp_from_name or empresa.display_name)
             return {
                 "source": "empresa",
-                "host": empresa.smtp_host.strip(),
+                "host": (empresa.smtp_host or "").strip(),
                 "port": int(empresa.smtp_port or 587),
-                "username": empresa.smtp_user.strip(),
-                "password": pwd,
+                "username": (empresa.smtp_user or "").strip(),
+                "password": emp_pwd,
                 "use_tls": empresa.smtp_encryption == "tls",
                 "use_ssl": empresa.smtp_encryption == "ssl",
                 "from_address": from_addr,
                 "from_name": from_name,
-                "resend_api_key": "",
+                "resend_api_key": emp_resend,
+                "masked_password": mask_secret(emp_pwd),
+                "masked_resend_key": mask_secret(emp_resend),
             }
 
     host = mail_settings.MAIL_HOST
@@ -69,7 +73,11 @@ def get_mail_runtime_config(empresa=None):
     }
 
 
+_last_service_error = ""
+
+
 def _send_via_resend(cfg, to_email, subject, html_body, text_body, reply_to=None, attachments=None):
+    global _last_service_error
     api_key = cfg.get("resend_api_key")
     if not api_key:
         return False
@@ -95,14 +103,19 @@ def _send_via_resend(cfg, to_email, subject, html_body, text_body, reply_to=None
         ]
 
     try:
-        resp = requests.post(
+        resp = httpx.post(
             "https://api.resend.com/emails",
             headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
             json=payload,
-            timeout=12,
+            timeout=12.0,
         )
-        return resp.status_code in (200, 201, 202)
-    except Exception:
+        if resp.status_code in (200, 201, 202):
+            _last_service_error = ""
+            return True
+        _last_service_error = f"Resend HTTP {resp.status_code}: {resp.text[:240]}"
+        return False
+    except Exception as exc:
+        _last_service_error = f"Excepción Resend: {exc}"
         return False
 
 
@@ -118,8 +131,8 @@ def enviar_correo_sistema(
     fail_silently: bool = False,
 ):
     """
-    Envía correo usando el SMTP de la empresa (si tiene configurado) o el correo
-    unificado de la plataforma (Resend API + respaldo SMTP) en caso contrario.
+    Envía correo usando la configuración propia de la empresa (Resend o SMTP propio si tiene)
+    o el correo oficial unificado de ServiGest en caso contrario.
     """
     clean_to = _sanitize_header(to_email).lower()
     if is_dummy_or_invalid_email(clean_to):
@@ -130,6 +143,8 @@ def enviar_correo_sistema(
     clean_subject = _sanitize_header(subject)
     plain_text = text_body or _html_to_plain_text(html_body)
     cfg = get_mail_runtime_config(empresa=empresa)
+    backend = getattr(settings, "EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
+    is_locmem = "locmem" in backend.lower()
 
     if cfg["source"] == "plataforma" and not attachments and not reply_to:
         ok = send_system_email(clean_to, "", clean_subject, html_body)
@@ -138,15 +153,19 @@ def enviar_correo_sistema(
             raise RuntimeError(f"No se pudo enviar el correo de plataforma ({detalle}).")
         return ok
 
-    # Prioridad Resend cuando se usa correo de plataforma y existe RESEND_API_KEY
-    if cfg["source"] == "plataforma" and cfg.get("resend_api_key"):
+    # Canal Resend (propio de empresa o de plataforma ServiGest) cuando no estamos en locmem de tests
+    if not is_locmem and cfg.get("resend_api_key"):
         if _send_via_resend(cfg, clean_to, clean_subject, html_body, plain_text, reply_to=reply_to, attachments=attachments):
             return True
+        # Si es empresa/plataforma con Resend pero sin SMTP propio completo, reporta error real
+        if not (cfg["host"] and cfg["username"] and cfg["password"]):
+            if fail_silently:
+                return False
+            raise RuntimeError(_last_service_error or "Error enviando por Resend API.")
 
-    # SMTP (Empresa propia o respaldo de plataforma)
-    backend = getattr(settings, "EMAIL_BACKEND", "django.core.mail.backends.smtp.EmailBackend")
+    # SMTP (Empresa propia o respaldo de plataforma o locmem en pruebas)
     if "smtp" in backend.lower() and (not cfg["host"] or not cfg["username"] or not cfg["password"]):
-        msg = "El servidor de correo de la plataforma aún no tiene credenciales SMTP/Resend configuradas en Backoffice."
+        msg = "El servidor de correo aún no tiene RESEND_API_KEY ni credenciales SMTP configuradas."
         if fail_silently:
             return False
         raise RuntimeError(msg)

@@ -22,8 +22,10 @@ from apps.facturacion.wompi_service import (
     get_wompi_runtime_config,
     sync_wompi_transaction_by_id,
 )
+from apps.core.audit import registrar_actividad
 from apps.core.campaigns import get_tenant_banner
 from apps.core.mail_service import enviar_correo_sistema, get_mail_runtime_config
+from apps.core.models import RegistroActividad
 from apps.core.platform_settings import encrypt_secret
 from apps.inventario.models import Producto, MovimientoInventario
 from apps.terceros.models import Tercero
@@ -163,6 +165,7 @@ def configuracion_empresa(request):
                     if val:
                         setattr(empresa, attr, encrypt_secret(val))
             empresa.save()
+            registrar_actividad(request, 'configuracion', 'CONFIG_WOMPI_EMPRESA', f"Actualizó pasarela Wompi propia de {empresa.display_name}.", empresa=empresa, objeto=empresa)
             messages.success(request, "Pasarela Wompi propia guardada y cifrada para tu empresa.")
 
         elif seccion == 'dian':
@@ -176,6 +179,7 @@ def configuracion_empresa(request):
             empresa.dian_pin = request.POST.get('dian_pin', '').strip()
             empresa.dian_test_set_id = request.POST.get('dian_test_set_id', '').strip()
             empresa.save()
+            registrar_actividad(request, 'configuracion', 'CONFIG_DIAN_EMPRESA', f"Actualizó parámetros DIAN/perfil operativo de {empresa.display_name}.", empresa=empresa, objeto=empresa)
             messages.success(request, "Configuración DIAN y perfil de negocio actualizados.")
 
         elif seccion == 'smtp':
@@ -184,13 +188,21 @@ def configuracion_empresa(request):
             empresa.smtp_encryption = request.POST.get('smtp_encryption', 'tls').strip()
             empresa.smtp_user = request.POST.get('smtp_user', '').strip()
             empresa.smtp_from_address = request.POST.get('smtp_from_address', '').strip()
+            empresa.smtp_from_name = request.POST.get('smtp_from_name', '').strip()
             if 'clear_smtp_password' in request.POST:
                 empresa.smtp_password = ''
             else:
                 new_pwd = request.POST.get('smtp_password', '').strip()
                 if new_pwd:
                     empresa.smtp_password = encrypt_secret(new_pwd)
+            if 'clear_resend_api_key' in request.POST:
+                empresa.resend_api_key = ''
+            else:
+                new_resend = request.POST.get('resend_api_key', '').strip()
+                if new_resend:
+                    empresa.resend_api_key = encrypt_secret(new_resend)
             empresa.save()
+            registrar_actividad(request, 'configuracion', 'CONFIG_CORREO_EMPRESA', f"Actualizó configuración de correo independiente para {empresa.display_name}.", empresa=empresa, objeto=empresa)
             messages.success(request, "Configuración de correo de tu empresa actualizada.")
 
         return redirect('core:configuracion_empresa')
@@ -203,6 +215,76 @@ def configuracion_empresa(request):
         'wompi_cfg': wompi_cfg,
         'mail_cfg': mail_cfg,
         'webhook_url': webhook_url,
+    })
+
+
+@login_required
+@requiere_admin
+@require_POST
+def configuracion_empresa_probar_correo(request):
+    if request.user.es_superadmin_user():
+        return redirect('backoffice:configuracion_plataforma')
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+
+    destino = request.POST.get('email_prueba', '').strip() or empresa.email or request.user.email
+    mail_cfg = get_mail_runtime_config(empresa)
+    origen_label = (
+        f"correo propio de {empresa.display_name}"
+        if mail_cfg['source'] == 'empresa'
+        else "correo oficial de ServiGest (respaldo automático)"
+    )
+    try:
+        enviar_correo_sistema(
+            destino,
+            f"Prueba de Correo Facturación — {empresa.display_name}",
+            f"<p>Este mensaje confirma que las facturas de <b>{empresa.display_name}</b> salen correctamente usando el <b>{origen_label}</b>.</p>",
+            empresa=empresa,
+            reply_to=[empresa.email] if empresa.email else None,
+            fail_silently=False,
+        )
+        registrar_actividad(request, 'configuracion', 'PROBAR_CORREO_EMPRESA', f"Probó envío de correo hacia {destino} ({mail_cfg['source']}).", empresa=empresa, objeto=empresa)
+        messages.success(request, f"Correo de prueba enviado a {destino} usando {origen_label}.")
+    except Exception as exc:
+        messages.error(request, f"No se pudo enviar la prueba de correo: {exc}")
+    return redirect('core:configuracion_empresa')
+
+
+@login_required
+@requiere_admin
+def auditoria_empresa_view(request):
+    """Bitácora de actividad aislada estrictamente a la empresa activa."""
+    if request.user.es_superadmin_user():
+        return redirect('backoffice:auditoria_lista')
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+
+    modulo_sel = request.GET.get('modulo', '').strip()
+    q = request.GET.get('q', '').strip()
+    qs = RegistroActividad.objects.filter(empresa=empresa).select_related('usuario')
+    if modulo_sel:
+        qs = qs.filter(modulo=modulo_sel)
+    if q:
+        qs = qs.filter(
+            Q(usuario_nombre__icontains=q)
+            | Q(accion__icontains=q)
+            | Q(descripcion__icontains=q)
+        )
+    modulos_disp = (
+        RegistroActividad.objects.filter(empresa=empresa)
+        .values_list('modulo', flat=True)
+        .distinct()
+        .order_by('modulo')
+    )
+    return render(request, 'core/auditoria_lista.html', {
+        'logs': qs[:200],
+        'modulos_disp': modulos_disp,
+        'modulo_sel': modulo_sel,
+        'q': q,
+        'es_superadmin_vista': False,
+        'empresa': empresa,
     })
 
 
@@ -340,6 +422,7 @@ def cambiar_empresa(request, empresa_id):
     empresa = asignacion.empresa
 
     request.session['empresa_activa_id'] = empresa.id
+    registrar_actividad(request, 'empresas', 'CAMBIAR_EMPRESA', f"Cambió contexto activo a {empresa.display_name}.", empresa=empresa, objeto=empresa)
     messages.success(request, f"Contexto activo cambiado a: {empresa.display_name}")
     next_url = request.GET.get('next') or request.META.get('HTTP_REFERER') or 'core:dashboard'
     return redirect(next_url)
@@ -471,6 +554,7 @@ def solicitar_cambio_plan(request):
         empresa.plan = plan
         empresa.save(update_fields=['plan'])
         empresa.sincronizar_modulos_con_plan(plan)
+        registrar_actividad(request, 'planes', 'CAMBIAR_PLAN_GRATUITO', f"Cambió plan de {empresa.display_name} a '{plan.nombre}'.", empresa=empresa, objeto=plan)
         messages.success(request, f"Plan actualizado correctamente a '{plan.nombre}'.")
         return redirect('core:mi_plan')
 
@@ -480,13 +564,14 @@ def solicitar_cambio_plan(request):
         return redirect('core:mi_plan')
 
     SolicitudCambioPlan.objects.filter(empresa=empresa, estado='PENDIENTE').update(estado='RECHAZADA')
-    SolicitudCambioPlan.objects.create(
+    sol = SolicitudCambioPlan.objects.create(
         empresa=empresa,
         plan_actual=empresa.plan,
         plan_solicitado=plan,
         solicitado_por=request.user,
         estado='PENDIENTE',
     )
+    registrar_actividad(request, 'planes', 'SOLICITAR_PLAN', f"Solicitó cambiar plan de {empresa.display_name} a '{plan.nombre}'.", empresa=empresa, objeto=sol)
 
     superadmins = list(
         User.objects.filter(Q(is_superadmin=True) | Q(is_superuser=True), is_active=True)

@@ -14,6 +14,7 @@ from apps.terceros.models import Tercero
 from apps.facturacion.models import Factura, FacturaItem, ReciboCaja
 from apps.facturacion.dian_service import TOPE_DEE_POS_COP, desglosar_impuestos_item
 from apps.contabilidad.services import registrar_asiento_venta
+from apps.core.audit import registrar_actividad
 from apps.usuarios.decorators import requiere_facturacion
 
 
@@ -195,6 +196,14 @@ def pos_procesar_venta(request):
                 turno.monto_total_esperado = turno.monto_inicial + turno.monto_ventas_efectivo
                 turno.save()
 
+        registrar_actividad(
+            request,
+            'pos',
+            'VENTA_POS',
+            f"Venta POS {factura.numero_completo} por ${factura.total:,.0f} COP ({metodo_pago}).",
+            empresa=empresa,
+            objeto=factura,
+        )
         return JsonResponse({
             'success': True,
             'factura_id': factura.id,
@@ -250,7 +259,7 @@ def caja_abrir_turno(request):
         monto_inicial = Decimal(request.POST.get('monto_inicial', '0') or '0')
 
         caja = get_object_or_404(Caja, id=caja_id, empresa=empresa)
-        CajaTurno.objects.create(
+        turno_nuevo = CajaTurno.objects.create(
             empresa=empresa,
             caja=caja,
             usuario=request.user,
@@ -259,6 +268,7 @@ def caja_abrir_turno(request):
             estado='ABIERTA',
         )
 
+        registrar_actividad(request, 'pos', 'ABRIR_CAJA', f"Abrió turno en {caja.nombre} con base ${monto_inicial:,.0f} COP.", empresa=empresa, objeto=turno_nuevo)
         messages.success(request, f"Turno abierto exitosamente en {caja.nombre} con base inicial de ${monto_inicial:,.0f} COP.")
         return redirect('pos:pos_terminal')
 
@@ -282,6 +292,7 @@ def caja_cerrar_turno(request, turno_id):
         turno.observaciones = obs
         turno.save()
 
+        registrar_actividad(request, 'pos', 'CERRAR_CAJA', f"Cerró turno #{turno.id} con ${monto_real:,.0f} COP (diferencia ${turno.diferencia:,.0f}).", empresa=empresa, objeto=turno)
         messages.success(request, f"Turno de caja cerrado. Total en caja: ${monto_real:,.0f} COP (Diferencia: ${turno.diferencia:,.0f} COP).")
         return redirect('pos:cajas_lista')
 

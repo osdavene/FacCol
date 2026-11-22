@@ -191,12 +191,33 @@
         </div>
 
         {% if accion == 'Editar' %}
-        <!-- Bloque SMTP -->
+        <!-- Bloque Correo Independiente de Empresa -->
         <div class="space-y-4 pt-4 border-t border-[#1e2d47]">
-            <div class="font-bold text-amber-500 uppercase tracking-wider text-xs">4. Servidor de Correo Propio (Opcional — si queda vacío usa el de Plataforma)</div>
-            <div class="grid grid-cols-1 sm:grid-cols-4 gap-4">
+            <div class="font-bold text-amber-500 uppercase tracking-wider text-xs">4. Correo Independiente Propio (Opcional — si queda vacío usa el oficial de ServiGest)</div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
-                    <label class="block font-semibold text-slate-300 mb-1">Host SMTP</label>
+                    <label class="block font-semibold text-slate-300 mb-1">Resend API Key Propia (Opcional)</label>
+                    <input type="password" name="resend_api_key" value=""
+                           placeholder="{% if empresa and empresa.resend_api_key %}•••••••• (guardada cifrada){% else %}re_... (vacío usa ServiGest){% endif %}"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white font-mono">
+                    <label class="inline-flex items-center gap-1.5 text-[10px] text-rose-400 mt-1 cursor-pointer">
+                        <input type="checkbox" name="clear_resend_api_key" class="rounded"> Limpiar Resend propia
+                    </label>
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Correo Remitente</label>
+                    <input type="email" name="smtp_from_address" value="{{ empresa.smtp_from_address|default:'' }}" placeholder="facturas@empresa.com"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                </div>
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Nombre Visible Remitente</label>
+                    <input type="text" name="smtp_from_name" value="{{ empresa.smtp_from_name|default:'' }}" placeholder="{{ empresa.display_name }}"
+                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                </div>
+            </div>
+            <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                    <label class="block font-semibold text-slate-300 mb-1">Host SMTP (Opcional)</label>
                     <input type="text" name="smtp_host" value="{{ empresa.smtp_host|default:'' }}" placeholder="smtp.gmail.com"
                            class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
                 </div>
@@ -210,11 +231,9 @@
                     <input type="password" name="smtp_password" value=""
                            placeholder="{% if empresa and empresa.smtp_password %}•••••••• (guardada cifrada){% else %}••••••••{% endif %}"
                            class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
-                </div>
-                <div>
-                    <label class="block font-semibold text-slate-300 mb-1">Correo Remitente</label>
-                    <input type="email" name="smtp_from_address" value="{{ empresa.smtp_from_address|default:'' }}" placeholder="facturas@empresa.com"
-                           class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                    <label class="inline-flex items-center gap-1.5 text-[10px] text-rose-400 mt-1 cursor-pointer">
+                        <input type="checkbox" name="clear_smtp_password" class="rounded"> Limpiar SMTP
+                    </label>
                 </div>
             </div>
         </div>
@@ -223,7 +242,13 @@
         {% if accion == 'Editar' and modulos %}
         <!-- Módulos Habilitados -->
         <div class="space-y-4 pt-4 border-t border-[#1e2d47]">
-            <div class="font-bold text-amber-500 uppercase tracking-wider text-xs">5. Módulos Habilitados para la Empresa</div>
+            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div class="font-bold text-amber-500 uppercase tracking-wider text-xs">5. Módulos Habilitados para la Empresa</div>
+                <label class="inline-flex items-center gap-2 text-xs text-emerald-300 font-semibold cursor-pointer">
+                    <input type="checkbox" name="sincronizar_plan_modulos" class="rounded text-emerald-500 focus:ring-0">
+                    <span>Sincronizar módulos automáticamente con el Plan Comercial elegido</span>
+                </label>
+            </div>
             <div class="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 {% for m in modulos %}
                 <label class="flex items-center gap-2 p-3 rounded-xl bg-[#162034] border border-[#1e2d47] cursor-pointer hover:border-amber-500/40 transition">

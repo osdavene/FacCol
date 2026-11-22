@@ -9,6 +9,7 @@ from django.db.models import Sum
 from django.http import HttpResponse
 
 from apps.contabilidad.models import PlanCuenta, AsientoContable, AsientoLinea
+from apps.core.audit import registrar_actividad
 from apps.terceros.models import Tercero
 from apps.usuarios.decorators import requiere_contador
 
@@ -90,6 +91,7 @@ def asiento_crear(request):
                     credito=cred_val,
                 )
 
+        registrar_actividad(request, 'contabilidad', 'CREAR_ASIENTO', f"Registró asiento {asiento.numero_comprobante} ({asiento.concepto[:80]}).", empresa=empresa, objeto=asiento)
         messages.success(request, f"Asiento contable {asiento.numero_comprobante} registrado con éxito.")
         return redirect('contabilidad:asientos_lista')
 

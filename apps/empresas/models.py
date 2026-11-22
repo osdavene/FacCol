@@ -152,7 +152,8 @@ class Empresa(models.Model):
     dian_pin = models.CharField(max_length=50, blank=True, verbose_name="PIN Software DIAN")
     dian_test_set_id = models.CharField(max_length=120, blank=True, verbose_name="TestSetId Habilitación DIAN")
 
-    # Servidor SMTP de la Empresa
+    # Servidor de Correo Independiente de la Empresa (Resend o SMTP propio; vacío = oficial ServiGest)
+    resend_api_key = models.CharField(max_length=255, blank=True, verbose_name="Resend API Key Propia")
     smtp_host = models.CharField(max_length=150, blank=True, verbose_name="Host SMTP")
     smtp_port = models.IntegerField(default=587, verbose_name="Puerto SMTP")
     smtp_user = models.CharField(max_length=150, blank=True, verbose_name="Usuario SMTP")

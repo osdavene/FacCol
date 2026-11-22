@@ -19,6 +19,7 @@ from apps.inventario.models import (
     CompraItem,
 )
 from apps.contabilidad.services import registrar_asiento_compra
+from apps.core.audit import registrar_actividad
 from apps.terceros.models import Tercero
 from apps.usuarios.decorators import requiere_inventario
 
@@ -123,6 +124,7 @@ def producto_crear(request):
                 motivo="Saldo inicial de inventario al registrar producto",
             )
 
+        registrar_actividad(request, 'inventario', 'CREAR_PRODUCTO', f"Creó producto [{prod.codigo}] {prod.nombre}.", empresa=empresa, objeto=prod)
         messages.success(request, f"Producto [{prod.codigo}] {prod.nombre} creado exitosamente.")
         return redirect('inventario:productos_lista')
 
@@ -287,6 +289,7 @@ def ajuste_inventario_crear(request):
                 motivo=motivo,
                 referencia_documento="AJUSTE-MANUAL",
             )
+        registrar_actividad(request, 'inventario', 'AJUSTE_KARDEX', f"Ajustó Kardex de '{prod.nombre}' ({tipo_mov} {cantidad}): saldo {prod.stock_actual}.", empresa=empresa, objeto=prod)
         messages.success(request, f"Kardex de '{prod.nombre}' ajustado: saldo actual {prod.stock_actual}.")
         return redirect('inventario:kardex')
 
@@ -407,6 +410,7 @@ def compra_crear(request):
             compra.save(update_fields=['total', 'cuds', 'estado_dian'])
             registrar_asiento_compra(compra)
 
+        registrar_actividad(request, 'inventario', 'COMPRA_PROVEEDOR', f"Registró compra {compra.numero_completo} por ${compra.total:,.0f} COP.", empresa=empresa, objeto=compra)
         messages.success(request, f"{compra.numero_completo} registrada por ${compra.total:,.0f} COP e inventario actualizado.")
         return redirect('inventario:compra_detalle', compra_id=compra.id)
 

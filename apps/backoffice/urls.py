@@ -29,4 +29,7 @@ urlpatterns = [
     path('comunicados/enviar-tanda/', views.comunicado_enviar_tanda, name='comunicado_enviar_tanda'),
     path('comunicados/reiniciar/', views.comunicado_reiniciar, name='comunicado_reiniciar'),
     path('comunicados/banner/', views.comunicado_guardar_banner, name='comunicado_guardar_banner'),
+
+    # Auditoría Global Multi-Tenant
+    path('auditoria/', views.auditoria_global_view, name='auditoria_lista'),
 ]

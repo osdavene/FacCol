@@ -9,6 +9,7 @@ from django.http import HttpResponse
 from django.views.decorators.http import require_POST
 
 from apps.contabilidad.services import registrar_asiento_nomina
+from apps.core.audit import registrar_actividad
 from apps.core.mail_service import enviar_correo_sistema
 from apps.nomina.dian_nomina_service import calcular_cune_nomina, generar_xml_nomina_individual
 from apps.nomina.models import Empleado, Nomina, NominaEmpleado
@@ -191,6 +192,7 @@ def nomina_liquidar(request):
             nomina.save()
             registrar_asiento_nomina(nomina)
 
+        registrar_actividad(request, 'nomina', 'LIQUIDAR_NOMINA', f"Liquidó nómina {mes}/{ano} para {empleados.count()} empleados (${total_net:,.0f}).", empresa=empresa, objeto=nomina)
         messages.success(request, f"Nómina de {mes}/{ano} liquidada exitosamente para {empleados.count()} empleados. Total neto: ${total_net:,.0f} COP.")
         return redirect('nomina:nomina_detalle', nomina_id=nomina.id)
 
@@ -288,6 +290,7 @@ def nomina_enviar_colilla(request, detalle_id):
             empresa=empresa,
             fail_silently=False,
         )
+        registrar_actividad(request, 'nomina', 'ENVIAR_COLILLA', f"Envió colilla {num_ne} a {correo}.", empresa=empresa, objeto=detalle)
         messages.success(request, f"Colilla {num_ne} enviada a {correo}.")
     except Exception as exc:
         messages.error(request, f"No se pudo enviar la colilla: {exc}")
