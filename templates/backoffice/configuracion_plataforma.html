@@ -281,5 +281,63 @@
         </form>
     </div>
 
+    <!-- Sección 5: Tareas Automáticas y Cron de Plataforma -->
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 sm:p-8 shadow-xl space-y-4 text-xs">
+        <div class="border-b border-[#1e2d47] pb-4">
+            <h2 class="text-sm font-bold text-indigo-400 uppercase tracking-wider flex items-center gap-2">
+                <i class="fas fa-clock"></i>
+                <span>5. Tareas Programadas (Ejecución Manual Inmediata)</span>
+            </h2>
+            <p class="text-[11px] text-slate-400 mt-0.5">Estas tareas corren automáticamente vía Cron en AWS. También puedes dispararlas manualmente desde aquí.</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <form method="post" action="{% url 'backoffice:ejecutar_tarea_programada' %}" class="p-4 rounded-2xl bg-[#162034] border border-[#1e2d47] flex flex-col justify-between gap-3">
+                {% csrf_token %}
+                <input type="hidden" name="tarea" value="procesar_cola_dian">
+                <div>
+                    <div class="font-bold text-white">Procesar Cola DIAN</div>
+                    <p class="text-[11px] text-slate-400 mt-1">Reintenta documentos en PENDIENTE o CONTINGENCIA ante la DIAN (cron cada 20 min).</p>
+                    {% if ultima_cola_dian %}
+                    <p class="text-[10px] text-cyan-400 mt-2">Última: {{ ultima_cola_dian.created_at|date:"d/m/Y H:i" }}</p>
+                    {% endif %}
+                </div>
+                <button type="submit" class="px-4 py-2 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold transition">
+                    Ejecutar Cola DIAN
+                </button>
+            </form>
+
+            <form method="post" action="{% url 'backoffice:ejecutar_tarea_programada' %}" class="p-4 rounded-2xl bg-[#162034] border border-[#1e2d47] flex flex-col justify-between gap-3">
+                {% csrf_token %}
+                <input type="hidden" name="tarea" value="enviar_resumen_diario">
+                <div>
+                    <div class="font-bold text-white">Enviar Resumen Diario</div>
+                    <p class="text-[11px] text-slate-400 mt-1">Envía un único correo consolidado de ventas, vencidos, stock y DIAN (cron 7:05 PM COT).</p>
+                    {% if ultimo_resumen_diario %}
+                    <p class="text-[10px] text-cyan-400 mt-2">Último: {{ ultimo_resumen_diario.created_at|date:"d/m/Y H:i" }}</p>
+                    {% endif %}
+                </div>
+                <button type="submit" class="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold transition">
+                    Enviar Resúmenes Hoy
+                </button>
+            </form>
+
+            <form method="post" action="{% url 'backoffice:ejecutar_tarea_programada' %}" class="p-4 rounded-2xl bg-[#162034] border border-[#1e2d47] flex flex-col justify-between gap-3">
+                {% csrf_token %}
+                <input type="hidden" name="tarea" value="verificar_vencimientos_plan">
+                <div>
+                    <div class="font-bold text-white">Verificar Vencimientos SaaS</div>
+                    <p class="text-[11px] text-slate-400 mt-1">Alerta empresas cuyo plan vence en 7 días, 1 día o ya expiró (cron 7:30 AM COT).</p>
+                    {% if ultimo_vencimientos %}
+                    <p class="text-[10px] text-cyan-400 mt-2">Última: {{ ultimo_vencimientos.created_at|date:"d/m/Y H:i" }}</p>
+                    {% endif %}
+                </div>
+                <button type="submit" class="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold transition">
+                    Revisar Vencimientos
+                </button>
+            </form>
+        </div>
+    </div>
+
 </div>
 {% endblock %}

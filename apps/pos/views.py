@@ -6,6 +6,7 @@ from django.contrib.auth.decorators import login_required
 from django.contrib import messages
 from django.http import JsonResponse
 from django.db import transaction
+from django.views.decorators.http import require_POST
 
 from django.urls import reverse
 from apps.pos.models import Caja, CajaTurno, MovimientoCaja
@@ -239,7 +240,11 @@ def cajas_lista(request):
         return redirect('core:dashboard')
 
     cajas = Caja.objects.filter(empresa=empresa)
-    turnos_recientes = CajaTurno.objects.filter(empresa=empresa).select_related('caja', 'usuario')[:10]
+    turnos_recientes = (
+        CajaTurno.objects.filter(empresa=empresa)
+        .select_related('caja', 'usuario')
+        .prefetch_related('movimientos')[:10]
+    )
 
     return render(request, 'pos/cajas_lista.html', {
         'cajas': cajas,
@@ -353,3 +358,83 @@ def caja_cerrar_turno(request, turno_id):
         return redirect('pos:cajas_lista')
 
     return render(request, 'pos/cerrar_turno.html', {'turno': turno})
+
+
+@login_required
+@requiere_facturacion
+@require_POST
+def caja_movimiento_registrar(request, turno_id):
+    """Registra ingreso o retiro parcial de efectivo durante un turno POS abierto y alerta retiros."""
+    empresa = request.empresa_activa
+    turno = get_object_or_404(CajaTurno, id=turno_id, empresa=empresa, estado='ABIERTA')
+
+    tipo = (request.POST.get('tipo') or '').strip().upper()
+    motivo = (request.POST.get('motivo') or '').strip()
+    referencia = (request.POST.get('referencia') or '').strip()
+    try:
+        monto = Decimal(request.POST.get('monto', '0') or '0')
+    except Exception:
+        monto = Decimal('0')
+
+    if tipo not in ('INGRESO', 'EGRESO') or monto <= Decimal('0') or not motivo:
+        messages.error(request, "Indica tipo válido (INGRESO/EGRESO), monto mayor a cero y motivo.")
+        return redirect('pos:cajas_lista')
+
+    with transaction.atomic():
+        mov = MovimientoCaja.objects.create(
+            empresa=empresa,
+            turno=turno,
+            tipo=tipo,
+            monto=monto,
+            motivo=motivo,
+            referencia=referencia,
+        )
+        if tipo == 'INGRESO':
+            turno.monto_total_esperado += monto
+        else:
+            turno.monto_total_esperado = max(Decimal('0.00'), turno.monto_total_esperado - monto)
+        turno.save(update_fields=['monto_total_esperado'])
+
+    registrar_actividad(
+        request,
+        'pos',
+        'MOVIMIENTO_CAJA',
+        f"Registró {tipo} de caja en turno #{turno.id} por ${monto:,.0f} COP ({motivo}).",
+        empresa=empresa,
+        objeto=mov,
+    )
+
+    if tipo == 'EGRESO':
+        url_cajas = reverse('pos:cajas_lista')
+        cajero_nom = request.user.get_full_name() or request.user.email or request.user.username
+        titulo_mov = f"Retiro de efectivo en caja #{turno.id}"
+        resumen_mov = (
+            f"{cajero_nom} retiró ${monto:,.0f} COP de {turno.caja.nombre} (turno #{turno.id}). "
+            f"Motivo: {motivo}. Nuevo esperado en caja: ${turno.monto_total_esperado:,.0f} COP."
+        )
+        notificar_usuarios_app(
+            titulo_mov,
+            resumen_mov,
+            empresa=empresa,
+            roles=('propietario', 'admin'),
+            nivel='warning',
+            categoria='caja',
+            url=url_cajas,
+        )
+        notificar_evento_seguridad(
+            request,
+            titulo_mov,
+            resumen_mov,
+            destinatarios=destinatarios_propietarios_empresa(
+                empresa, excluir_emails=[request.user.email]
+            ),
+            empresa=empresa,
+            action_url=request.build_absolute_uri(url_cajas),
+            action_text="Ver Turnos de Caja",
+            categoria='caja',
+            nivel='warning',
+            registrar_in_app=False,
+        )
+
+    messages.success(request, f"{tipo.title()} de ${monto:,.0f} COP registrado en el turno #{turno.id}.")
+    return redirect('pos:cajas_lista')

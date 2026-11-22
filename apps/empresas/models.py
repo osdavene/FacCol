@@ -173,6 +173,7 @@ class Empresa(models.Model):
     # Multi-tenancy & Filiales
     empresa_padre = models.ForeignKey('self', on_delete=models.SET_NULL, null=True, blank=True, related_name='filiales')
     plan = models.ForeignKey(Plan, on_delete=models.SET_NULL, null=True, blank=True, related_name='empresas')
+    plan_fecha_vencimiento = models.DateField(null=True, blank=True, verbose_name="Vencimiento del Plan")
     modulos = models.ManyToManyField(Modulo, through='EmpresaModulo', blank=True, related_name='empresas')
     activa = models.BooleanField(default=True)
 
@@ -256,6 +257,19 @@ class Empresa(models.Model):
                 modulo=mod,
                 defaults={'activo': True},
             )
+
+    def renovar_fecha_plan(self, *, save: bool = True):
+        """Calcula y asigna la fecha de vencimiento según la duración del plan contratado."""
+        from datetime import date, timedelta
+
+        if self.plan and self.plan.precio_mensual > 0:
+            base = self.plan_fecha_vencimiento if (self.plan_fecha_vencimiento and self.plan_fecha_vencimiento > date.today()) else date.today()
+            self.plan_fecha_vencimiento = base + timedelta(days=30 * max(1, int(self.plan.duracion_meses or 1)))
+        else:
+            self.plan_fecha_vencimiento = None
+        if save:
+            self.save(update_fields=['plan_fecha_vencimiento'])
+        return self.plan_fecha_vencimiento
 
 
 class EmpresaModulo(models.Model):

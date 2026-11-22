@@ -11,11 +11,18 @@
             <p class="text-xs text-slate-400">Control sencillo de fiados diarios de clientes y vecinos con abonos rápidos</p>
         </div>
 
-        <div class="flex items-center gap-3">
+        <div class="flex flex-wrap items-center gap-3">
             <div class="px-4 py-2 rounded-2xl bg-rose-500/10 border border-rose-500/30 text-right">
                 <div class="text-[10px] font-bold text-rose-300 uppercase">Total por Cobrar</div>
                 <div class="font-display font-black text-lg text-rose-400">${{ total_fiado|floatformat:0|intcomma }} COP</div>
             </div>
+            <form method="post" action="{% url 'facturacion:fiados_recordar_lote' %}">
+                {% csrf_token %}
+                <input type="hidden" name="solo_vencidos" value="1">
+                <button type="submit" class="px-4 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs transition flex items-center gap-1.5">
+                    <i class="fas fa-paper-plane"></i> Recordar Vencidos
+                </button>
+            </form>
             <a href="{% url 'pos:pos_terminal' %}" class="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-extrabold text-xs uppercase tracking-wider transition">
                 <i class="fas fa-cash-register mr-1"></i> Ir a Caja
             </a>

@@ -10,4 +10,5 @@ urlpatterns = [
     path('cajas/', views.cajas_lista, name='cajas_lista'),
     path('cajas/abrir/', views.caja_abrir_turno, name='caja_abrir_turno'),
     path('cajas/turnos/<int:turno_id>/cerrar/', views.caja_cerrar_turno, name='caja_cerrar_turno'),
+    path('cajas/turnos/<int:turno_id>/movimiento/', views.caja_movimiento_registrar, name='caja_movimiento_registrar'),
 ]

@@ -32,7 +32,9 @@
                         <th class="p-4">Cierre</th>
                         <th class="p-4 text-right">Base Inicial</th>
                         <th class="p-4 text-right">Ventas Efectivo</th>
+                        <th class="p-4 text-right">Esperado</th>
                         <th class="p-4 text-center">Estado</th>
+                        <th class="p-4 text-right">Acciones</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-[#1e2d47]/50">
@@ -45,6 +47,7 @@
                         <td class="p-4 text-slate-400">{{ t.fecha_cierre|date:"d/m/Y H:i"|default:"En curso..." }}</td>
                         <td class="p-4 text-right text-slate-300">${{ t.monto_inicial|floatformat:0|intcomma }}</td>
                         <td class="p-4 text-right font-black text-emerald-400">${{ t.monto_ventas_efectivo|floatformat:0|intcomma }}</td>
+                        <td class="p-4 text-right font-bold text-cyan-300">${{ t.monto_total_esperado|floatformat:0|intcomma }}</td>
                         <td class="p-4 text-center">
                             <span class="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase
                                 {% if t.estado == 'ABIERTA' %}bg-emerald-500/10 text-emerald-400 border border-emerald-500/20
@@ -52,9 +55,39 @@
                                 {{ t.estado }}
                             </span>
                         </td>
+                        <td class="p-4 text-right whitespace-nowrap">
+                            {% if t.estado == 'ABIERTA' %}
+                            <div class="inline-flex flex-wrap items-center justify-end gap-1.5" x-data="{ openMov: false }">
+                                <button type="button" @click="openMov = !openMov"
+                                        class="px-2.5 py-1.5 rounded-xl bg-indigo-600/80 hover:bg-indigo-500 text-white font-bold text-[11px] transition">
+                                    Ingreso / Retiro
+                                </button>
+                                <a href="{% url 'pos:caja_cerrar_turno' t.id %}"
+                                   class="px-2.5 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500 hover:text-white text-rose-300 font-bold text-[11px] transition">
+                                    Cerrar
+                                </a>
+                                <div x-show="openMov" x-cloak class="w-full mt-2 p-3 rounded-2xl bg-[#0e1422] border border-[#1e2d47] text-left">
+                                    <form method="post" action="{% url 'pos:caja_movimiento_registrar' t.id %}" class="flex flex-wrap items-center gap-2">
+                                        {% csrf_token %}
+                                        <select name="tipo" class="bg-[#162034] border border-[#1e2d47] rounded-lg px-2 py-1 text-white text-[11px]">
+                                            <option value="EGRESO">Retiro / Egreso (-)</option>
+                                            <option value="INGRESO">Ingreso / Base (+)</option>
+                                        </select>
+                                        <input type="number" name="monto" step="100" min="100" required placeholder="Monto COP"
+                                               class="w-28 bg-[#162034] border border-[#1e2d47] rounded-lg px-2 py-1 text-white text-[11px]">
+                                        <input type="text" name="motivo" required placeholder="Motivo (ej. Pago domicilio)"
+                                               class="w-44 bg-[#162034] border border-[#1e2d47] rounded-lg px-2 py-1 text-white text-[11px]">
+                                        <button type="submit" class="px-3 py-1 rounded-lg bg-amber-500 text-black font-bold text-[11px]">Guardar</button>
+                                    </form>
+                                </div>
+                            </div>
+                            {% else %}
+                            <span class="text-[11px] text-slate-500">Dif: ${{ t.diferencia|floatformat:0|intcomma }}</span>
+                            {% endif %}
+                        </td>
                     </tr>
                     {% empty %}
-                    <tr><td colspan="8" class="p-8 text-center text-slate-500">No hay turnos registrados aún.</td></tr>
+                    <tr><td colspan="10" class="p-8 text-center text-slate-500">No hay turnos registrados aún.</td></tr>
                     {% endfor %}
                 </tbody>
             </table>

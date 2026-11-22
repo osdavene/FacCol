@@ -4,6 +4,7 @@ import time
 from decimal import Decimal
 from datetime import date, timedelta
 from urllib.parse import quote, urlencode
+from django.conf import settings
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
@@ -430,6 +431,37 @@ def _enviar_factura_pdf_cliente(empresa, factura, destinatario: str, mensaje_per
     )
 
 
+def _enviar_recordatorio_factura_cliente(empresa, factura) -> str:
+    """Envía recordatorio de saldo pendiente al correo del tercero y retorna su correo."""
+    correo = (factura.tercero.email or '').strip().lower()
+    if not correo or is_dummy_or_invalid_email(correo):
+        raise ValueError(f"El cliente {factura.tercero.razon_social} no tiene un correo válido registrado.")
+
+    vence_txt = (
+        factura.fecha_vencimiento.strftime('%d/%m/%Y')
+        if factura.fecha_vencimiento
+        else factura.fecha_emision.strftime('%d/%m/%Y')
+    )
+    html = (
+        f"<h3>Recordatorio de saldo pendiente</h3>"
+        f"<p>Hola <b>{escape(factura.tercero.razon_social)}</b>,</p>"
+        f"<p>Te recordamos amablemente que tienes un saldo pendiente de "
+        f"<b>${factura.saldo_pendiente:,.0f} COP</b> correspondiente al documento "
+        f"<b>{escape(factura.numero_completo)}</b> en <b>{escape(empresa.display_name)}</b> "
+        f"(vencimiento: {vence_txt}).</p>"
+        f"<p>Si ya realizaste tu pago, por favor haz caso omiso a este aviso o responde con tu comprobante.</p>"
+    )
+    enviar_correo_sistema(
+        correo,
+        f"Recordatorio de pago {factura.numero_completo} — {empresa.display_name}",
+        html,
+        reply_to=[empresa.email] if empresa.email else None,
+        empresa=empresa,
+        fail_silently=False,
+    )
+    return correo
+
+
 @login_required
 @requiere_facturacion
 @require_POST
@@ -447,30 +479,8 @@ def fiado_enviar_recordatorio(request, factura_id):
         messages.info(request, f"El documento {factura.numero_completo} no tiene saldo pendiente.")
         return redirect('facturacion:fiados_lista')
 
-    correo = (factura.tercero.email or '').strip().lower()
-    if not correo or is_dummy_or_invalid_email(correo):
-        messages.error(request, f"El cliente {factura.tercero.razon_social} no tiene un correo válido registrado.")
-        return redirect('facturacion:fiados_lista')
-
-    vence_txt = factura.fecha_vencimiento.strftime('%d/%m/%Y') if factura.fecha_vencimiento else factura.fecha_emision.strftime('%d/%m/%Y')
-    html = (
-        f"<h3>Recordatorio de saldo pendiente</h3>"
-        f"<p>Hola <b>{escape(factura.tercero.razon_social)}</b>,</p>"
-        f"<p>Te recordamos amablemente que tienes un saldo pendiente de "
-        f"<b>${factura.saldo_pendiente:,.0f} COP</b> correspondiente al documento "
-        f"<b>{escape(factura.numero_completo)}</b> en <b>{escape(empresa.display_name)}</b> "
-        f"(vencimiento: {vence_txt}).</p>"
-        f"<p>Si ya realizaste tu pago, por favor haz caso omiso a este aviso o responde con tu comprobante.</p>"
-    )
     try:
-        enviar_correo_sistema(
-            correo,
-            f"Recordatorio de pago {factura.numero_completo} — {empresa.display_name}",
-            html,
-            reply_to=[empresa.email] if empresa.email else None,
-            empresa=empresa,
-            fail_silently=False,
-        )
+        correo = _enviar_recordatorio_factura_cliente(empresa, factura)
         registrar_actividad(
             request,
             'facturacion',
@@ -482,6 +492,59 @@ def fiado_enviar_recordatorio(request, factura_id):
         messages.success(request, f"Recordatorio enviado a {correo} por saldo de ${factura.saldo_pendiente:,.0f} COP.")
     except Exception as exc:
         messages.error(request, f"No se pudo enviar el recordatorio: {exc}")
+    return redirect('facturacion:fiados_lista')
+
+
+@login_required
+@requiere_facturacion
+@require_POST
+def fiados_recordar_lote(request):
+    """Envía recordatorios de cartera en lote con pausa anti-ráfaga para clientes con correo válido."""
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+
+    qs = (
+        Factura.objects.filter(empresa=empresa, saldo_pendiente__gt=Decimal('0.00'))
+        .exclude(estado='ANULADA')
+        .select_related('tercero')
+        .order_by('fecha_vencimiento', 'id')
+    )
+    if request.POST.get('solo_vencidos') == '1':
+        qs = qs.filter(fecha_vencimiento__lt=date.today())
+
+    pendientes = list(qs)
+    is_locmem = 'locmem' in getattr(settings, 'EMAIL_BACKEND', '').lower()
+    enviados = 0
+    omitidos = 0
+    errores = 0
+    vistos_terceros = set()
+
+    for idx, fac in enumerate(pendientes):
+        correo = (getattr(fac.tercero, 'email', '') or '').strip().lower()
+        if not correo or is_dummy_or_invalid_email(correo) or correo in vistos_terceros:
+            omitidos += 1
+            continue
+        vistos_terceros.add(correo)
+        try:
+            _enviar_recordatorio_factura_cliente(empresa, fac)
+            enviados += 1
+            if not is_locmem and idx < len(pendientes) - 1:
+                time.sleep(0.52)
+        except Exception:
+            errores += 1
+
+    registrar_actividad(
+        request,
+        'facturacion',
+        'RECORDATORIO_CARTERA_LOTE',
+        f"Recordatorio masivo de cartera: {enviados} enviados, {omitidos} omitidos/duplicados, {errores} errores.",
+        empresa=empresa,
+    )
+    if enviados:
+        messages.success(request, f"Se enviaron {enviados} recordatorios de cobro ({omitidos} sin correo o repetidos).")
+    else:
+        messages.info(request, "No se encontraron facturas vencidas con correo válido pendiente de recordar.")
     return redirect('facturacion:fiados_lista')
 
 

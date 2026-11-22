@@ -1,4 +1,6 @@
 from decimal import Decimal
+from io import StringIO
+from django.core.management import call_command
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import user_passes_test
 from django.contrib.auth.tokens import default_token_generator
@@ -348,6 +350,7 @@ def empresa_editar(request, empresa_id):
                 empresa.modulos.add(mod_id)
 
         if empresa.plan_id != plan_anterior_id:
+            empresa.renovar_fecha_plan()
             plan_txt = empresa.plan.nombre if empresa.plan else "Sin plan"
             registrar_actividad(
                 request,
@@ -461,6 +464,7 @@ def solicitud_plan_resolver(request, solicitud_id):
         emp.activa = True
         emp.save(update_fields=['plan', 'activa'])
         emp.sincronizar_modulos_con_plan(nuevo_plan)
+        emp.renovar_fecha_plan()
         solicitud.estado = 'APROBADA'
         solicitud.resolved_at = timezone.now()
         solicitud.save(update_fields=['estado', 'resolved_at'])
@@ -732,6 +736,9 @@ def configuracion_plataforma(request):
     pt_dian_url = get_platform_setting('pt_dian_url', '')
     masked_pt_token = mask_secret(get_platform_setting('pt_dian_token', ''))
     webhook_url = request.build_absolute_uri(reverse('facturacion:wompi_webhook'))
+    ultima_cola_dian = RegistroActividad.objects.filter(accion='CRON_MANUAL_PROCESAR_COLA_DIAN').first()
+    ultimo_resumen_diario = RegistroActividad.objects.filter(accion='CRON_MANUAL_ENVIAR_RESUMEN_DIARIO').first()
+    ultimo_vencimientos = RegistroActividad.objects.filter(accion='CRON_MANUAL_VERIFICAR_VENCIMIENTOS_PLAN').first()
     return render(request, 'backoffice/configuracion_plataforma.html', {
         'mail_cfg': mail_cfg,
         'wompi_cfg': wompi_cfg,
@@ -739,7 +746,40 @@ def configuracion_plataforma(request):
         'pt_dian_url': pt_dian_url,
         'masked_pt_token': masked_pt_token,
         'webhook_url': webhook_url,
+        'ultima_cola_dian': ultima_cola_dian,
+        'ultimo_resumen_diario': ultimo_resumen_diario,
+        'ultimo_vencimientos': ultimo_vencimientos,
     })
+
+
+@user_passes_test(es_superadmin)
+@require_POST
+def ejecutar_tarea_programada(request):
+    """Permite al SuperAdmin disparar manualmente los comandos cron de DIAN, resumen diario y vencimientos."""
+    tareas_permitidas = {
+        'procesar_cola_dian': 'CRON_MANUAL_PROCESAR_COLA_DIAN',
+        'enviar_resumen_diario': 'CRON_MANUAL_ENVIAR_RESUMEN_DIARIO',
+        'verificar_vencimientos_plan': 'CRON_MANUAL_VERIFICAR_VENCIMIENTOS_PLAN',
+    }
+    tarea = (request.POST.get('tarea') or '').strip()
+    if tarea not in tareas_permitidas:
+        messages.error(request, "Tarea programada no válida.")
+        return redirect('backoffice:configuracion_plataforma')
+
+    buf = StringIO()
+    try:
+        call_command(tarea, stdout=buf)
+        salida = buf.getvalue().strip() or f"{tarea} ejecutada."
+        registrar_actividad(
+            request,
+            'plataforma',
+            tareas_permitidas[tarea],
+            f"Ejecutó manualmente '{tarea}': {salida}",
+        )
+        messages.success(request, f"Tarea '{tarea}' ejecutada: {salida}")
+    except Exception as exc:
+        messages.error(request, f"Error ejecutando '{tarea}': {exc}")
+    return redirect('backoffice:configuracion_plataforma')
 
 
 @user_passes_test(es_superadmin)

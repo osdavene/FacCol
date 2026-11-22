@@ -224,6 +224,7 @@ def activate_wompi_transaction(tx: TransaccionWompi) -> bool:
                     tx.usuario = user
 
             emp.sincronizar_modulos_con_plan(plan)
+            emp.renovar_fecha_plan()
 
             tx.empresa_creada = emp
             tx.save(update_fields=["empresa_creada", "usuario"])

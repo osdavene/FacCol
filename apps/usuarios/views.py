@@ -278,6 +278,30 @@ def usuario_crear(request):
 
     if request.method == 'POST':
         if not empresa.puede_agregar_usuario():
+            from datetime import date
+            hoy = date.today()
+            if not RegistroActividad.objects.filter(
+                empresa=empresa,
+                accion='ALERTA_CUPO_USUARIOS',
+                created_at__year=hoy.year,
+                created_at__month=hoy.month,
+            ).exists():
+                resumen_lim = (
+                    f"{empresa.display_name} alcanzó el límite de {empresa.plan.limite_usuarios} usuarios activos "
+                    f"incluidos en su plan '{empresa.plan.nombre}'."
+                )
+                registrar_actividad(request, 'planes', 'ALERTA_CUPO_USUARIOS', resumen_lim, empresa=empresa, objeto=empresa)
+                notificar_evento_seguridad(
+                    request,
+                    "Límite de usuarios del plan alcanzado",
+                    resumen_lim,
+                    destinatarios=destinatarios_propietarios_empresa(empresa),
+                    empresa=empresa,
+                    action_url=request.build_absolute_uri(reverse('core:mi_plan')),
+                    action_text="Ampliar Plan",
+                    categoria='plan',
+                    nivel='warning',
+                )
             messages.error(
                 request,
                 f"Alcanzaste el límite de usuarios de tu plan ({empresa.plan.limite_usuarios} usuarios). "

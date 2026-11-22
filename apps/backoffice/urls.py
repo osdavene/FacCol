@@ -21,6 +21,7 @@ urlpatterns = [
     # Configuración Global Cifrada (Correo y Wompi)
     path('configuracion/', views.configuracion_plataforma, name='configuracion_plataforma'),
     path('configuracion/probar-correo/', views.configuracion_probar_correo, name='configuracion_probar_correo'),
+    path('tareas/ejecutar/', views.ejecutar_tarea_programada, name='ejecutar_tarea_programada'),
 
     # Comunicados Masivos Anti-Spam & Banner en Panel del Usuario
     path('comunicados/', views.comunicados_panel, name='comunicados_panel'),

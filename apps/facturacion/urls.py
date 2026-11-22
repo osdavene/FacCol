@@ -12,6 +12,7 @@ urlpatterns = [
     path('facturas/<int:factura_id>/xml/', views.factura_xml, name='factura_xml'),
     path('facturas/<int:factura_id>/enviar-email/', views.factura_enviar_email, name='factura_enviar_email'),
     path('fiados/', views.fiados_lista, name='fiados_lista'),
+    path('fiados/recordar-lote/', views.fiados_recordar_lote, name='fiados_recordar_lote'),
     path('fiados/<int:factura_id>/recordatorio/', views.fiado_enviar_recordatorio, name='fiado_enviar_recordatorio'),
     path('recibos/', views.recibos_lista, name='recibos_lista'),
     path('recibos/nuevo/', views.recibo_crear, name='recibo_crear'),

@@ -612,3 +612,104 @@ class CentroNotificacionesYEventosTests(TestCase):
         call_command("procesar_cola_dian", stdout=out_dian)
         self.assertIn("Cola DIAN procesada:", out_dian.getvalue())
 
+    def test_movimiento_caja_retiro_descuenta_esperado_y_alerta_propietario(self):
+        caja = Caja.objects.create(empresa=self.empresa, nombre="Caja Mov", codigo="CM1")
+        turno = CajaTurno.objects.create(
+            empresa=self.empresa,
+            caja=caja,
+            usuario=self.cajero,
+            monto_inicial=Decimal("100000.00"),
+            monto_total_esperado=Decimal("100000.00"),
+        )
+        c_caj = Client()
+        c_caj.force_login(self.cajero)
+
+        mail.outbox.clear()
+        r_egr = c_caj.post(reverse("pos:caja_movimiento_registrar", args=[turno.id]), {
+            "tipo": "EGRESO",
+            "monto": "25000",
+            "motivo": "Pago proveedor domicilio",
+        }, follow=True)
+        self.assertEqual(r_egr.status_code, 200)
+        turno.refresh_from_db()
+        self.assertEqual(turno.monto_total_esperado, Decimal("75000.00"))
+        self.assertIn("prop@andinasas.co", [addr for m in mail.outbox for addr in m.to])
+        self.assertTrue(Notificacion.objects.filter(empresa=self.empresa, categoria="caja", nivel="warning", titulo__startswith="Retiro de efectivo").exists())
+
+        # INGRESO suma al esperado y no genera alerta de retiro
+        mail.outbox.clear()
+        c_caj.post(reverse("pos:caja_movimiento_registrar", args=[turno.id]), {
+            "tipo": "INGRESO",
+            "monto": "10000",
+            "motivo": "Sencillo adicional",
+        }, follow=True)
+        turno.refresh_from_db()
+        self.assertEqual(turno.monto_total_esperado, Decimal("85000.00"))
+        self.assertEqual(len(mail.outbox), 0)
+
+    def test_recordatorio_masivo_cartera_vencida(self):
+        otro_cli = Tercero.objects.create(
+            empresa=self.empresa, numero_documento="555111222", razon_social="Cliente Al Día",
+            email="aldia@andinasas.co", es_cliente=True,
+        )
+        Factura.objects.create(
+            empresa=self.empresa, tipo_documento="FACTURA", prefijo="FE", consecutivo=951,
+            tercero=self.cliente, fecha_emision=date.today() - timedelta(days=15),
+            fecha_vencimiento=date.today() - timedelta(days=3),
+            estado="EMITIDA", metodo_pago="CREDITO", total=Decimal("40000.00"), saldo_pendiente=Decimal("40000.00"),
+        )
+        # Al día (no vencida) -> no se incluye cuando solo_vencidos=1
+        Factura.objects.create(
+            empresa=self.empresa, tipo_documento="FACTURA", prefijo="FE", consecutivo=952,
+            tercero=otro_cli, fecha_emision=date.today(),
+            fecha_vencimiento=date.today() + timedelta(days=10),
+            estado="EMITIDA", metodo_pago="CREDITO", total=Decimal("30000.00"), saldo_pendiente=Decimal("30000.00"),
+        )
+        c_prop = Client()
+        c_prop.force_login(self.propietario)
+        mail.outbox.clear()
+        r = c_prop.post(reverse("facturacion:fiados_recordar_lote"), {"solo_vencidos": "1"}, follow=True)
+        self.assertEqual(r.status_code, 200)
+        dests = [addr for m in mail.outbox for addr in m.to]
+        self.assertEqual(dests, ["cliente.real@andinasas.co"])
+        self.assertTrue(RegistroActividad.objects.filter(empresa=self.empresa, accion="RECORDATORIO_CARTERA_LOTE").exists())
+
+    def test_vencimientos_plan_cupo_usuarios_y_tareas_backoffice(self):
+        # 7 días o menos -> alerta warning
+        self.empresa.plan_fecha_vencimiento = date.today() + timedelta(days=5)
+        self.empresa.save(update_fields=["plan_fecha_vencimiento"])
+        mail.outbox.clear()
+        call_command("verificar_vencimientos_plan", empresa_id=self.empresa.id)
+        self.assertTrue(RegistroActividad.objects.filter(empresa=self.empresa, accion="ALERTA_VENCIMIENTO_PLAN_7D").exists())
+        self.assertIn("prop@andinasas.co", [addr for m in mail.outbox for addr in m.to])
+
+        # Plan vencido -> alerta danger + notifica SuperAdmin in-app
+        self.empresa.plan_fecha_vencimiento = date.today() - timedelta(days=2)
+        self.empresa.save(update_fields=["plan_fecha_vencimiento"])
+        mail.outbox.clear()
+        call_command("verificar_vencimientos_plan", empresa_id=self.empresa.id)
+        self.assertTrue(RegistroActividad.objects.filter(empresa=self.empresa, accion="ALERTA_PLAN_VENCIDO").exists())
+        self.assertTrue(Notificacion.objects.filter(usuario=self.superadmin, categoria="plan", nivel="danger").exists())
+
+        # Límite de usuarios alcanzado dispara alerta mensual ALERTA_CUPO_USUARIOS
+        self.plan.limite_usuarios = 3  # Ya existen propietario, cajero, contador (3)
+        self.plan.save(update_fields=["limite_usuarios"])
+        c_prop = Client()
+        c_prop.force_login(self.propietario)
+        mail.outbox.clear()
+        c_prop.post(reverse("usuarios:crear"), {
+            "email": "extra@andinasas.co",
+            "first_name": "Cuarto",
+            "rol": "vendedor",
+        }, follow=True)
+        self.assertTrue(RegistroActividad.objects.filter(empresa=self.empresa, accion="ALERTA_CUPO_USUARIOS").exists())
+        self.assertIn("prop@andinasas.co", [addr for m in mail.outbox for addr in m.to])
+
+        # Backoffice ejecutar_tarea_programada
+        c_sa = Client()
+        c_sa.force_login(self.superadmin)
+        r_cron = c_sa.post(reverse("backoffice:ejecutar_tarea_programada"), {"tarea": "verificar_vencimientos_plan"}, follow=True)
+        self.assertEqual(r_cron.status_code, 200)
+        self.assertTrue(RegistroActividad.objects.filter(accion="CRON_MANUAL_VERIFICAR_VENCIMIENTOS_PLAN").exists())
+
+
