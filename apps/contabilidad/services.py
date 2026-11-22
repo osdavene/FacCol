@@ -1,7 +1,35 @@
+from datetime import date, datetime
 from decimal import Decimal
 from django.db import transaction
+from django.db.models import Sum
 
-from apps.contabilidad.models import AsientoContable, AsientoLinea, PlanCuenta
+from apps.contabilidad.models import AsientoContable, AsientoLinea, PeriodoContableCerrado, PlanCuenta
+
+
+def periodo_esta_cerrado(empresa, fecha_val) -> bool:
+    """Verifica si el mes o el año de una fecha ya fue cerrado contablemente."""
+    if not empresa or not fecha_val:
+        return False
+    if isinstance(fecha_val, str):
+        try:
+            fecha_val = datetime.strptime(fecha_val[:10], "%Y-%m-%d").date()
+        except Exception:
+            return False
+    return PeriodoContableCerrado.objects.filter(
+        empresa=empresa,
+        ano=fecha_val.year,
+        mes__in=(fecha_val.month, 0),
+        cerrado=True,
+    ).exists()
+
+
+def _calcular_costo_items_factura(factura) -> Decimal:
+    costo_total = Decimal("0.00")
+    for it in factura.items.select_related("producto").all():
+        prod = it.producto
+        if prod and prod.maneja_inventario and prod.costo_unitario and prod.costo_unitario > 0:
+            costo_total += (Decimal(it.cantidad) * Decimal(prod.costo_unitario)).quantize(Decimal("0.01"))
+    return costo_total.quantize(Decimal("0.01"))
 
 
 def _asegurar_cuenta(empresa, codigo, nombre, naturaleza):
@@ -107,6 +135,27 @@ def registrar_asiento_venta(factura, metodo_pago_real="EFECTIVO"):
                 credito=factura.impuestos_adicionales,
             )
 
+        costo_venta = _calcular_costo_items_factura(factura)
+        if costo_venta > Decimal("0.00"):
+            cta_costo = _asegurar_cuenta(empresa, "613505", "Costo de Ventas Comercio al por Mayor y Menor", "DEBITO")
+            cta_inv = _asegurar_cuenta(empresa, "143505", "Mercancías No Fabricadas por la Empresa", "DEBITO")
+            AsientoLinea.objects.create(
+                asiento=asiento,
+                cuenta=cta_costo,
+                tercero=factura.tercero,
+                descripcion=f"Costo de venta {factura.numero_completo}",
+                debito=costo_venta,
+                credito=Decimal("0.00"),
+            )
+            AsientoLinea.objects.create(
+                asiento=asiento,
+                cuenta=cta_inv,
+                tercero=factura.tercero,
+                descripcion=f"Descargue inventario venta {factura.numero_completo}",
+                debito=Decimal("0.00"),
+                credito=costo_venta,
+            )
+
         return asiento
 
 
@@ -199,6 +248,18 @@ def registrar_asiento_nota_credito(nota_credito, factura_origen=None):
             asiento=asiento, cuenta=cta_contra, tercero=nota_credito.tercero,
             descripcion=f"Crédito cliente / devolución {ref}", debito=Decimal("0.00"), credito=nota_credito.total
         )
+        costo_rev = _calcular_costo_items_factura(nota_credito)
+        if costo_rev > Decimal("0.00"):
+            cta_inv = _asegurar_cuenta(empresa, "143505", "Mercancías No Fabricadas por la Empresa", "DEBITO")
+            cta_costo = _asegurar_cuenta(empresa, "613505", "Costo de Ventas Comercio al por Mayor y Menor", "DEBITO")
+            AsientoLinea.objects.create(
+                asiento=asiento, cuenta=cta_inv, tercero=nota_credito.tercero,
+                descripcion=f"Reintegro inventario {ref}", debito=costo_rev, credito=Decimal("0.00")
+            )
+            AsientoLinea.objects.create(
+                asiento=asiento, cuenta=cta_costo, tercero=nota_credito.tercero,
+                descripcion=f"Reversión costo venta {ref}", debito=Decimal("0.00"), credito=costo_rev
+            )
         return asiento
 
 
@@ -299,3 +360,171 @@ def registrar_asiento_compra(compra):
             descripcion=f"Obligación / pago compra {ref}", debito=Decimal("0.00"), credito=compra.total
         )
         return asiento
+
+
+def registrar_asiento_egreso(egreso):
+    """Genera comprobante contable de Egreso / Pago a Proveedor (CxP vs Tesorería)."""
+    empresa = egreso.empresa
+    if not empresa.tiene_modulo("contabilidad") or egreso.valor <= 0:
+        return None
+
+    ref = egreso.numero_completo
+    if AsientoContable.objects.filter(empresa=empresa, referencia_origen=ref, tipo="EGRESO").exists():
+        return None
+
+    with transaction.atomic():
+        if egreso.compra_id:
+            cta_debito = _asegurar_cuenta(empresa, "220505", "Proveedores Nacionales", "CREDITO")
+        else:
+            cta_debito = _asegurar_cuenta(empresa, "233595", "Cuentas por Pagar Otros", "CREDITO")
+        if egreso.metodo_pago == "EFECTIVO":
+            cta_tesoreria = _asegurar_cuenta(empresa, "110505", "Caja General", "DEBITO")
+        else:
+            cta_tesoreria = _asegurar_cuenta(empresa, "111005", "Bancos Nacionales", "DEBITO")
+
+        asiento = AsientoContable.objects.create(
+            empresa=empresa,
+            numero_comprobante=ref,
+            fecha=egreso.fecha,
+            tipo="EGRESO",
+            concepto=f"Comprobante de egreso {ref} ({egreso.tercero.razon_social})",
+            referencia_origen=ref,
+        )
+        AsientoLinea.objects.create(
+            asiento=asiento, cuenta=cta_debito, tercero=egreso.tercero,
+            descripcion=f"Pago obligación {ref}", debito=egreso.valor, credito=Decimal("0.00")
+        )
+        AsientoLinea.objects.create(
+            asiento=asiento, cuenta=cta_tesoreria, tercero=egreso.tercero,
+            descripcion=f"Salida {egreso.get_metodo_pago_display()} {ref}", debito=Decimal("0.00"), credito=egreso.valor
+        )
+        return asiento
+
+
+def registrar_asiento_gasto(gasto):
+    """Genera asiento contable para gasto operativo (51xx/52xx + IVA desc vs Retenciones y CxP/Bancos)."""
+    empresa = gasto.empresa
+    if not empresa.tiene_modulo("contabilidad") or (gasto.subtotal + gasto.iva) <= 0:
+        return None
+
+    ref = gasto.numero_completo
+    if AsientoContable.objects.filter(empresa=empresa, referencia_origen=ref).exists():
+        return None
+
+    with transaction.atomic():
+        asiento = AsientoContable.objects.create(
+            empresa=empresa,
+            numero_comprobante=ref,
+            fecha=gasto.fecha,
+            tipo="EGRESO" if gasto.metodo_pago == "CONTADO" else "COMPRA",
+            concepto=f"Gasto {ref}: {gasto.concepto}",
+            referencia_origen=ref,
+        )
+        if gasto.subtotal > 0:
+            AsientoLinea.objects.create(
+                asiento=asiento, cuenta=gasto.cuenta_gasto, tercero=gasto.tercero,
+                descripcion=gasto.concepto, debito=gasto.subtotal, credito=Decimal("0.00")
+            )
+        if gasto.iva > 0:
+            cta_iva_desc = _asegurar_cuenta(empresa, "240805", "IVA Descontable en Compras y Gastos", "DEBITO")
+            AsientoLinea.objects.create(
+                asiento=asiento, cuenta=cta_iva_desc, tercero=gasto.tercero,
+                descripcion=f"IVA descontable {ref}", debito=gasto.iva, credito=Decimal("0.00")
+            )
+        if gasto.retencion_fuente > 0:
+            cta_rf = _asegurar_cuenta(empresa, "236540", "Retención en la Fuente por Pagar (Compras/Servicios)", "CREDITO")
+            AsientoLinea.objects.create(
+                asiento=asiento, cuenta=cta_rf, tercero=gasto.tercero,
+                descripcion=f"ReteFuente practicada {ref}", debito=Decimal("0.00"), credito=gasto.retencion_fuente
+            )
+        if gasto.retencion_ica > 0:
+            cta_rica = _asegurar_cuenta(empresa, "236805", "Retención de ICA por Pagar", "CREDITO")
+            AsientoLinea.objects.create(
+                asiento=asiento, cuenta=cta_rica, tercero=gasto.tercero,
+                descripcion=f"ReteICA practicada {ref}", debito=Decimal("0.00"), credito=gasto.retencion_ica
+            )
+        if gasto.total_pagar > 0:
+            if gasto.metodo_pago == "CREDITO":
+                cta_contra = _asegurar_cuenta(empresa, "233595", "Costos y Gastos por Pagar", "CREDITO")
+            else:
+                cta_contra = _asegurar_cuenta(empresa, "111005", "Bancos Nacionales", "DEBITO")
+            AsientoLinea.objects.create(
+                asiento=asiento, cuenta=cta_contra, tercero=gasto.tercero,
+                descripcion=f"Pago / Causación gasto {ref}", debito=Decimal("0.00"), credito=gasto.total_pagar
+            )
+        return asiento
+
+
+def ejecutar_cierre_anual_resultados(empresa, ano: int, usuario=None):
+    """
+    Cancela saldos del año en cuentas de resultado (clases 4, 5, 6, 7) trasladando
+    la utilidad o pérdida neta a patrimonio (360505 / 361005) y bloquea el año.
+    """
+    if PeriodoContableCerrado.objects.filter(empresa=empresa, ano=ano, mes=0, cerrado=True).exists():
+        return None, f"El cierre anual {ano} ya fue ejecutado."
+
+    fecha_cierre = date(ano, 12, 31)
+    lineas_res = (
+        AsientoLinea.objects.filter(
+            asiento__empresa=empresa,
+            asiento__fecha__year=ano,
+        )
+        .filter(cuenta__codigo__regex=r"^[4567]")
+        .values("cuenta_id", "cuenta__codigo", "cuenta__nombre")
+        .annotate(deb=Sum("debito"), cred=Sum("credito"))
+    )
+
+    movimientos_cierre = []
+    resultado_neto = Decimal("0.00")
+    for row in lineas_res:
+        saldo = (row["cred"] or Decimal("0.00")) - (row["deb"] or Decimal("0.00"))
+        if abs(saldo) >= Decimal("0.01"):
+            movimientos_cierre.append((row["cuenta_id"], saldo))
+            resultado_neto += saldo
+
+    with transaction.atomic():
+        asiento = None
+        if movimientos_cierre:
+            asiento = AsientoContable.objects.create(
+                empresa=empresa,
+                numero_comprobante=f"CIERRE-{ano}",
+                fecha=fecha_cierre,
+                tipo="GENERAL",
+                concepto=f"Cierre anual de cuentas de resultado {ano}",
+                referencia_origen=f"CIERRE-{ano}",
+            )
+            for cta_id, saldo in movimientos_cierre:
+                if saldo > 0:
+                    AsientoLinea.objects.create(
+                        asiento=asiento, cuenta_id=cta_id,
+                        descripcion=f"Cancelación cuenta resultado {ano}",
+                        debito=saldo, credito=Decimal("0.00"),
+                    )
+                else:
+                    AsientoLinea.objects.create(
+                        asiento=asiento, cuenta_id=cta_id,
+                        descripcion=f"Cancelación cuenta resultado {ano}",
+                        debito=Decimal("0.00"), credito=abs(saldo),
+                    )
+            if resultado_neto >= 0:
+                cta_pat = _asegurar_cuenta(empresa, "360505", "Utilidad del Ejercicio", "CREDITO")
+                AsientoLinea.objects.create(
+                    asiento=asiento, cuenta=cta_pat,
+                    descripcion=f"Utilidad neta ejercicio {ano}",
+                    debito=Decimal("0.00"), credito=resultado_neto,
+                )
+            else:
+                cta_pat = _asegurar_cuenta(empresa, "361005", "Pérdida del Ejercicio", "DEBITO")
+                AsientoLinea.objects.create(
+                    asiento=asiento, cuenta=cta_pat,
+                    descripcion=f"Pérdida neta ejercicio {ano}",
+                    debito=abs(resultado_neto), credito=Decimal("0.00"),
+                )
+
+        PeriodoContableCerrado.objects.update_or_create(
+            empresa=empresa,
+            ano=ano,
+            mes=0,
+            defaults={"cerrado": True, "cerrado_por": usuario, "observaciones": f"Cierre anual {ano}"},
+        )
+        return asiento, f"Cierre anual {ano} ejecutado correctamente (Resultado neto: ${resultado_neto:,.0f} COP)."

@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portal de Cliente — {{ factura.numero_completo }} | {{ factura.empresa.display_name }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-[#0b1120] text-slate-200 min-h-screen py-10 px-4">
+<div class="max-w-3xl mx-auto space-y-6">
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 sm:p-8 shadow-2xl space-y-6">
+        <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#1e2d47] pb-5">
+            <div>
+                <div class="text-xs font-bold uppercase tracking-wider text-amber-400">{{ factura.empresa.display_name }} — NIT {{ factura.empresa.nit_completo }}</div>
+                <h1 class="text-2xl font-black text-white mt-1">{{ factura.get_tipo_documento_display }} {{ factura.numero_completo }}</h1>
+                {% if factura.cufe %}
+                <p class="text-[11px] text-slate-400 mt-1 font-mono">CUFE/CUDE: {{ factura.cufe|slice:":36" }}...</p>
+                {% endif %}
+            </div>
+            <div class="text-right">
+                <span class="px-3 py-1 rounded-full text-xs font-bold uppercase {% if factura.saldo_pendiente == 0 %}bg-emerald-500/20 text-emerald-300{% else %}bg-amber-500/20 text-amber-300{% endif %}">
+                    {{ factura.estado }}
+                </span>
+            </div>
+        </div>
+
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs bg-[#162034] p-4 rounded-2xl border border-[#1e2d47]">
+            <div><span class="text-slate-400 block">Cliente</span><b class="text-white">{{ factura.tercero.razon_social }}</b></div>
+            <div><span class="text-slate-400 block">Emisión / Vence</span><b class="text-white">{{ factura.fecha_emision|date:"d/m/Y" }} / {{ factura.fecha_vencimiento|date:"d/m/Y" }}</b></div>
+            <div><span class="text-slate-400 block">Saldo Pendiente</span><b class="text-lg text-amber-400">${{ factura.saldo_pendiente|floatformat:0 }} COP</b></div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-3 pt-2">
+            <a href="{% url 'portal_factura_pdf' token %}" class="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase">Descargar PDF</a>
+            <a href="{% url 'portal_factura_xml' token %}" class="px-5 py-2.5 rounded-xl bg-[#162034] border border-[#1e2d47] text-cyan-400 font-bold text-xs uppercase">AttachedDocument XML</a>
+            {% if wompi_enabled and factura.saldo_pendiente > 0 %}
+            <form method="post" action="{% url 'portal_factura_pagar_wompi' token %}">
+                {% csrf_token %}
+                <button type="submit" class="px-5 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-black text-xs uppercase">
+                    Pagar en Línea con Wompi
+                </button>
+            </form>
+            {% endif %}
+        </div>
+    </div>
+</div>
+</body>
+</html>

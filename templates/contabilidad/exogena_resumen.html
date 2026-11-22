@@ -1,0 +1,51 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% block title %}Información Exógena DIAN{% endblock %}
+{% block content %}
+<div class="space-y-6">
+    <div class="flex flex-wrap items-center justify-between gap-4">
+        <div>
+            <h1 class="font-display font-extrabold text-2xl text-white">Medios Magnéticos / Exógena DIAN ({{ ano }})</h1>
+            <p class="text-xs text-slate-400">Consolidado por tercero para Formatos 1007 (Ingresos) y 1001 (Pagos a Proveedores)</p>
+        </div>
+        <div class="flex items-center gap-2 text-xs">
+            <form method="get" class="flex items-center gap-2">
+                <input type="number" name="ano" value="{{ ano }}" class="w-24 bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                <button type="submit" class="px-4 py-2 rounded-xl bg-amber-500 text-black font-bold">Filtrar</button>
+            </form>
+            <a href="?ano={{ ano }}&export=xlsx" class="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold">
+                <i class="fas fa-file-excel mr-1"></i> Exportar Excel (.xlsx)
+            </a>
+        </div>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl overflow-hidden">
+            <div class="p-4 border-b border-[#1e2d47] font-bold text-xs uppercase text-emerald-400">Formato 1007 — Ingresos Recibidos</div>
+            <table class="w-full text-left text-xs">
+                <thead><tr class="bg-[#141c2e] text-slate-400 text-[10px] uppercase"><th class="p-3">Documento</th><th class="p-3">Cliente</th><th class="p-3 text-right">Ingreso</th></tr></thead>
+                <tbody class="divide-y divide-[#1e2d47]/50">
+                    {% for r in ingresos_1007 %}
+                    <tr><td class="p-3 font-mono text-slate-300">{{ r.tercero__numero_documento }}</td><td class="p-3 text-white">{{ r.tercero__razon_social }}</td><td class="p-3 text-right font-bold text-emerald-400">${{ r.total_bruto|floatformat:0|intcomma }}</td></tr>
+                    {% empty %}
+                    <tr><td colspan="3" class="p-6 text-center text-slate-500">Sin ingresos en el año.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl overflow-hidden">
+            <div class="p-4 border-b border-[#1e2d47] font-bold text-xs uppercase text-amber-400">Formato 1001 — Pagos / Compras</div>
+            <table class="w-full text-left text-xs">
+                <thead><tr class="bg-[#141c2e] text-slate-400 text-[10px] uppercase"><th class="p-3">Documento</th><th class="p-3">Proveedor</th><th class="p-3 text-right">Total</th></tr></thead>
+                <tbody class="divide-y divide-[#1e2d47]/50">
+                    {% for r in pagos_1001 %}
+                    <tr><td class="p-3 font-mono text-slate-300">{{ r.proveedor__numero_documento }}</td><td class="p-3 text-white">{{ r.proveedor__razon_social }}</td><td class="p-3 text-right font-bold text-amber-400">${{ r.total_pago|floatformat:0|intcomma }}</td></tr>
+                    {% empty %}
+                    <tr><td colspan="3" class="p-6 text-center text-slate-500">Sin pagos en el año.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

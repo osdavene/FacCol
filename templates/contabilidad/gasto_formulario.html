@@ -1,0 +1,59 @@
+{% extends 'base.html' %}
+{% block title %}Registrar Gasto Operativo{% endblock %}
+{% block content %}
+<div class="max-w-2xl mx-auto space-y-6">
+    <h1 class="font-display font-extrabold text-2xl text-white">Registrar Gasto Operativo</h1>
+    <form method="post" class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 space-y-4 text-xs">
+        {% csrf_token %}
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+                <label class="block font-semibold text-slate-300 mb-1">Tercero / Beneficiario</label>
+                <select name="tercero" required class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                    {% for t in terceros %}
+                    <option value="{{ t.id }}">{{ t.razon_social }} ({{ t.numero_documento }})</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div>
+                <label class="block font-semibold text-slate-300 mb-1">Cuenta de Gasto / Costo (PUC)</label>
+                <select name="cuenta_gasto" required class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                    {% for c in cuentas_gasto %}
+                    <option value="{{ c.id }}">{{ c.codigo }} — {{ c.nombre }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+                <label class="block font-semibold text-slate-300 mb-1">Fecha</label>
+                <input type="date" name="fecha" required value="{% now 'Y-m-d' %}" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+            </div>
+            <div>
+                <label class="block font-semibold text-slate-300 mb-1">No. Soporte / Factura</label>
+                <input type="text" name="numero_soporte" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+            </div>
+            <div>
+                <label class="block font-semibold text-slate-300 mb-1">Forma</label>
+                <select name="metodo_pago" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                    <option value="CONTADO">Contado (Bancos)</option>
+                    <option value="CREDITO">Crédito (CxP)</option>
+                </select>
+            </div>
+        </div>
+        <div>
+            <label class="block font-semibold text-slate-300 mb-1">Concepto</label>
+            <input type="text" name="concepto" required placeholder="Ej: Arriendo local comercial" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            <div><label class="block font-semibold text-slate-300 mb-1">Subtotal</label><input type="number" step="0.01" min="1" name="subtotal" required class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white"></div>
+            <div><label class="block font-semibold text-slate-300 mb-1">IVA Descontable</label><input type="number" step="0.01" min="0" name="iva" value="0" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white"></div>
+            <div><label class="block font-semibold text-slate-300 mb-1">ReteFuente</label><input type="number" step="0.01" min="0" name="retencion_fuente" value="0" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white"></div>
+            <div><label class="block font-semibold text-slate-300 mb-1">ReteICA</label><input type="number" step="0.01" min="0" name="retencion_ica" value="0" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white"></div>
+        </div>
+        <div class="flex justify-end gap-2 pt-2">
+            <a href="{% url 'contabilidad:gastos_lista' %}" class="px-4 py-2 rounded-xl bg-[#162034] text-slate-300 font-bold">Cancelar</a>
+            <button type="submit" class="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black uppercase">Contabilizar Gasto</button>
+        </div>
+    </form>
+</div>
+{% endblock %}

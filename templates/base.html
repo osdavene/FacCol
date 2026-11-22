@@ -276,6 +276,7 @@
                     <div x-show="open" class="pl-7 pr-2 space-y-1 mt-1">
                         <a href="{% url 'pos:pos_terminal' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-amber-400 hover:bg-[#162034] transition">Caja Express (POS)</a>
                         <a href="{% url 'facturacion:fiados_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-amber-400 hover:bg-[#162034] transition">Libreta de Fiados</a>
+                        <a href="{% url 'facturacion:cartera_edades' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-amber-400 hover:bg-[#162034] transition">Cartera por Edades</a>
                         <a href="{% url 'facturacion:facturas_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-amber-400 hover:bg-[#162034] transition">Facturas & Doc. POS</a>
                         <a href="{% url 'pos:cajas_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-amber-400 hover:bg-[#162034] transition">Control de Cajas & Turnos</a>
                         <a href="{% url 'facturacion:recibos_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-amber-400 hover:bg-[#162034] transition">Recibos de Caja (Abonos)</a>
@@ -302,6 +303,7 @@
                         <a href="{% url 'terceros:lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-purple-400 hover:bg-[#162034] transition">Todos los Terceros</a>
                         <a href="{% url 'terceros:lista' %}?tipo=clientes" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-purple-400 hover:bg-[#162034] transition">Clientes</a>
                         <a href="{% url 'terceros:lista' %}?tipo=proveedores" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-purple-400 hover:bg-[#162034] transition">Proveedores</a>
+                        <a href="{% url 'terceros:importar' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-amber-400 hover:bg-[#162034] transition">Importar Excel/CSV</a>
                     </div>
                 </div>
                 {% endif %}
@@ -317,6 +319,8 @@
                     </button>
                     <div x-show="open" class="pl-7 pr-2 space-y-1 mt-1">
                         <a href="{% url 'inventario:productos_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-sky-400 hover:bg-[#162034] transition">Productos & Precios</a>
+                        <a href="{% url 'inventario:productos_importar' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-amber-400 hover:bg-[#162034] transition">Importar Catálogo</a>
+                        <a href="{% url 'inventario:bodegas_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-cyan-400 hover:bg-[#162034] transition">Bodegas &amp; Traslados</a>
                         <a href="{% url 'inventario:compras_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-amber-400 hover:bg-[#162034] transition">Compras & Doc. Soporte</a>
                         <a href="{% url 'inventario:ajuste_crear' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-sky-400 hover:bg-[#162034] transition">Ajustes de Kardex</a>
                         <a href="{% url 'inventario:kardex' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-sky-400 hover:bg-[#162034] transition">Kardex de Movimientos</a>
@@ -337,9 +341,15 @@
                     </button>
                     <div x-show="open" class="pl-7 pr-2 space-y-1 mt-1">
                         <a href="{% url 'contabilidad:asientos_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-emerald-400 hover:bg-[#162034] transition">Libro Diario (Asientos)</a>
+                        <a href="{% url 'contabilidad:egresos_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-emerald-400 hover:bg-[#162034] transition">Egresos &amp; CxP</a>
+                        <a href="{% url 'contabilidad:gastos_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-emerald-400 hover:bg-[#162034] transition">Gastos Operativos</a>
                         <a href="{% url 'contabilidad:estados_financieros' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-emerald-400 hover:bg-[#162034] transition">Balance y Estados (P&amp;G)</a>
                         <a href="{% url 'contabilidad:auxiliar_terceros' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-emerald-400 hover:bg-[#162034] transition">Auxiliar por Tercero</a>
+                        <a href="{% url 'contabilidad:certificados_retencion' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-amber-400 hover:bg-[#162034] transition">Certificados Retención</a>
+                        <a href="{% url 'contabilidad:exogena_resumen' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-cyan-400 hover:bg-[#162034] transition">Exógena DIAN</a>
+                        <a href="{% url 'contabilidad:cierres_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-rose-400 hover:bg-[#162034] transition">Cierres Contables</a>
                         <a href="{% url 'contabilidad:plan_cuentas_lista' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-emerald-400 hover:bg-[#162034] transition">Plan de Cuentas (PUC)</a>
+                        <a href="{% url 'contabilidad:puc_importar' %}" class="block py-1.5 px-2 rounded-lg text-slate-300 hover:text-amber-400 hover:bg-[#162034] transition">Importar PUC / Saldos</a>
                     </div>
                 </div>
                 {% endif %}

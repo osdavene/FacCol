@@ -11,6 +11,7 @@ class Factura(EmpresaTenantModel):
         ('COTIZACION', 'Cotización Comercial'),
         ('REMISION', 'Remisión de Entrega'),
         ('NOTA_CREDITO', 'Nota de Crédito'),
+        ('NOTA_DEBITO', 'Nota de Débito'),
     ]
 
     ESTADO_CHOICES = [
@@ -61,6 +62,8 @@ class Factura(EmpresaTenantModel):
     estado_dian = models.CharField(max_length=25, choices=ESTADO_DIAN_CHOICES, default='PENDIENTE')
     dian_track_id = models.CharField(max_length=120, blank=True, verbose_name="TrackId DIAN")
     dian_mensaje = models.TextField(blank=True, verbose_name="Respuesta DIAN / Bitácora")
+    radian_estado = models.CharField(max_length=120, blank=True, default='', verbose_name="Último Evento RADIAN")
+    radian_eventos = models.JSONField(default=list, blank=True, verbose_name="Bitácora RADIAN")
 
     observaciones = models.TextField(blank=True, verbose_name="Términos y Observaciones")
     pdf_archivo = models.FileField(upload_to='facturas_pdf/', blank=True, null=True)

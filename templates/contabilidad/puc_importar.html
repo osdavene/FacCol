@@ -1,0 +1,18 @@
+{% extends 'base.html' %}
+{% block title %}Importar PUC y Saldos Iniciales{% endblock %}
+{% block content %}
+<div class="max-w-2xl mx-auto space-y-6">
+    <h1 class="font-display font-extrabold text-2xl text-white">Importar Plan de Cuentas &amp; Saldos Iniciales</h1>
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 space-y-4 text-xs">
+        <p class="text-slate-300">Columnas soportadas: <code class="text-amber-400">codigo, nombre, naturaleza, debito, credito</code> (si los débitos y créditos cuadran, crea automáticamente el comprobante de Saldos Iniciales).</p>
+        <form method="post" enctype="multipart/form-data" class="space-y-4">
+            {% csrf_token %}
+            <input type="file" name="archivo" accept=".xlsx,.csv" required class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl p-3 text-white">
+            <div class="flex justify-end gap-2">
+                <a href="{% url 'contabilidad:plan_cuentas_lista' %}" class="px-4 py-2 rounded-xl bg-[#162034] text-slate-300 font-bold">Cancelar</a>
+                <button type="submit" class="px-5 py-2.5 rounded-xl bg-amber-500 text-black font-black uppercase">Importar PUC</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

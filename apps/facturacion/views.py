@@ -8,11 +8,13 @@ from django.conf import settings
 from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
+from django.core.signing import BadSignature, Signer
 from django.http import HttpResponse, JsonResponse
 from django.db import transaction
 from django.db.models import Sum
 from django.template.loader import render_to_string
 from django.urls import reverse
+from django.utils import timezone
 from django.utils.html import escape, strip_tags
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_POST
@@ -21,9 +23,11 @@ from apps.facturacion.models import Factura, FacturaItem, ReciboCaja, Transaccio
 from apps.facturacion.pdf_service import generar_pdf_factura, generar_pdf_tirilla, generar_qr_base64
 from apps.facturacion.dian_service import (
     desglosar_impuestos_item,
+    generar_attached_document_xml,
     generar_xml_ubl,
     procesar_cola_dian,
     transmitir_documento_dian,
+    verificar_alertas_resolucion_dian,
 )
 from apps.facturacion.wompi_service import (
     activate_wompi_transaction,
@@ -66,6 +70,7 @@ def _obtener_prefijo_y_consecutivo(empresa, tipo_documento):
         'COTIZACION': 'COT',
         'REMISION': 'REM',
         'NOTA_CREDITO': 'NC',
+        'NOTA_DEBITO': 'ND',
     }
     prefijo = prefijos.get(tipo_documento, 'DOC')
     ultimo = (
@@ -257,6 +262,7 @@ def factura_crear(request):
         )
         if es_fiscal:
             verificar_alertas_cupo_plan(empresa, request)
+            verificar_alertas_resolucion_dian(empresa, request)
         extra_envio = ""
         if 'enviar_email_cliente' in request.POST and factura.tercero and factura.tercero.email:
             if not is_dummy_or_invalid_email(factura.tercero.email):
@@ -306,9 +312,12 @@ def factura_detalle(request, factura_id):
         empresa=empresa
     )
     wompi_cfg = get_wompi_runtime_config(empresa)
+    portal_token = Signer(salt='faccol-portal-factura').sign(str(factura.id))
+    portal_url = request.build_absolute_uri(reverse('portal_factura_ver', args=[portal_token]))
     return render(request, 'facturacion/factura_detalle.html', {
         'factura': factura,
         'wompi_enabled': wompi_cfg['enabled'],
+        'portal_url': portal_url,
     })
 
 
@@ -1053,6 +1062,9 @@ def factura_emitir_nota_credito(request, factura_id):
         return redirect('facturacion:factura_detalle', factura_id=origen.id)
 
     motivo = request.POST.get('motivo', '').strip() or f"Anulación total de {origen.numero_completo}"
+    raw_parcial = (request.POST.get('monto_parcial') or '').strip()
+    monto_parcial = Decimal(raw_parcial) if raw_parcial else None
+    es_parcial = bool(monto_parcial and Decimal('0.00') < monto_parcial < origen.total)
 
     with transaction.atomic():
         pref_nc, cons_nc = _obtener_prefijo_y_consecutivo(empresa, 'NOTA_CREDITO')
@@ -1071,33 +1083,50 @@ def factura_emitir_nota_credito(request, factura_id):
             factura_referencia=origen,
         )
 
-        for it in origen.items.all():
+        if es_parcial:
             FacturaItem.objects.create(
                 factura=nc,
-                producto=it.producto,
-                descripcion=it.descripcion,
-                cantidad=it.cantidad,
-                precio_unitario=it.precio_unitario,
-                porcentaje_descuento=it.porcentaje_descuento,
-                porcentaje_iva=it.porcentaje_iva,
-                porcentaje_otro_impuesto=it.porcentaje_otro_impuesto,
+                producto=None,
+                descripcion=f"Descuento / Devolución parcial sobre {origen.numero_completo}: {motivo}",
+                cantidad=Decimal('1'),
+                precio_unitario=monto_parcial,
+                porcentaje_descuento=Decimal('0.00'),
+                porcentaje_iva=Decimal('0.00'),
+                porcentaje_otro_impuesto=Decimal('0.00'),
             )
-            _mover_stock_documento(
-                empresa,
-                it.producto,
-                it.cantidad,
-                'ENTRADA',
-                f"Devolución por Nota Crédito {nc.numero_completo} ({origen.numero_completo})",
-                nc.numero_completo,
-            )
+        else:
+            for it in origen.items.all():
+                FacturaItem.objects.create(
+                    factura=nc,
+                    producto=it.producto,
+                    descripcion=it.descripcion,
+                    cantidad=it.cantidad,
+                    precio_unitario=it.precio_unitario,
+                    porcentaje_descuento=it.porcentaje_descuento,
+                    porcentaje_iva=it.porcentaje_iva,
+                    porcentaje_otro_impuesto=it.porcentaje_otro_impuesto,
+                )
+                _mover_stock_documento(
+                    empresa,
+                    it.producto,
+                    it.cantidad,
+                    'ENTRADA',
+                    f"Devolución por Nota Crédito {nc.numero_completo} ({origen.numero_completo})",
+                    nc.numero_completo,
+                )
 
         nc.recalcular_totales()
         nc.saldo_pendiente = Decimal('0.00')
         nc.save(update_fields=['saldo_pendiente'])
         nc.generar_cufe()
 
-        origen.estado = 'ANULADA'
-        origen.saldo_pendiente = Decimal('0.00')
+        if es_parcial:
+            origen.saldo_pendiente = max(Decimal('0.00'), origen.saldo_pendiente - nc.total)
+            if origen.saldo_pendiente == Decimal('0.00') and origen.estado == 'EMITIDA':
+                origen.estado = 'PAGADA'
+        else:
+            origen.estado = 'ANULADA'
+            origen.saldo_pendiente = Decimal('0.00')
         origen.save(update_fields=['estado', 'saldo_pendiente'])
 
         registrar_asiento_nota_credito(nc, factura_origen=origen)
@@ -1215,3 +1244,254 @@ def dian_procesar_lote(request):
         f"{resultado['contingencia']} en contingencia."
     )
     return redirect('facturacion:dian_cola')
+
+
+@login_required
+@requiere_facturacion
+def factura_attached_xml(request, factura_id):
+    """Descarga contenedor oficial AttachedDocument DIAN (XML + validación)."""
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+    factura = get_object_or_404(Factura, id=factura_id, empresa=empresa)
+    xml_att = generar_attached_document_xml(factura)
+    resp = HttpResponse(xml_att, content_type='application/xml; charset=utf-8')
+    resp['Content-Disposition'] = f'attachment; filename="AttachedDocument_{factura.numero_completo}.xml"'
+    return resp
+
+
+@login_required
+@requiere_facturacion
+@require_POST
+def factura_emitir_nota_debito(request, factura_id):
+    """Emite Nota Débito electrónica (tipo 92 DIAN) sumando mayor valor al saldo del cliente."""
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+    origen = get_object_or_404(Factura.objects.select_related('tercero'), id=factura_id, empresa=empresa)
+    if origen.tipo_documento not in ('FACTURA', 'POS_ELECTRONICO') or origen.estado == 'ANULADA':
+        messages.error(request, "No es posible emitir Nota Débito sobre este documento.")
+        return redirect('facturacion:factura_detalle', factura_id=origen.id)
+
+    concepto = request.POST.get('concepto', '').strip() or f"Cargo adicional sobre {origen.numero_completo}"
+    valor = Decimal(request.POST.get('valor', '0') or '0')
+    iva_pct = Decimal(request.POST.get('iva_pct', '0') or '0')
+    if valor <= Decimal('0.00'):
+        messages.error(request, "El valor de la Nota Débito debe ser mayor a cero.")
+        return redirect('facturacion:factura_detalle', factura_id=origen.id)
+
+    with transaction.atomic():
+        pref_nd, cons_nd = _obtener_prefijo_y_consecutivo(empresa, 'NOTA_DEBITO')
+        nd = Factura.objects.create(
+            empresa=empresa,
+            tipo_documento='NOTA_DEBITO',
+            prefijo=pref_nd,
+            consecutivo=cons_nd,
+            tercero=origen.tercero,
+            fecha_emision=date.today(),
+            fecha_vencimiento=date.today() + timedelta(days=empresa.dias_vencimiento),
+            estado='EMITIDA',
+            metodo_pago=origen.metodo_pago,
+            observaciones=concepto,
+            factura_referencia=origen,
+        )
+        FacturaItem.objects.create(
+            factura=nd,
+            producto=None,
+            descripcion=concepto,
+            cantidad=Decimal('1'),
+            precio_unitario=valor,
+            porcentaje_iva=iva_pct,
+        )
+        nd.recalcular_totales()
+        nd.generar_cufe()
+        origen.saldo_pendiente += nd.total
+        if origen.estado == 'PAGADA':
+            origen.estado = 'EMITIDA'
+        origen.save(update_fields=['saldo_pendiente', 'estado'])
+        registrar_asiento_venta(nd, metodo_pago_real=origen.metodo_pago)
+
+    registrar_actividad(
+        request,
+        'facturacion',
+        'NOTA_DEBITO',
+        f"Emitió Nota Débito {nd.numero_completo} sobre {origen.numero_completo} por ${nd.total:,.0f} COP.",
+        empresa=empresa,
+        objeto=nd,
+    )
+    notificar_usuarios_app(
+        f"Nota Débito emitida: {nd.numero_completo}",
+        f"Cargo adicional por ${nd.total:,.0f} COP sobre {origen.numero_completo} ({concepto}).",
+        empresa=empresa,
+        roles=('propietario', 'admin', 'contador'),
+        nivel='info',
+        categoria='facturacion',
+        url=reverse('facturacion:factura_detalle', args=[nd.id]),
+    )
+    messages.success(request, f"Nota Débito {nd.numero_completo} emitida por ${nd.total:,.0f} COP.")
+    return redirect('facturacion:factura_detalle', factura_id=nd.id)
+
+
+@login_required
+@requiere_facturacion
+@require_POST
+def factura_registrar_evento_radian(request, factura_id):
+    """Registra eventos RADIAN (030 Acuse, 031 Reclamo, 032 Recibo mercancía, 033 Aceptación)."""
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+    factura = get_object_or_404(Factura, id=factura_id, empresa=empresa)
+    eventos_map = {
+        '030': 'Acuse de recibo de Factura Electrónica',
+        '031': 'Reclamo de Factura Electrónica',
+        '032': 'Recibo del bien y/o prestación del servicio',
+        '033': 'Aceptación expresa',
+        '034': 'Aceptación tácita',
+    }
+    codigo = (request.POST.get('codigo') or '').strip()
+    if codigo not in eventos_map:
+        messages.error(request, "Código de evento RADIAN inválido.")
+        return redirect('facturacion:factura_detalle', factura_id=factura.id)
+
+    hist = list(factura.radian_eventos or [])
+    hist.append({
+        'codigo': codigo,
+        'nombre': eventos_map[codigo],
+        'fecha': timezone.localtime().isoformat(),
+        'usuario': request.user.email or request.user.username,
+    })
+    factura.radian_estado = f"{codigo} - {eventos_map[codigo]}"[:120]
+    factura.radian_eventos = hist
+    factura.save(update_fields=['radian_estado', 'radian_eventos'])
+    registrar_actividad(
+        request, 'facturacion', 'EVENTO_RADIAN',
+        f"Registró evento RADIAN {codigo} en {factura.numero_completo}.",
+        empresa=empresa, objeto=factura,
+    )
+    notificar_usuarios_app(
+        f"Evento RADIAN {codigo}: {factura.numero_completo}",
+        f"{eventos_map[codigo]} registrado en {factura.numero_completo}.",
+        empresa=empresa,
+        roles=('propietario', 'admin', 'contador'),
+        nivel='warning' if codigo == '031' else 'success',
+        categoria='dian',
+        url=reverse('facturacion:factura_detalle', args=[factura.id]),
+    )
+    messages.success(request, f"Evento RADIAN {codigo} ({eventos_map[codigo]}) registrado en {factura.numero_completo}.")
+    return redirect('facturacion:factura_detalle', factura_id=factura.id)
+
+
+@login_required
+@requiere_facturacion
+def cartera_edades_view(request):
+    """Clasifica la cartera por cobrar en edades de vencimiento (Al día, 1-30, 31-60, 61-90, +90)."""
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+    hoy = date.today()
+    abiertas = (
+        Factura.objects.filter(empresa=empresa, saldo_pendiente__gt=Decimal('0.00'))
+        .exclude(estado='ANULADA')
+        .select_related('tercero')
+        .order_by('fecha_vencimiento', 'id')
+    )
+    buckets = {
+        'al_dia': Decimal('0.00'),
+        'd1_30': Decimal('0.00'),
+        'd31_60': Decimal('0.00'),
+        'd61_90': Decimal('0.00'),
+        'd90_mas': Decimal('0.00'),
+    }
+    filas = []
+    for f in abiertas:
+        vence = f.fecha_vencimiento or f.fecha_emision
+        mora = max(0, (hoy - vence).days)
+        if mora == 0:
+            buckets['al_dia'] += f.saldo_pendiente
+        elif mora <= 30:
+            buckets['d1_30'] += f.saldo_pendiente
+        elif mora <= 60:
+            buckets['d31_60'] += f.saldo_pendiente
+        elif mora <= 90:
+            buckets['d61_90'] += f.saldo_pendiente
+        else:
+            buckets['d90_mas'] += f.saldo_pendiente
+        filas.append({'factura': f, 'dias_mora': mora})
+
+    return render(request, 'facturacion/cartera_edades.html', {
+        'buckets': buckets,
+        'filas': filas,
+    })
+
+
+def _resolver_factura_portal(token: str):
+    signer = Signer(salt='faccol-portal-factura')
+    try:
+        fac_id = int(signer.unsign(token))
+        return Factura.objects.select_related('empresa', 'tercero').filter(id=fac_id).first()
+    except (BadSignature, ValueError, TypeError):
+        return None
+
+
+def portal_factura_ver(request, token):
+    factura = _resolver_factura_portal(token)
+    if not factura:
+        return HttpResponse("Enlace de documento inválido o no encontrado.", status=404)
+    wompi_cfg = get_wompi_runtime_config(factura.empresa)
+    return render(request, 'facturacion/portal_cliente.html', {
+        'factura': factura,
+        'token': token,
+        'wompi_enabled': wompi_cfg['enabled'],
+    })
+
+
+def portal_factura_pdf(request, token):
+    factura = _resolver_factura_portal(token)
+    if not factura:
+        return HttpResponse("Documento no encontrado.", status=404)
+    resp = HttpResponse(generar_pdf_factura(factura), content_type='application/pdf')
+    resp['Content-Disposition'] = f'inline; filename="{factura.numero_completo}.pdf"'
+    return resp
+
+
+def portal_factura_xml(request, token):
+    factura = _resolver_factura_portal(token)
+    if not factura:
+        return HttpResponse("Documento no encontrado.", status=404)
+    resp = HttpResponse(generar_attached_document_xml(factura), content_type='application/xml; charset=utf-8')
+    resp['Content-Disposition'] = f'attachment; filename="AttachedDocument_{factura.numero_completo}.xml"'
+    return resp
+
+
+@require_POST
+def portal_factura_pagar_wompi(request, token):
+    factura = _resolver_factura_portal(token)
+    if not factura:
+        return HttpResponse("Documento no encontrado.", status=404)
+    empresa = factura.empresa
+    wompi_cfg = get_wompi_runtime_config(empresa)
+    if not wompi_cfg['enabled'] or factura.saldo_pendiente <= Decimal('0.00'):
+        return redirect('portal_factura_ver', token=token)
+
+    amount_in_cents = int((factura.saldo_pendiente * Decimal('100')).quantize(Decimal('1')))
+    reference = f"FC-{empresa.id}-{factura.id}-{secrets.token_hex(4).upper()}"
+    integrity_sig = build_integrity_signature(reference, amount_in_cents, 'COP', wompi_cfg['integrity_secret'])
+    TransaccionWompi.objects.create(
+        empresa=empresa,
+        factura=factura,
+        reference=reference,
+        amount_in_cents=amount_in_cents,
+        currency='COP',
+        status='PENDING',
+        customer_email=(factura.tercero.email or '')[:254],
+    )
+    redirect_url = request.build_absolute_uri(reverse('portal_factura_ver', args=[token]))
+    params = {
+        'public-key': wompi_cfg['public_key'],
+        'currency': 'COP',
+        'amount-in-cents': str(amount_in_cents),
+        'reference': reference,
+        'signature:integrity': integrity_sig,
+        'redirect-url': redirect_url,
+    }
+    return redirect(f"https://checkout.wompi.co/p/?{urlencode(params)}")

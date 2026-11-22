@@ -128,6 +128,7 @@ class Empresa(models.Model):
     dv = models.CharField(max_length=1, blank=True, verbose_name="Dígito Verificación")
     tipo_persona = models.CharField(max_length=20, choices=TIPO_PERSONA_CHOICES, default='JURIDICA')
     regimen_tributario = models.CharField(max_length=30, choices=REGIMEN_CHOICES, default='RESPONSABLE_IVA')
+    exonerado_art_114_1 = models.BooleanField(default=True, verbose_name="Exonerado Art. 114-1 E.T. (Salud/SENA/ICBF)")
     perfil_operativo = models.CharField(max_length=20, choices=PERFIL_OPERATIVO_CHOICES, default='GENERAL', verbose_name="Perfil Operativo")
 
     direccion = models.CharField(max_length=200, blank=True, verbose_name="Dirección")

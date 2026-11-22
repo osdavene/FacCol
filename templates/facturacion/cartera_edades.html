@@ -1,0 +1,49 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% block title %}Cartera por Edades{% endblock %}
+{% block content %}
+<div class="space-y-6">
+    <div class="flex flex-wrap items-center justify-between gap-4">
+        <div>
+            <h1 class="font-display font-extrabold text-2xl text-white">Cartera por Edades de Vencimiento</h1>
+            <p class="text-xs text-slate-400">Análisis profesional de cuentas por cobrar (Al día, 1-30, 31-60, 61-90 y +90 días vencidos)</p>
+        </div>
+        <a href="{% url 'facturacion:fiados_lista' %}" class="px-4 py-2 rounded-xl bg-[#162034] text-slate-200 text-xs font-bold">Volver a Cartera / Fiados</a>
+    </div>
+
+    <div class="grid grid-cols-2 lg:grid-cols-5 gap-4 text-xs">
+        <div class="bg-[#111827] border border-emerald-500/20 rounded-2xl p-4"><div class="text-slate-400 uppercase font-bold text-[10px]">Al día</div><div class="text-lg font-black text-emerald-400 mt-1">${{ buckets.al_dia|floatformat:0|intcomma }}</div></div>
+        <div class="bg-[#111827] border border-amber-500/20 rounded-2xl p-4"><div class="text-slate-400 uppercase font-bold text-[10px]">1 - 30 días</div><div class="text-lg font-black text-amber-400 mt-1">${{ buckets.d1_30|floatformat:0|intcomma }}</div></div>
+        <div class="bg-[#111827] border border-orange-500/20 rounded-2xl p-4"><div class="text-slate-400 uppercase font-bold text-[10px]">31 - 60 días</div><div class="text-lg font-black text-orange-400 mt-1">${{ buckets.d31_60|floatformat:0|intcomma }}</div></div>
+        <div class="bg-[#111827] border border-rose-500/20 rounded-2xl p-4"><div class="text-slate-400 uppercase font-bold text-[10px]">61 - 90 días</div><div class="text-lg font-black text-rose-400 mt-1">${{ buckets.d61_90|floatformat:0|intcomma }}</div></div>
+        <div class="bg-[#111827] border border-red-500/30 rounded-2xl p-4"><div class="text-slate-400 uppercase font-bold text-[10px]">+90 días</div><div class="text-lg font-black text-red-400 mt-1">${{ buckets.d90_mas|floatformat:0|intcomma }}</div></div>
+    </div>
+
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl overflow-hidden">
+        <table class="w-full text-left text-xs">
+            <thead>
+                <tr class="bg-[#141c2e] text-slate-400 uppercase text-[10px] border-b border-[#1e2d47]">
+                    <th class="p-4">Documento</th>
+                    <th class="p-4">Cliente</th>
+                    <th class="p-4">Vencimiento</th>
+                    <th class="p-4 text-right">Días Mora</th>
+                    <th class="p-4 text-right">Saldo Pendiente</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-[#1e2d47]/50">
+                {% for fila in filas %}
+                <tr>
+                    <td class="p-4 font-mono font-bold text-amber-400"><a href="{% url 'facturacion:factura_detalle' fila.factura.id %}">{{ fila.factura.numero_completo }}</a></td>
+                    <td class="p-4 text-white font-bold">{{ fila.factura.tercero.razon_social }}</td>
+                    <td class="p-4 text-slate-400">{{ fila.factura.fecha_vencimiento|date:"d/m/Y" }}</td>
+                    <td class="p-4 text-right font-bold {% if fila.dias_mora > 0 %}text-rose-400{% else %}text-emerald-400{% endif %}">{{ fila.dias_mora }}</td>
+                    <td class="p-4 text-right font-black text-white">${{ fila.factura.saldo_pendiente|floatformat:0|intcomma }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="5" class="p-8 text-center text-slate-500">Sin cartera pendiente.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

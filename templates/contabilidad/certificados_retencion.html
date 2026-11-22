@@ -1,0 +1,41 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% block title %}Certificados de Retención{% endblock %}
+{% block content %}
+<div class="space-y-6">
+    <div>
+        <h1 class="font-display font-extrabold text-2xl text-white">Certificados Anuales de Retención</h1>
+        <p class="text-xs text-slate-400">Genera certificados oficiales en PDF de ReteFuente y ReteICA practicados por tercero</p>
+    </div>
+
+    <form method="get" class="bg-[#111827] border border-[#1e2d47] rounded-2xl p-4 flex flex-wrap items-end gap-3 text-xs">
+        <div class="min-w-[260px]">
+            <label class="block text-slate-400 mb-1">Tercero</label>
+            <select name="tercero" required class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                <option value="">-- Seleccionar --</option>
+                {% for t in terceros %}
+                <option value="{{ t.id }}" {% if tercero_sel and tercero_sel.id == t.id %}selected{% endif %}>{{ t.razon_social }} ({{ t.numero_documento }})</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label class="block text-slate-400 mb-1">Año Gravable</label>
+            <input type="number" name="ano" value="{{ ano }}" class="w-28 bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+        </div>
+        <button type="submit" class="px-4 py-2 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-bold">Consultar</button>
+        {% if tercero_sel %}
+        <a href="?tercero={{ tercero_sel.id }}&ano={{ ano }}&formato=pdf" class="px-4 py-2 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold">
+            <i class="fas fa-file-pdf mr-1"></i> Descargar Certificado PDF
+        </a>
+        {% endif %}
+    </form>
+
+    {% if resumen %}
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
+        <div><div class="text-slate-400 uppercase font-bold text-[10px]">Base Acumulada</div><div class="text-xl font-black text-white mt-1">${{ resumen.base|floatformat:0|intcomma }} COP</div></div>
+        <div><div class="text-slate-400 uppercase font-bold text-[10px]">ReteFuente Practicada</div><div class="text-xl font-black text-amber-400 mt-1">${{ resumen.retefuente|floatformat:0|intcomma }} COP</div></div>
+        <div><div class="text-slate-400 uppercase font-bold text-[10px]">ReteICA Practicado</div><div class="text-xl font-black text-cyan-400 mt-1">${{ resumen.reteica|floatformat:0|intcomma }} COP</div></div>
+    </div>
+    {% endif %}
+</div>
+{% endblock %}

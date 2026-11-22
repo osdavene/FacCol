@@ -182,27 +182,39 @@ def pos_procesar_venta(request):
             registrar_asiento_venta(factura, metodo_pago_real=metodo_pago)
 
             if not es_fiado:
-                ultimo_rc = ReciboCaja.objects.filter(empresa=empresa).order_by('-consecutivo').first()
-                consec_rc = (ultimo_rc.consecutivo + 1) if ultimo_rc else 1
-
-                ReciboCaja.objects.create(
-                    empresa=empresa,
-                    consecutivo=consec_rc,
-                    factura=factura,
-                    tercero=tercero,
-                    fecha=date.today(),
-                    valor=factura.total,
-                    metodo_pago=metodo_pago,
-                    referencia_pago=f"POS Turno #{turno.id}",
-                    observaciones="Cobro automático en Caja Express",
-                )
-                factura.recalcular_totales()
-
-                if metodo_pago == 'EFECTIVO':
-                    turno.monto_ventas_efectivo += factura.total
+                pagos_mixtos = data.get('pagos_mixtos')
+                if isinstance(pagos_mixtos, list) and pagos_mixtos:
+                    splits = []
+                    for p in pagos_mixtos:
+                        met = str(p.get('metodo') or metodo_pago).upper()
+                        val_p = Decimal(str(p.get('monto') or '0'))
+                        if val_p > Decimal('0.00'):
+                            splits.append((met, val_p))
+                    if not splits or abs(sum((v for _, v in splits), Decimal('0.00')) - factura.total) > Decimal('1.00'):
+                        splits = [(metodo_pago, factura.total)]
                 else:
-                    turno.monto_ventas_otros += factura.total
+                    splits = [(metodo_pago, factura.total)]
 
+                for met, val_p in splits:
+                    ultimo_rc = ReciboCaja.objects.filter(empresa=empresa).order_by('-consecutivo').first()
+                    consec_rc = (ultimo_rc.consecutivo + 1) if ultimo_rc else 1
+                    ReciboCaja.objects.create(
+                        empresa=empresa,
+                        consecutivo=consec_rc,
+                        factura=factura,
+                        tercero=tercero,
+                        fecha=date.today(),
+                        valor=val_p,
+                        metodo_pago=met,
+                        referencia_pago=f"POS Turno #{turno.id}",
+                        observaciones="Cobro automático en Caja Express",
+                    )
+                    if met == 'EFECTIVO':
+                        turno.monto_ventas_efectivo += val_p
+                    else:
+                        turno.monto_ventas_otros += val_p
+
+                factura.recalcular_totales()
                 turno.monto_total_esperado = turno.monto_inicial + turno.monto_ventas_efectivo
                 turno.save()
 

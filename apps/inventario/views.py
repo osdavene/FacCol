@@ -10,14 +10,19 @@ from django.db import transaction
 from django.db.models import Q
 from django.http import HttpResponse
 from django.urls import reverse
+from django.views.decorators.http import require_POST
 
+from apps.core.importers import leer_filas_archivo
+from apps.facturacion.dian_service import transmitir_dse_dian
 from apps.inventario.models import (
-    Producto,
+    Bodega,
     Categoria,
-    UnidadMedida,
-    MovimientoInventario,
-    CompraProveedor,
     CompraItem,
+    CompraProveedor,
+    MovimientoInventario,
+    Producto,
+    StockBodega,
+    UnidadMedida,
 )
 from apps.contabilidad.services import registrar_asiento_compra
 from apps.core.audit import registrar_actividad
@@ -440,11 +445,12 @@ def compra_crear(request):
                     )
 
             compra.total = total_compra
+            compra.saldo_pendiente = total_compra if metodo_pago == 'CREDITO' else Decimal('0.00')
             if es_dse:
                 raw_cuds = f"{compra.numero_completo}{compra.fecha}{compra.total}{empresa.nit}{proveedor.numero_documento}"
                 compra.cuds = hashlib.sha384(raw_cuds.encode('utf-8')).hexdigest()
                 compra.estado_dian = 'ENVIADA' if empresa.dian_software_id else 'CONTINGENCIA'
-            compra.save(update_fields=['total', 'cuds', 'estado_dian'])
+            compra.save(update_fields=['total', 'saldo_pendiente', 'cuds', 'estado_dian'])
             registrar_asiento_compra(compra)
 
         registrar_actividad(request, 'inventario', 'COMPRA_PROVEEDOR', f"Registró compra {compra.numero_completo} por ${compra.total:,.0f} COP.", empresa=empresa, objeto=compra)
@@ -534,3 +540,143 @@ def compra_xml_dse(request, compra_id):
     resp = HttpResponse(xml_str, content_type="application/xml; charset=utf-8")
     resp['Content-Disposition'] = f'attachment; filename="{compra.numero_completo}.xml"'
     return resp
+
+
+@login_required
+@requiere_inventario
+@require_POST
+def compra_transmitir_dse(request, compra_id):
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+    compra = get_object_or_404(CompraProveedor, id=compra_id, empresa=empresa)
+    ok, msg = transmitir_dse_dian(compra)
+    if ok:
+        registrar_actividad(request, 'inventario', 'TRANSMITIR_DSE', msg, empresa=empresa, objeto=compra)
+        messages.success(request, msg)
+    else:
+        messages.warning(request, msg)
+    return redirect('inventario:compra_detalle', compra_id=compra.id)
+
+
+@login_required
+@requiere_inventario
+def productos_importar(request):
+    """Importa catálogo de productos y stock inicial desde Excel (.xlsx) o CSV."""
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+
+    if request.method == 'POST' and request.FILES.get('archivo'):
+        try:
+            _headers, filas = leer_filas_archivo(request.FILES['archivo'])
+            creados = 0
+            actualizados = 0
+            for fila in filas:
+                cod = (fila.get('codigo') or fila.get('sku') or '').strip()
+                nom = (fila.get('nombre') or fila.get('producto') or '').strip()
+                if not cod or not nom:
+                    continue
+                cat_nom = (fila.get('categoria') or '').strip()
+                cat_obj = Categoria.objects.get_or_create(empresa=empresa, nombre=cat_nom[:100])[0] if cat_nom else None
+                precio = Decimal(fila.get('precio_venta') or fila.get('precio') or '0')
+                costo = Decimal(fila.get('costo_unitario') or fila.get('costo') or '0')
+                iva = Decimal(fila.get('tarifa_iva') or fila.get('iva') or '19')
+                stock = Decimal(fila.get('stock_actual') or fila.get('stock') or '0')
+                stock_min = Decimal(fila.get('stock_minimo') or '0')
+                defaults = {
+                    'nombre': nom[:200],
+                    'categoria': cat_obj,
+                    'precio_venta': precio,
+                    'costo_unitario': costo,
+                    'tarifa_iva': iva,
+                    'stock_actual': stock,
+                    'stock_minimo': stock_min,
+                    'codigo_barras': (fila.get('codigo_barras') or fila.get('ean') or '')[:60],
+                    'activo': True,
+                }
+                _p, created = Producto.objects.update_or_create(
+                    empresa=empresa, codigo=cod[:50], defaults=defaults
+                )
+                if created:
+                    creados += 1
+                else:
+                    actualizados += 1
+            registrar_actividad(request, 'inventario', 'IMPORTAR_PRODUCTOS', f"Importó productos: {creados} creados, {actualizados} actualizados.", empresa=empresa)
+            messages.success(request, f"Catálogo importado: {creados} productos creados y {actualizados} actualizados.")
+            return redirect('inventario:productos_lista')
+        except Exception as exc:
+            messages.error(request, f"Error importando catálogo: {exc}")
+
+    return render(request, 'inventario/productos_importar.html')
+
+
+@login_required
+@requiere_inventario
+def bodegas_lista(request):
+    """Gestiona múltiples bodegas/sucursales de inventario y existencias por bodega."""
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+
+    if request.method == 'POST':
+        codigo = (request.POST.get('codigo') or '').strip().upper()
+        nombre = (request.POST.get('nombre') or '').strip()
+        if not codigo or not nombre:
+            messages.error(request, "Código y nombre de bodega son obligatorios.")
+            return redirect('inventario:bodegas_lista')
+        Bodega.objects.update_or_create(
+            empresa=empresa,
+            codigo=codigo[:20],
+            defaults={'nombre': nombre[:120], 'activa': True},
+        )
+        registrar_actividad(request, 'inventario', 'CREAR_BODEGA', f"Configuró bodega {codigo} ({nombre}).", empresa=empresa)
+        messages.success(request, f"Bodega '{nombre}' guardada correctamente.")
+        return redirect('inventario:bodegas_lista')
+
+    bodegas = Bodega.objects.filter(empresa=empresa, activa=True).order_by('-es_principal', 'nombre')
+    productos = Producto.objects.filter(empresa=empresa, maneja_inventario=True, activo=True).order_by('nombre')
+    existencias = StockBodega.objects.filter(bodega__empresa=empresa).select_related('bodega', 'producto').order_by('bodega__nombre', 'producto__nombre')
+    return render(request, 'inventario/bodegas_lista.html', {
+        'bodegas': bodegas,
+        'productos': productos,
+        'existencias': existencias,
+    })
+
+
+@login_required
+@requiere_inventario
+@require_POST
+def bodega_traslado(request):
+    """Traslada existencias de un producto entre dos bodegas de la misma empresa."""
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+
+    orig = get_object_or_404(Bodega, id=request.POST.get('bodega_origen'), empresa=empresa)
+    dest = get_object_or_404(Bodega, id=request.POST.get('bodega_destino'), empresa=empresa)
+    prod = get_object_or_404(Producto, id=request.POST.get('producto'), empresa=empresa)
+    cant = Decimal(request.POST.get('cantidad') or '0')
+
+    if orig.id == dest.id or cant <= Decimal('0.00'):
+        messages.error(request, "Selecciona dos bodegas diferentes y una cantidad mayor a cero.")
+        return redirect('inventario:bodegas_lista')
+
+    with transaction.atomic():
+        st_orig, _ = StockBodega.objects.get_or_create(bodega=orig, producto=prod, defaults={'cantidad': prod.stock_actual})
+        if st_orig.cantidad < cant:
+            messages.error(request, f"Saldo insuficiente en {orig.nombre} ({st_orig.cantidad} uds).")
+            return redirect('inventario:bodegas_lista')
+        st_dest, _ = StockBodega.objects.get_or_create(bodega=dest, producto=prod, defaults={'cantidad': Decimal('0.00')})
+        st_orig.cantidad -= cant
+        st_dest.cantidad += cant
+        st_orig.save(update_fields=['cantidad'])
+        st_dest.save(update_fields=['cantidad'])
+
+    registrar_actividad(
+        request, 'inventario', 'TRASLADO_BODEGA',
+        f"Trasladó {cant} uds de '{prod.nombre}' desde {orig.nombre} hacia {dest.nombre}.",
+        empresa=empresa, objeto=prod,
+    )
+    messages.success(request, f"Traslado completado: {cant} uds de '{prod.nombre}' hacia {dest.nombre}.")
+    return redirect('inventario:bodegas_lista')

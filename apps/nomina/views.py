@@ -1,4 +1,5 @@
 import calendar
+import csv
 import html as _html
 import time
 from decimal import Decimal
@@ -16,6 +17,7 @@ from apps.contabilidad.services import registrar_asiento_nomina
 from apps.core.audit import registrar_actividad
 from apps.core.mail import is_dummy_or_invalid_email
 from apps.core.mail_service import enviar_correo_sistema
+from apps.facturacion.dian_service import transmitir_nomina_dian
 from apps.core.notifications import (
     destinatarios_propietarios_empresa,
     notificar_evento_seguridad,
@@ -137,33 +139,40 @@ def nomina_liquidar(request):
             total_net = Decimal('0.00')
 
             empleados = Empleado.objects.filter(empresa=empresa, activo=True)
+            exonerado_114_1 = getattr(empresa, 'exonerado_art_114_1', True)
             for emp in empleados:
-                dias = 30
+                dias = int(request.POST.get(f'dias_{emp.id}', 30) or 30)
+                dias = max(1, min(30, dias))
+                horas_extras = Decimal(request.POST.get(f'extras_{emp.id}', '0') or '0')
+                bonificaciones = Decimal(request.POST.get(f'bono_{emp.id}', '0') or '0')
+                otras_ded_manual = Decimal(request.POST.get(f'otras_ded_{emp.id}', '0') or '0')
+
                 salario_mes = (emp.salario_base * Decimal(dias) / Decimal(30)).quantize(Decimal('0.01'))
-                
-                # Auxilio de transporte: aplica si el salario es <= 2 SMMLV
                 aplica_aux = emp.tiene_auxilio_transporte and (emp.salario_base <= (smmlv * Decimal(2)))
-                val_aux = aux_trans if aplica_aux else Decimal('0.00')
+                val_aux = (aux_trans * Decimal(dias) / Decimal(30)).quantize(Decimal('0.01')) if aplica_aux else Decimal('0.00')
 
-                devengado = salario_mes + val_aux
+                devengado = salario_mes + val_aux + horas_extras + bonificaciones
 
-                # Deducciones empleado (Base IBC = Salario sin auxilio de transporte)
-                ibc = salario_mes
+                # Deducciones empleado (Base IBC salarial excluye auxilio de transporte)
+                ibc = salario_mes + horas_extras + bonificaciones
                 salud_4 = (ibc * Decimal('0.04')).quantize(Decimal('0.01'))
                 pension_4 = (ibc * Decimal('0.04')).quantize(Decimal('0.01'))
-                # Fondo de Solidaridad Pensional (1% obligatorio si salario >= 4 SMMLV)
                 fsp_1 = (ibc * Decimal('0.01')).quantize(Decimal('0.01')) if ibc >= (smmlv * Decimal(4)) else Decimal('0.00')
-                deducciones = salud_4 + pension_4 + fsp_1
-                neto = devengado - deducciones
+                otras_ded = fsp_1 + otras_ded_manual
+                deducciones = salud_4 + pension_4 + otras_ded
+                neto = max(Decimal('0.00'), devengado - deducciones)
 
-                # Aportes empleador
-                salud_8_5 = (ibc * Decimal('0.085')).quantize(Decimal('0.01'))
+                # Aportes empleador considerando exoneración Art. 114-1 E.T. (< 10 SMMLV)
+                aplica_exoneracion = exonerado_114_1 and (ibc < (smmlv * Decimal(10)))
+                salud_8_5 = Decimal('0.00') if aplica_exoneracion else (ibc * Decimal('0.085')).quantize(Decimal('0.01'))
+                sena_2 = Decimal('0.00') if aplica_exoneracion else (ibc * Decimal('0.02')).quantize(Decimal('0.01'))
+                icbf_3 = Decimal('0.00') if aplica_exoneracion else (ibc * Decimal('0.03')).quantize(Decimal('0.01'))
                 pension_12 = (ibc * Decimal('0.12')).quantize(Decimal('0.01'))
                 tasa_arl = tasas_arl.get(emp.nivel_riesgo_arl, Decimal('0.00522'))
                 arl = (ibc * tasa_arl).quantize(Decimal('0.01'))
                 caja_4 = (ibc * Decimal('0.04')).quantize(Decimal('0.01'))
 
-                # Provisiones prestaciones sociales (base = salario + auxilio de transporte)
+                # Provisiones prestaciones sociales
                 base_prestaciones = devengado
                 prima = (base_prestaciones * Decimal('0.0833')).quantize(Decimal('0.01'))
                 cesantias = (base_prestaciones * Decimal('0.0833')).quantize(Decimal('0.01'))
@@ -176,15 +185,19 @@ def nomina_liquidar(request):
                     dias_trabajados=dias,
                     sueldo_basico_devengado=salario_mes,
                     auxilio_transporte=val_aux,
+                    horas_extras=horas_extras,
+                    bonificaciones=bonificaciones,
                     total_devengado=devengado,
                     salud_empleado_4=salud_4,
                     pension_empleado_4=pension_4,
-                    otras_deducciones=fsp_1,
+                    otras_deducciones=otras_ded,
                     total_deducciones=deducciones,
                     neto_a_pagar=neto,
                     salud_empleador_8_5=salud_8_5,
                     pension_empleador_12=pension_12,
                     arl_empleador=arl,
+                    sena_2=sena_2,
+                    icbf_3=icbf_3,
                     caja_compensacion_4=caja_4,
                     provision_prima=prima,
                     provision_cesantias=cesantias,
@@ -234,7 +247,8 @@ def nomina_liquidar(request):
         messages.success(request, f"Nómina de {mes}/{ano} liquidada exitosamente para {empleados.count()} empleados. Total neto: ${total_net:,.0f} COP.")
         return redirect('nomina:nomina_detalle', nomina_id=nomina.id)
 
-    return render(request, 'nomina/liquidar_formulario.html')
+    empleados = Empleado.objects.filter(empresa=empresa, activo=True).order_by('apellidos', 'nombres')
+    return render(request, 'nomina/liquidar_formulario.html', {'empleados': empleados})
 
 
 @login_required
@@ -393,4 +407,70 @@ def nomina_enviar_todas_colillas(request, nomina_id):
             request,
             f"No se enviaron desprendibles ({omitidos} empleados sin correo válido, {errores} errores)."
         )
+    return redirect('nomina:nomina_detalle', nomina_id=nomina.id)
+
+
+@login_required
+@requiere_nomina
+def nomina_exportar_pila(request, nomina_id):
+    """Exporta planilla PILA (IBC, Salud, Pensión, ARL, Caja, SENA/ICBF) lista para operador."""
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+    nomina = get_object_or_404(Nomina, id=nomina_id, empresa=empresa)
+    resp = HttpResponse(content_type='text/csv; charset=utf-8')
+    resp['Content-Disposition'] = f'attachment; filename="PILA_{empresa.nit}_{nomina.periodo_ano}{nomina.periodo_mes:02d}.csv"'
+    resp.write('\ufeff')
+    writer = csv.writer(resp)
+    writer.writerow([
+        'TipoDoc', 'Documento', 'Empleado', 'Dias', 'IBC',
+        'SaludEmp4%', 'SaludPatrono8.5%', 'PensionEmp4%', 'PensionPatrono12%',
+        'ARL', 'Caja4%', 'SENA2%', 'ICBF3%',
+    ])
+    for d in nomina.detalles.select_related('empleado').all():
+        ibc = d.sueldo_basico_devengado + d.horas_extras + d.bonificaciones
+        writer.writerow([
+            d.empleado.tipo_documento,
+            d.empleado.numero_documento,
+            d.empleado.nombre_completo,
+            d.dias_trabajados,
+            f"{ibc:.2f}",
+            f"{d.salud_empleado_4:.2f}",
+            f"{d.salud_empleador_8_5:.2f}",
+            f"{d.pension_empleado_4:.2f}",
+            f"{d.pension_empleador_12:.2f}",
+            f"{d.arl_empleador:.2f}",
+            f"{d.caja_compensacion_4:.2f}",
+            f"{d.sena_2:.2f}",
+            f"{d.icbf_3:.2f}",
+        ])
+    return resp
+
+
+@login_required
+@requiere_nomina
+@require_POST
+def nomina_transmitir_lote(request, nomina_id):
+    """Transmite los XML CUNE de Nómina Individual ante DIAN / Proveedor Tecnológico."""
+    empresa = request.empresa_activa
+    if not empresa:
+        return redirect('core:dashboard')
+    nomina = get_object_or_404(Nomina, id=nomina_id, empresa=empresa)
+    ok_cnt = 0
+    err_cnt = 0
+    for d in nomina.detalles.select_related('empleado', 'nomina'):
+        ok, _ = transmitir_nomina_dian(d)
+        if ok:
+            ok_cnt += 1
+        else:
+            err_cnt += 1
+    if err_cnt == 0 and ok_cnt > 0:
+        nomina.estado = 'EMITIDA_DIAN'
+        nomina.save(update_fields=['estado'])
+    registrar_actividad(
+        request, 'nomina', 'TRANSMITIR_NOMINA_DIAN',
+        f"Transmitió Nómina {nomina.periodo_mes}/{nomina.periodo_ano}: {ok_cnt} aceptadas, {err_cnt} errores.",
+        empresa=empresa, objeto=nomina,
+    )
+    messages.success(request, f"Transmisión Nómina DIAN: {ok_cnt} documento(s) procesados ({err_cnt} errores).")
     return redirect('nomina:nomina_detalle', nomina_id=nomina.id)

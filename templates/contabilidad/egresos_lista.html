@@ -1,0 +1,64 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% block title %}Egresos &amp; Cuentas por Pagar{% endblock %}
+{% block content %}
+<div class="space-y-6">
+    <div class="flex flex-wrap items-center justify-between gap-4">
+        <div>
+            <h1 class="font-display font-extrabold text-2xl text-white">Comprobantes de Egreso &amp; CxP</h1>
+            <p class="text-xs text-slate-400">Pagos a proveedores, abonos de facturas de compra y trazabilidad contable</p>
+        </div>
+        <a href="{% url 'contabilidad:egreso_crear' %}" class="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase tracking-wider">
+            <i class="fas fa-plus mr-1"></i> Nuevo Egreso
+        </a>
+    </div>
+
+    {% if compras_pendientes %}
+    <div class="bg-[#111827] border border-amber-500/30 rounded-3xl p-5 space-y-3">
+        <h2 class="text-xs font-bold uppercase tracking-wider text-amber-400">Compras a Crédito Pendientes de Pago</h2>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+            {% for c in compras_pendientes %}
+            <div class="p-3 rounded-2xl bg-[#162034] border border-[#1e2d47] flex items-center justify-between gap-2">
+                <div>
+                    <div class="font-bold text-white">{{ c.numero_completo }} — {{ c.proveedor.razon_social }}</div>
+                    <div class="text-[11px] text-rose-400 font-bold">Saldo: ${{ c.saldo_pendiente|floatformat:0|intcomma }} COP</div>
+                </div>
+                <a href="{% url 'contabilidad:egreso_crear' %}?compra={{ c.id }}" class="px-3 py-1.5 rounded-xl bg-emerald-500 text-black font-bold text-[11px]">Pagar</a>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
+
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl overflow-hidden shadow-xl">
+        <div class="overflow-x-auto">
+            <table class="w-full text-left text-xs">
+                <thead>
+                    <tr class="bg-[#141c2e] text-slate-400 uppercase text-[10px] border-b border-[#1e2d47]">
+                        <th class="p-4">Comprobante</th>
+                        <th class="p-4">Fecha</th>
+                        <th class="p-4">Tercero / Proveedor</th>
+                        <th class="p-4">Compra Asoc.</th>
+                        <th class="p-4">Método</th>
+                        <th class="p-4 text-right">Valor Pagado</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-[#1e2d47]/50">
+                    {% for e in egresos %}
+                    <tr class="hover:bg-[#162034]">
+                        <td class="p-4 font-mono font-bold text-amber-400">{{ e.numero_completo }}</td>
+                        <td class="p-4 text-slate-400">{{ e.fecha|date:"d/m/Y" }}</td>
+                        <td class="p-4 font-bold text-white">{{ e.tercero.razon_social }}</td>
+                        <td class="p-4 text-slate-300">{{ e.compra.numero_completo|default:"-" }}</td>
+                        <td class="p-4 text-slate-300">{{ e.get_metodo_pago_display }}</td>
+                        <td class="p-4 text-right font-black text-emerald-400">${{ e.valor|floatformat:0|intcomma }}</td>
+                    </tr>
+                    {% empty %}
+                    <tr><td colspan="6" class="p-8 text-center text-slate-500">No hay comprobantes de egreso registrados.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+{% endblock %}

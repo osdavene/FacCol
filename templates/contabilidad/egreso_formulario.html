@@ -1,0 +1,62 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% block title %}Nuevo Comprobante de Egreso{% endblock %}
+{% block content %}
+<div class="max-w-2xl mx-auto space-y-6">
+    <h1 class="font-display font-extrabold text-2xl text-white">Registrar Comprobante de Egreso</h1>
+    <form method="post" class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 space-y-4 text-xs">
+        {% csrf_token %}
+        <div>
+            <label class="block font-semibold text-slate-300 mb-1">Compra a Crédito Asociada (Opcional)</label>
+            <select name="compra" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                <option value="">-- Pago directo / Sin compra asociada --</option>
+                {% for c in compras_pendientes %}
+                <option value="{{ c.id }}" {% if compra_sel and compra_sel.id == c.id %}selected{% endif %}>
+                    {{ c.numero_completo }} — {{ c.proveedor.razon_social }} (Saldo: ${{ c.saldo_pendiente|floatformat:0|intcomma }})
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div>
+            <label class="block font-semibold text-slate-300 mb-1">Tercero / Proveedor (si no eliges compra)</label>
+            <select name="tercero" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                {% for p in proveedores %}
+                <option value="{{ p.id }}" {% if compra_sel and compra_sel.proveedor_id == p.id %}selected{% endif %}>{{ p.razon_social }} ({{ p.numero_documento }})</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+                <label class="block font-semibold text-slate-300 mb-1">Fecha</label>
+                <input type="date" name="fecha" required value="{% now 'Y-m-d' %}" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+            </div>
+            <div>
+                <label class="block font-semibold text-slate-300 mb-1">Valor ($ COP)</label>
+                <input type="number" name="valor" step="0.01" min="1" required value="{% if compra_sel %}{{ compra_sel.saldo_pendiente }}{% endif %}" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+            </div>
+            <div>
+                <label class="block font-semibold text-slate-300 mb-1">Método de Pago</label>
+                <select name="metodo_pago" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                    <option value="TRANSFERENCIA">Transferencia Bancaria</option>
+                    <option value="EFECTIVO">Efectivo (Caja General)</option>
+                    <option value="NEQUI">Nequi / Daviplata</option>
+                </select>
+            </div>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+                <label class="block font-semibold text-slate-300 mb-1">Referencia / Comprobante</label>
+                <input type="text" name="referencia" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+            </div>
+            <div>
+                <label class="block font-semibold text-slate-300 mb-1">Observaciones</label>
+                <input type="text" name="observaciones" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+            </div>
+        </div>
+        <div class="flex justify-end gap-2 pt-2">
+            <a href="{% url 'contabilidad:egresos_lista' %}" class="px-4 py-2 rounded-xl bg-[#162034] text-slate-300 font-bold">Cancelar</a>
+            <button type="submit" class="px-5 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black uppercase">Contabilizar Egreso</button>
+        </div>
+    </form>
+</div>
+{% endblock %}

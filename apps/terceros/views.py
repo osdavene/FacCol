@@ -5,6 +5,8 @@ from django.contrib import messages
 from django.db.models import Q
 from django.views.decorators.http import require_POST
 
+from apps.core.audit import registrar_actividad
+from apps.core.importers import leer_filas_archivo
 from apps.terceros.models import Tercero
 from apps.empresas.models import Departamento, Municipio
 
@@ -188,3 +190,53 @@ def tercero_eliminar(request, tercero_id):
     tercero.save(update_fields=['activo'])
     messages.success(request, f"Tercero {tercero.razon_social} desactivado correctamente.")
     return redirect('terceros:lista')
+
+
+@login_required
+def terceros_importar(request):
+    """Importa clientes y proveedores masivamente desde Excel (.xlsx) o CSV."""
+    if request.user.es_superadmin_user():
+        return redirect('core:dashboard')
+    empresa = request.empresa_activa
+    if not empresa or not _tiene_permiso_terceros(request.user, empresa):
+        messages.warning(request, "No tienes permisos para importar terceros.")
+        return redirect('core:dashboard')
+
+    if request.method == 'POST' and request.FILES.get('archivo'):
+        try:
+            _headers, filas = leer_filas_archivo(request.FILES['archivo'])
+            creados = 0
+            actualizados = 0
+            for fila in filas:
+                doc = (fila.get('numero_documento') or fila.get('nit') or fila.get('documento') or '').strip()
+                nom = (fila.get('razon_social') or fila.get('nombre') or '').strip()
+                if not doc or not nom:
+                    continue
+                tipo_doc = (fila.get('tipo_documento') or 'CC').upper()[:20]
+                if tipo_doc not in ('CC', 'NIT', 'CE', 'TI', 'PASAPORTE', 'DIE'):
+                    tipo_doc = 'NIT' if len(doc) >= 9 else 'CC'
+                defaults = {
+                    'razon_social': nom[:200],
+                    'tipo_documento': tipo_doc,
+                    'tipo_persona': 'JURIDICA' if tipo_doc == 'NIT' else 'NATURAL',
+                    'email': (fila.get('email') or fila.get('correo') or '')[:254],
+                    'telefono': (fila.get('telefono') or '')[:50],
+                    'direccion': (fila.get('direccion') or '')[:200],
+                    'es_cliente': str(fila.get('es_cliente', '1')).lower() in ('1', 'si', 'sí', 'true', 'x'),
+                    'es_proveedor': str(fila.get('es_proveedor', '0')).lower() in ('1', 'si', 'sí', 'true', 'x'),
+                    'activo': True,
+                }
+                _obj, created = Tercero.objects.update_or_create(
+                    empresa=empresa, numero_documento=doc[:30], defaults=defaults
+                )
+                if created:
+                    creados += 1
+                else:
+                    actualizados += 1
+            registrar_actividad(request, 'terceros', 'IMPORTAR_TERCEROS', f"Importó terceros: {creados} creados, {actualizados} actualizados.", empresa=empresa)
+            messages.success(request, f"Importación completada: {creados} terceros creados y {actualizados} actualizados.")
+            return redirect('terceros:lista')
+        except Exception as exc:
+            messages.error(request, f"Error importando archivo: {exc}")
+
+    return render(request, 'terceros/importar.html')

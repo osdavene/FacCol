@@ -116,11 +116,16 @@ def generar_xml_ubl(factura):
     empresa = factura.empresa
     tercero = factura.tercero
     es_nc = factura.tipo_documento == "NOTA_CREDITO"
-    ns_root = (
-        "urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2"
-        if es_nc
-        else "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
-    )
+    es_nd = factura.tipo_documento == "NOTA_DEBITO"
+    if es_nc:
+        ns_root = "urn:oasis:names:specification:ubl:schema:xsd:CreditNote-2"
+        root_tag = "CreditNote"
+    elif es_nd:
+        ns_root = "urn:oasis:names:specification:ubl:schema:xsd:DebitNote-2"
+        root_tag = "DebitNote"
+    else:
+        ns_root = "urn:oasis:names:specification:ubl:schema:xsd:Invoice-2"
+        root_tag = "Invoice"
     ns_cac = "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
     ns_cbc = "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
 
@@ -136,7 +141,7 @@ def generar_xml_ubl(factura):
     def cac(tag):
         return ET.Element(f"{{{ns_cac}}}{tag}")
 
-    root = ET.Element(f"{{{ns_root}}}{'CreditNote' if es_nc else 'Invoice'}")
+    root = ET.Element(f"{{{ns_root}}}{root_tag}")
     tipo_amb = "1" if empresa.modo_dian == "PRODUCCION" else "2"
     if factura.tipo_documento == "POS_ELECTRONICO":
         type_code = "20"
@@ -146,13 +151,17 @@ def generar_xml_ubl(factura):
         type_code = "91"
         profile_id = "DIAN 2.1: Nota Crédito de Factura Electrónica"
         scheme_name = "CUDE-SHA384"
+    elif es_nd:
+        type_code = "92"
+        profile_id = "DIAN 2.1: Nota Débito de Factura Electrónica"
+        scheme_name = "CUDE-SHA384"
     else:
         type_code = "01"
         profile_id = "DIAN 2.1: Factura Electrónica de Venta"
         scheme_name = "CUFE-SHA384"
 
     root.append(cbc("UBLVersionID", "UBL 2.1"))
-    root.append(cbc("CustomizationID", "20" if es_nc else "10"))
+    root.append(cbc("CustomizationID", "20" if (es_nc or es_nd) else "10"))
     root.append(cbc("ProfileID", profile_id))
     root.append(cbc("ProfileExecutionID", tipo_amb))
     root.append(cbc("ID", factura.numero_completo))
@@ -160,18 +169,19 @@ def generar_xml_ubl(factura):
     root.append(cbc("IssueDate", _fmt_fecha(factura.fecha_emision)))
     hora_dt = factura.created_at or datetime.now()
     root.append(cbc("IssueTime", hora_dt.strftime("%H:%M:%S-05:00")))
-    root.append(cbc("CreditNoteTypeCode" if es_nc else "InvoiceTypeCode", type_code))
+    if not es_nd:
+        root.append(cbc("CreditNoteTypeCode" if es_nc else "InvoiceTypeCode", type_code))
     root.append(cbc("DocumentCurrencyCode", "COP"))
 
-    if es_nc:
+    if es_nc or es_nd:
         disc = cac("DiscrepancyResponse")
         if factura.factura_referencia:
             disc.append(cbc("ReferenceID", factura.factura_referencia.numero_completo))
-        disc.append(cbc("ResponseCode", "2"))
-        disc.append(cbc("Description", factura.observaciones or "Anulación de factura electrónica"))
+        disc.append(cbc("ResponseCode", "2" if es_nc else "3"))
+        disc.append(cbc("Description", factura.observaciones or ("Anulación/ajuste crédito" if es_nc else "Cargo adicional Nota Débito")))
         root.append(disc)
 
-    if es_nc and factura.factura_referencia:
+    if (es_nc or es_nd) and factura.factura_referencia:
         bref = cac("BillingReference")
         inv_ref = cac("InvoiceDocumentReference")
         inv_ref.append(cbc("ID", factura.factura_referencia.numero_completo))
@@ -241,10 +251,12 @@ def generar_xml_ubl(factura):
     root.append(monetary)
 
     # Líneas
+    line_tag = "CreditNoteLine" if es_nc else ("DebitNoteLine" if es_nd else "InvoiceLine")
+    qty_tag = "CreditedQuantity" if es_nc else ("DebitedQuantity" if es_nd else "InvoicedQuantity")
     for idx, it in enumerate(factura.items.all(), 1):
-        line = cac("CreditNoteLine" if es_nc else "InvoiceLine")
+        line = cac(line_tag)
         line.append(cbc("ID", idx))
-        line.append(cbc("CreditedQuantity" if es_nc else "InvoicedQuantity", f"{it.cantidad:.3f}", unitCode="94"))
+        line.append(cbc(qty_tag, f"{it.cantidad:.3f}", unitCode="94"))
         line.append(cbc("LineExtensionAmount", _fmt_dec(it.subtotal - it.descuento), currencyID="COP"))
         item_el = cac("Item")
         item_el.append(cbc("Description", it.descripcion))
@@ -318,7 +330,7 @@ def transmitir_documento_dian(factura):
     Valida requisitos de Resolución DIAN, construye XML UBL 2.1 y registra
     transmisión electrónica (Habilitación o Producción) asignando TrackId DIAN.
     """
-    if factura.tipo_documento not in ("FACTURA", "POS_ELECTRONICO", "NOTA_CREDITO"):
+    if factura.tipo_documento not in ("FACTURA", "POS_ELECTRONICO", "NOTA_CREDITO", "NOTA_DEBITO"):
         return False, "Este tipo de documento no requiere transmisión ante la DIAN."
 
     empresa = factura.empresa
@@ -414,7 +426,7 @@ def procesar_cola_dian(empresa):
 
     pendientes = Factura.objects.filter(
         empresa=empresa,
-        tipo_documento__in=("FACTURA", "POS_ELECTRONICO", "NOTA_CREDITO"),
+        tipo_documento__in=("FACTURA", "POS_ELECTRONICO", "NOTA_CREDITO", "NOTA_DEBITO"),
         estado_dian__in=("PENDIENTE", "CONTINGENCIA"),
     ).order_by("id")
 
@@ -427,3 +439,210 @@ def procesar_cola_dian(empresa):
         else:
             contingencia += 1
     return {"enviados": enviados, "contingencia": contingencia, "total": enviados + contingencia}
+
+
+def generar_attached_document_xml(factura) -> str:
+    """Construye AttachedDocument DIAN 2.1 conteniendo el XML UBL del documento fiscal y validación."""
+    if not factura.cufe:
+        cufe, qr = calcular_cufe_y_qr(factura)
+        factura.cufe = cufe
+        factura.qr_data = qr
+        factura.save(update_fields=["cufe", "qr_data"])
+
+    doc_xml = generar_xml_ubl(factura)
+    empresa = factura.empresa
+    tercero = factura.tercero
+    ns_att = "urn:oasis:names:specification:ubl:schema:xsd:AttachedDocument-2"
+    ns_cac = "urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2"
+    ns_cbc = "urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2"
+
+    ET.register_namespace("", ns_att)
+    ET.register_namespace("cac", ns_cac)
+    ET.register_namespace("cbc", ns_cbc)
+
+    def cbc(tag, text="", **attrs):
+        el = ET.Element(f"{{{ns_cbc}}}{tag}", attrs)
+        el.text = str(text)
+        return el
+
+    def cac(tag):
+        return ET.Element(f"{{{ns_cac}}}{tag}")
+
+    root = ET.Element(f"{{{ns_att}}}AttachedDocument")
+    root.append(cbc("UBLVersionID", "UBL 2.1"))
+    root.append(cbc("CustomizationID", "Documentos adjuntos"))
+    root.append(cbc("ProfileID", "Factura Electrónica de Venta"))
+    root.append(cbc("ID", f"ATT-{factura.numero_completo}"))
+    root.append(cbc("IssueDate", _fmt_fecha(factura.fecha_emision)))
+    root.append(cbc("DocumentType", "Contenedor de Factura Electrónica"))
+    root.append(cbc("ParentDocumentID", factura.numero_completo))
+
+    sp = cac("SenderParty")
+    sp_tax = cac("PartyTaxScheme")
+    sp_tax.append(cbc("RegistrationName", empresa.razon_social))
+    sp_tax.append(cbc("CompanyID", empresa.nit, schemeID=empresa.dv or "0", schemeName="31"))
+    sp.append(sp_tax)
+    root.append(sp)
+
+    rp = cac("ReceiverParty")
+    rp_tax = cac("PartyTaxScheme")
+    rp_tax.append(cbc("RegistrationName", tercero.razon_social))
+    rp_tax.append(cbc("CompanyID", tercero.numero_documento, schemeName="13"))
+    rp.append(rp_tax)
+    root.append(rp)
+
+    att = cac("Attachment")
+    ext = cac("ExternalReference")
+    ext.append(cbc("MimeCode", "text/xml"))
+    ext.append(cbc("EncodingCode", "UTF-8"))
+    ext.append(cbc("Description", doc_xml))
+    att.append(ext)
+    root.append(att)
+
+    pl = cac("ParentDocumentLineReference")
+    pl.append(cbc("LineID", "1"))
+    dr = cac("DocumentReference")
+    dr.append(cbc("ID", factura.numero_completo))
+    dr.append(cbc("UUID", factura.cufe, schemeName="CUFE-SHA384"))
+    dr.append(cbc("IssueDate", _fmt_fecha(factura.fecha_emision)))
+    rv = cac("ResultOfVerification")
+    rv.append(cbc("ValidatorID", "Unidad Especial DIAN"))
+    rv.append(cbc("ValidationResultCode", "02" if factura.estado_dian == "ENVIADA" else "01"))
+    rv.append(cbc("ValidationDate", _fmt_fecha(factura.fecha_emision)))
+    dr.append(rv)
+    pl.append(dr)
+    root.append(pl)
+
+    return ET.tostring(root, encoding="utf-8", xml_declaration=True).decode("utf-8")
+
+
+def verificar_alertas_resolucion_dian(empresa, request=None) -> bool:
+    """Alerta una vez al mes cuando quedan <= 50 consecutivos disponibles en el rango DIAN."""
+    from datetime import date
+    from django.urls import reverse
+    from apps.core.audit import registrar_actividad
+    from apps.core.config import mail_settings
+    from apps.core.models import RegistroActividad
+    from apps.core.notifications import (
+        destinatarios_propietarios_empresa,
+        notificar_evento_seguridad,
+        notificar_usuarios_app,
+    )
+
+    if not empresa or not empresa.rango_hasta or empresa.rango_hasta <= 0:
+        return False
+    restantes = int(empresa.rango_hasta) - int(empresa.consecutivo_actual or 0)
+    if restantes > 50:
+        return False
+
+    hoy = date.today()
+    if RegistroActividad.objects.filter(
+        empresa=empresa,
+        accion="ALERTA_RESOLUCION_DIAN",
+        created_at__year=hoy.year,
+        created_at__month=hoy.month,
+    ).exists():
+        return False
+
+    resumen = (
+        f"La resolución DIAN de {empresa.display_name} tiene solo {max(0, restantes)} consecutivos disponibles "
+        f"(actual: {empresa.consecutivo_actual}, rango hasta: {empresa.rango_hasta})."
+    )
+    url_cfg = reverse("core:configuracion_empresa")
+    app_base = (mail_settings.APP_URL or "").rstrip("/")
+    registrar_actividad(request, "facturacion", "ALERTA_RESOLUCION_DIAN", resumen, empresa=empresa, objeto=empresa)
+    notificar_usuarios_app(
+        "Consecutivos DIAN por agotarse",
+        resumen,
+        empresa=empresa,
+        roles=("propietario", "admin", "contador"),
+        nivel="warning",
+        categoria="dian",
+        url=url_cfg,
+    )
+    notificar_evento_seguridad(
+        request,
+        "Alerta de numeración DIAN por agotarse",
+        resumen,
+        destinatarios=destinatarios_propietarios_empresa(empresa),
+        empresa=empresa,
+        action_url=request.build_absolute_uri(url_cfg) if request else f"{app_base}{url_cfg}",
+        action_text="Actualizar Resolución DIAN",
+        categoria="dian",
+        nivel="warning",
+        registrar_in_app=False,
+    )
+    return True
+
+
+def transmitir_dse_dian(compra):
+    """Transmite o valida Documento Soporte Electrónico (DSE) vía PT o local."""
+    from apps.core.platform_settings import get_platform_setting
+
+    if not compra.es_documento_soporte:
+        return False, "La compra no está marcada como Documento Soporte Electrónico."
+    empresa = compra.empresa
+    if not (empresa.dian_software_id or "").strip():
+        compra.estado_dian = "CONTINGENCIA"
+        compra.save(update_fields=["estado_dian"])
+        return False, "Falta Software ID DIAN para transmitir DSE."
+
+    pt_url = get_platform_setting("pt_dian_url", "").strip()
+    pt_token = get_platform_setting("pt_dian_token", "").strip()
+    if pt_url:
+        import requests
+        headers = {"Content-Type": "application/json"}
+        if pt_token:
+            headers["Authorization"] = f"Bearer {pt_token}"
+        try:
+            resp = requests.post(pt_url, json={
+                "empresa_nit": empresa.nit,
+                "tipo_documento": "DSE",
+                "numero_completo": compra.numero_completo,
+                "cuds": compra.cuds,
+                "total": str(compra.total),
+            }, headers=headers, timeout=20)
+            if 200 <= resp.status_code < 300:
+                compra.estado_dian = "ENVIADA"
+                compra.save(update_fields=["estado_dian"])
+                return True, f"DSE {compra.numero_completo} aceptado vía Proveedor Tecnológico."
+            compra.estado_dian = "RECHAZADA"
+            compra.save(update_fields=["estado_dian"])
+            return False, f"Rechazo PT DSE (HTTP {resp.status_code})"
+        except Exception as exc:
+            compra.estado_dian = "CONTINGENCIA"
+            compra.save(update_fields=["estado_dian"])
+            return False, f"Error de red DSE: {exc}"
+
+    compra.estado_dian = "ENVIADA"
+    compra.save(update_fields=["estado_dian"])
+    return True, f"DSE {compra.numero_completo} validado con CUDS {compra.cuds[:16]}."
+
+
+def transmitir_nomina_dian(detalle):
+    """Transmite Nómina Individual electrónica vía Proveedor Tecnológico o validación local."""
+    from apps.core.platform_settings import get_platform_setting
+    from apps.nomina.dian_nomina_service import calcular_cune_nomina, generar_xml_nomina_individual
+
+    empresa = detalle.nomina.empresa
+    num_ne, cune, _ = calcular_cune_nomina(detalle)
+    xml_nom = generar_xml_nomina_individual(detalle)
+    pt_url = get_platform_setting("pt_dian_url", "").strip()
+    pt_token = get_platform_setting("pt_dian_token", "").strip()
+
+    if pt_url:
+        import requests
+        headers = {"Content-Type": "application/json"}
+        if pt_token:
+            headers["Authorization"] = f"Bearer {pt_token}"
+        resp = requests.post(pt_url, json={
+            "empresa_nit": empresa.nit,
+            "tipo_documento": "NOMINA_INDIVIDUAL",
+            "numero_completo": num_ne,
+            "cune": cune,
+            "xml_ubl": xml_nom,
+        }, headers=headers, timeout=20)
+        if 200 <= resp.status_code < 300:
+            return True, f"Nómina {num_ne} transmitida vía Proveedor Tecnológico."
+        return False, f"Rechazo PT Nómina (HTTP {resp.status_code})"
+    return True, f"Nómina {num_ne} validada con CUNE {cune[:16]}."

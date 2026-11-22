@@ -51,6 +51,7 @@ jobs:
             (crontab -l 2>/dev/null | grep -v "# faccol-cron" || true; \
               echo "*/20 * * * * cd /home/faccol/htdocs/faccol.com && venv/bin/python manage.py procesar_cola_dian >> logs/cron_dian.log 2>&1 # faccol-cron"; \
               echo "30 12 * * * cd /home/faccol/htdocs/faccol.com && venv/bin/python manage.py verificar_vencimientos_plan >> logs/cron_vencimientos.log 2>&1 # faccol-cron"; \
+              echo "30 5 * * * cd /home/faccol/htdocs/faccol.com && venv/bin/python manage.py respaldar_bd >> logs/cron_backup.log 2>&1 # faccol-cron"; \
               echo "5 0 * * * cd /home/faccol/htdocs/faccol.com && venv/bin/python manage.py enviar_resumen_diario >> logs/cron_resumen.log 2>&1 # faccol-cron") | crontab -
             EOF
 

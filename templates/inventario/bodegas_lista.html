@@ -1,0 +1,57 @@
+{% extends 'base.html' %}
+{% block title %}Multi-Bodega &amp; Traslados{% endblock %}
+{% block content %}
+<div class="space-y-6">
+    <div>
+        <h1 class="font-display font-extrabold text-2xl text-white">Bodegas &amp; Traslados de Inventario</h1>
+        <p class="text-xs text-slate-400">Administra múltiples bodegas/sucursales y traslada mercancía con trazabilidad</p>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 text-xs">
+        <form method="post" action="{% url 'inventario:bodegas_lista' %}" class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 space-y-4">
+            {% csrf_token %}
+            <h2 class="text-sm font-bold text-amber-400 uppercase">Crear Nueva Bodega / Sucursal</h2>
+            <div class="grid grid-cols-2 gap-3">
+                <input type="text" name="codigo" required placeholder="Código (ej. BOD-02)" class="bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                <input type="text" name="nombre" required placeholder="Nombre Bodega" class="bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+            </div>
+            <button type="submit" class="px-5 py-2 rounded-xl bg-amber-500 text-black font-black uppercase">Crear Bodega</button>
+        </form>
+
+        <form method="post" action="{% url 'inventario:bodega_traslado' %}" class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 space-y-4">
+            {% csrf_token %}
+            <h2 class="text-sm font-bold text-cyan-400 uppercase">Traslado Entre Bodegas</h2>
+            <div class="grid grid-cols-2 gap-3">
+                <select name="bodega_origen" required class="bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                    <option value="">Origen...</option>
+                    {% for b in bodegas %}<option value="{{ b.id }}">{{ b.nombre }}</option>{% endfor %}
+                </select>
+                <select name="bodega_destino" required class="bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                    <option value="">Destino...</option>
+                    {% for b in bodegas %}<option value="{{ b.id }}">{{ b.nombre }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <select name="producto" required class="bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+                    {% for p in productos %}<option value="{{ p.id }}">{{ p.codigo }} — {{ p.nombre }}</option>{% endfor %}
+                </select>
+                <input type="number" step="0.01" min="0.01" name="cantidad" required placeholder="Cantidad" class="bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white">
+            </div>
+            <button type="submit" class="px-5 py-2 rounded-xl bg-cyan-600 text-white font-black uppercase">Ejecutar Traslado</button>
+        </form>
+    </div>
+
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl overflow-hidden">
+        <table class="w-full text-left text-xs">
+            <thead><tr class="bg-[#141c2e] text-slate-400 uppercase text-[10px] border-b border-[#1e2d47]"><th class="p-4">Bodega</th><th class="p-4">Producto</th><th class="p-4 text-right">Existencia</th></tr></thead>
+            <tbody class="divide-y divide-[#1e2d47]/50">
+                {% for ex in existencias %}
+                <tr><td class="p-4 font-bold text-amber-400">{{ ex.bodega.nombre }}</td><td class="p-4 text-white">{{ ex.producto.nombre }}</td><td class="p-4 text-right font-black text-emerald-400">{{ ex.cantidad }}</td></tr>
+                {% empty %}
+                <tr><td colspan="3" class="p-8 text-center text-slate-500">Sin existencias asignadas por bodega aún.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

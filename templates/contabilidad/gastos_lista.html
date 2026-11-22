@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+{% load humanize %}
+{% block title %}Gastos Operativos{% endblock %}
+{% block content %}
+<div class="space-y-6">
+    <div class="flex items-center justify-between">
+        <div>
+            <h1 class="font-display font-extrabold text-2xl text-white">Gastos Operativos &amp; Servicios</h1>
+            <p class="text-xs text-slate-400">Arriendos, honorarios, servicios públicos y retenciones causadas automáticamente</p>
+        </div>
+        <a href="{% url 'contabilidad:gasto_crear' %}" class="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-black font-black text-xs uppercase tracking-wider">
+            <i class="fas fa-plus mr-1"></i> Registrar Gasto
+        </a>
+    </div>
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl overflow-hidden shadow-xl">
+        <table class="w-full text-left text-xs">
+            <thead>
+                <tr class="bg-[#141c2e] text-slate-400 uppercase text-[10px] border-b border-[#1e2d47]">
+                    <th class="p-4">No.</th>
+                    <th class="p-4">Fecha</th>
+                    <th class="p-4">Tercero</th>
+                    <th class="p-4">Cuenta PUC</th>
+                    <th class="p-4">Concepto</th>
+                    <th class="p-4 text-right">Subtotal</th>
+                    <th class="p-4 text-right">IVA</th>
+                    <th class="p-4 text-right">Retenciones</th>
+                    <th class="p-4 text-right">Total Neto</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-[#1e2d47]/50">
+                {% for g in gastos %}
+                <tr class="hover:bg-[#162034]">
+                    <td class="p-4 font-mono font-bold text-amber-400">{{ g.numero_completo }}</td>
+                    <td class="p-4 text-slate-400">{{ g.fecha|date:"d/m/Y" }}</td>
+                    <td class="p-4 font-bold text-white">{{ g.tercero.razon_social }}</td>
+                    <td class="p-4 text-cyan-300 font-mono">{{ g.cuenta_gasto.codigo }}</td>
+                    <td class="p-4 text-slate-300">{{ g.concepto }}</td>
+                    <td class="p-4 text-right text-slate-300">${{ g.subtotal|floatformat:0|intcomma }}</td>
+                    <td class="p-4 text-right text-slate-300">${{ g.iva|floatformat:0|intcomma }}</td>
+                    <td class="p-4 text-right text-rose-400">-${{ g.retencion_fuente|add:g.retencion_ica|floatformat:0|intcomma }}</td>
+                    <td class="p-4 text-right font-black text-emerald-400">${{ g.total_pagar|floatformat:0|intcomma }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="9" class="p-8 text-center text-slate-500">Sin gastos registrados.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

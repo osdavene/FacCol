@@ -1,0 +1,56 @@
+{% extends 'base.html' %}
+{% block title %}Cierres Contables{% endblock %}
+{% block content %}
+<div class="space-y-6">
+    <div>
+        <h1 class="font-display font-extrabold text-2xl text-white">Cierres de Período &amp; Cierre Anual</h1>
+        <p class="text-xs text-slate-400">Bloquea meses auditados y ejecuta el cierre de cuentas de resultado (4, 5, 6, 7) a patrimonio</p>
+    </div>
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6 text-xs">
+        <form method="post" class="bg-[#111827] border border-[#1e2d47] rounded-3xl p-6 space-y-4">
+            {% csrf_token %}
+            <input type="hidden" name="accion" value="toggle_mes">
+            <h2 class="text-sm font-bold text-cyan-400 uppercase">Cerrar / Reabrir Mes</h2>
+            <div class="grid grid-cols-2 gap-3">
+                <div><label class="block text-slate-300 mb-1">Año</label><input type="number" name="ano" value="{{ ano_actual }}" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white"></div>
+                <div><label class="block text-slate-300 mb-1">Mes (1-12)</label><input type="number" name="mes" min="1" max="12" value="{{ mes_actual }}" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white"></div>
+            </div>
+            <button type="submit" class="px-5 py-2.5 rounded-xl bg-cyan-600 hover:bg-cyan-500 text-white font-bold">Alternar Estado del Mes</button>
+        </form>
+
+        <form method="post" class="bg-[#111827] border border-rose-500/30 rounded-3xl p-6 space-y-4">
+            {% csrf_token %}
+            <input type="hidden" name="accion" value="cierre_anual">
+            <h2 class="text-sm font-bold text-rose-400 uppercase">Cierre Anual de Resultados</h2>
+            <div><label class="block text-slate-300 mb-1">Año Gravable a Cerrar</label><input type="number" name="ano" value="{{ ano_actual }}" class="w-full bg-[#162034] border border-[#1e2d47] rounded-xl px-3 py-2 text-white"></div>
+            <button type="submit" class="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-500 text-white font-bold">Ejecutar Cierre Anual NIIF</button>
+        </form>
+    </div>
+
+    <div class="bg-[#111827] border border-[#1e2d47] rounded-3xl overflow-hidden">
+        <table class="w-full text-left text-xs">
+            <thead>
+                <tr class="bg-[#141c2e] text-slate-400 uppercase text-[10px] border-b border-[#1e2d47]">
+                    <th class="p-4">Período</th>
+                    <th class="p-4">Estado</th>
+                    <th class="p-4">Responsable</th>
+                    <th class="p-4">Observaciones</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-[#1e2d47]/50">
+                {% for c in cierres %}
+                <tr>
+                    <td class="p-4 font-mono font-bold text-white">{{ c.ano }}-{% if c.mes == 0 %}ANUAL{% else %}{{ c.mes|stringformat:"02d" }}{% endif %}</td>
+                    <td class="p-4">{% if c.cerrado %}<span class="px-2 py-0.5 rounded bg-rose-500/15 text-rose-400 font-bold">CERRADO</span>{% else %}<span class="px-2 py-0.5 rounded bg-emerald-500/15 text-emerald-400 font-bold">ABIERTO</span>{% endif %}</td>
+                    <td class="p-4 text-slate-300">{{ c.cerrado_por.get_full_name|default:c.cerrado_por.email|default:"Sistema" }}</td>
+                    <td class="p-4 text-slate-400">{{ c.observaciones|default:"-" }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="4" class="p-8 text-center text-slate-500">No hay cierres contables registrados.</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

@@ -147,6 +147,8 @@ class CompraProveedor(EmpresaTenantModel):
     cuds = models.CharField(max_length=255, blank=True, verbose_name="CUDS Documento Soporte")
     estado_dian = models.CharField(max_length=25, default='NO_APLICA')
     total = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal('0.00'))
+    saldo_pendiente = models.DecimalField(max_digits=16, decimal_places=2, default=Decimal('0.00'))
+    fecha_vencimiento = models.DateField(null=True, blank=True)
     observaciones = models.TextField(blank=True)
 
     class Meta:
@@ -176,3 +178,34 @@ class CompraItem(models.Model):
         self.unidades_totales = (Decimal(str(self.cantidad_empaque)) * Decimal(str(self.unidades_por_empaque))).quantize(Decimal('0.001'))
         self.subtotal = (Decimal(str(self.cantidad_empaque)) * Decimal(str(self.costo_unitario_empaque))).quantize(Decimal('0.01'))
         super().save(*args, **kwargs)
+
+
+class Bodega(EmpresaTenantModel):
+    """Almacén o sucursal física para control multi-bodega de inventarios."""
+    codigo = models.CharField(max_length=20)
+    nombre = models.CharField(max_length=120)
+    es_principal = models.BooleanField(default=False)
+    activa = models.BooleanField(default=True)
+
+    class Meta:
+        unique_together = ('empresa', 'codigo')
+        ordering = ['-es_principal', 'nombre']
+        verbose_name = "Bodega"
+        verbose_name_plural = "Bodegas"
+
+    def __str__(self):
+        return f"{self.nombre} ({self.codigo})"
+
+
+class StockBodega(models.Model):
+    bodega = models.ForeignKey(Bodega, on_delete=models.CASCADE, related_name='existencias')
+    producto = models.ForeignKey(Producto, on_delete=models.CASCADE, related_name='stock_bodegas')
+    cantidad = models.DecimalField(max_digits=12, decimal_places=2, default=Decimal('0.00'))
+
+    class Meta:
+        unique_together = ('bodega', 'producto')
+        verbose_name = "Existencia en Bodega"
+        verbose_name_plural = "Existencias por Bodega"
+
+    def __str__(self):
+        return f"{self.bodega.codigo} - {self.producto.codigo}: {self.cantidad}"
