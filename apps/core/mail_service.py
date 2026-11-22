@@ -1,10 +1,10 @@
 import base64
 import html as _html
 import re
+from email.utils import formatdate, make_msgid
 import requests
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives, get_connection
-from django.utils.html import strip_tags
 
 from apps.core.platform_settings import decrypt_secret, get_platform_setting, mask_secret
 
@@ -19,6 +19,23 @@ DUMMY_DOMAIN_SUFFIXES = ("@example.com", "@test.com", "@localhost", ".local", "@
 
 def _sanitize_header(val):
     return re.sub(r"[\r\n]+", " ", str(val or "")).strip()
+
+
+def _html_to_plain_text(html_body: str) -> str:
+    """Convierte HTML a texto plano limpio conservando enlaces (URL) para compatibilidad RFC y anti-spam."""
+    text = re.sub(r"<\s*br\s*/?>", "\n", str(html_body or ""), flags=re.IGNORECASE)
+    text = re.sub(r"</\s*p\s*>", "\n\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"</\s*h[1-6]\s*>", "\n\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"</\s*div\s*>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(
+        r'<\s*a\s+[^>]*href=["\']([^"\']+)["\'][^>]*>(.*?)<\s*/a\s*>',
+        lambda m: f"{re.sub(r'\s+', ' ', re.sub(r'<[^>]+>', ' ', m.group(2))).strip()} ({m.group(1)})",
+        text,
+        flags=re.IGNORECASE | re.DOTALL,
+    )
+    text = _html.unescape(re.sub(r"<[^>]+>", " ", text))
+    lines = [re.sub(r"[ \t]+", " ", line).strip() for line in text.split("\n")]
+    return "\n".join(lines).strip()
 
 
 def is_dummy_or_invalid_email(email: str) -> bool:
@@ -146,7 +163,7 @@ def enviar_correo_sistema(
         raise ValueError(f"Dirección de correo destino inválida: {to_email}")
 
     clean_subject = _sanitize_header(subject)
-    plain_text = text_body or strip_tags(html_body)
+    plain_text = text_body or _html_to_plain_text(html_body)
     cfg = get_mail_runtime_config(empresa=empresa)
 
     # Prioridad Resend cuando se usa correo de plataforma y existe RESEND_API_KEY
@@ -175,6 +192,13 @@ def enviar_correo_sistema(
     )
     from_header = f"{cfg['from_name']} <{cfg['from_address']}>" if cfg["from_name"] else cfg["from_address"]
     reply_list = [reply_to] if isinstance(reply_to, str) else (reply_to or [cfg["from_address"]])
+    domain_msg = cfg["from_address"].split("@", 1)[1] if "@" in (cfg.get("from_address") or "") else "servigest.online"
+    mime_headers = {
+        "Date": formatdate(localtime=True),
+        "Message-ID": make_msgid(domain=domain_msg),
+        "X-Mailer": "FacCol Mailer v2.0",
+        "Auto-Submitted": "auto-generated",
+    }
 
     email = EmailMultiAlternatives(
         subject=clean_subject,
@@ -182,6 +206,7 @@ def enviar_correo_sistema(
         from_email=from_header,
         to=[clean_to],
         reply_to=reply_list,
+        headers=mime_headers,
         connection=conn,
     )
     email.attach_alternative(html_body, "text/html")

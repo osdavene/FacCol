@@ -95,7 +95,12 @@ class ConfiguracionCifradaYCorreoTests(TestCase):
         resp = client.post(reverse("usuarios:password_reset"), {"email": "cliente@negocio.co"}, follow=True)
         self.assertEqual(resp.status_code, 200)
         self.assertEqual(len(mail.outbox), 1)
-        body = mail.outbox[0].alternatives[0][0]
+        sent_msg = mail.outbox[0]
+        self.assertIn("http", sent_msg.body)
+        self.assertIn("/auth/password-reset/", sent_msg.body)
+        self.assertEqual(sent_msg.extra_headers.get("Auto-Submitted"), "auto-generated")
+        self.assertIn("@servigest.online", sent_msg.extra_headers.get("Message-ID", ""))
+        body = sent_msg.alternatives[0][0]
         import re
         m = re.search(r'href="([^"]+/auth/password-reset/[^"]+)"', body)
         self.assertIsNotNone(m)
